@@ -40,7 +40,6 @@ export default function Depositos() {
 
   // --- LÓGICA MODAL ABM DEPÓSITOS ---
   const editFields = [
-    { key: "id_deposito", label: "ID Depósito", type: "text", readOnly: true },
     { key: "codigo", label: "Depósito (Código)", type: "text" },
     { key: "id_sucursal", label: "Sucursal Abastecida", type: "select", options: sucursales.map(s => ({ value: s.id_sucursal, label: `${s.id_sucursal} - ${s.descripcion}` })) },
     { key: "descripcion", label: "Descripción", type: "text" },
@@ -54,14 +53,11 @@ export default function Depositos() {
     if (selectedDeposito) {
       // Edición simulada
       setDepositos((prev) =>
-        prev.map((item) => (item.id_deposito === formData.id_deposito ? { ...item, ...formData } : item))
+        prev.map((item) => (item === selectedDeposito ? { ...item, ...formData } : item))
       );
     } else {
-      // Creación simulada (Generamos ID automático)
-      const maxId = depositos.length > 0 ? Math.max(...depositos.map(d => d.id_deposito)) : 0;
       const newEntry = {
         ...formData,
-        id_deposito: maxId + 1,
         estado: formData.estado || "Activo",
         fecha_registro: new Date().toISOString().split('T')[0]
       };
@@ -204,7 +200,7 @@ if (vistaActual === "inventario") {
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveDeposito}
         title={selectedDeposito ? "Editar Depósito" : "Nuevo Depósito"}
-        fields={editFields.filter(f => selectedDeposito || f.key !== "id_deposito")} 
+        fields={editFields}
         initialData={selectedDeposito}
       />
 
