@@ -124,7 +124,6 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
                     onChange={(e) => handleChange(field.key, e.target.value)}
                     disabled={field.readOnly}
                     style={commonInputStyle(field.readOnly)}
-                    required
                   >
                     <option value="" disabled>Seleccione una opción...</option>
                     {field.options?.map((opt) => (
