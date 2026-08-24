@@ -107,7 +107,6 @@ export default function InventarioMedicamentos() {
 
   // Campos para el formulario dinámico del Modal
   const editFields = [
-    { key: "codigo", label: "Código / ID" },
     { key: "nombre", label: "Nombre del Producto" },
     { key: "descripcion", label: "Descripción" },
     { key: "lote", label: "Lote" },
@@ -133,12 +132,11 @@ export default function InventarioMedicamentos() {
   const handleSaveProduct = (formData) => {
     if (selectedProduct) {
       setProducts((prev) =>
-        prev.map((item) => (item.codigo === formData.codigo ? formData : item))
+        prev.map((item) => (item === selectedProduct ? formData : item))
       );
     } else {
       const newEntry = {
         ...formData,
-        codigo: formData.codigo || `MED-${String(products.length + 1).padStart(3, "0")}`,
         stock: Number(formData.stock) || 0,
         precio: Number(formData.precio) || 0,
         diasVencimiento: 120, // Valor de prueba predeterminado
@@ -283,9 +281,7 @@ export default function InventarioMedicamentos() {
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveProduct}
         title={selectedProduct ? "Editar Producto" : "Nuevo Producto"}
-        fields={editFields.map((field) =>
-          field.key === "codigo" ? { ...field, readOnly: !!selectedProduct } : field
-        )}
+        fields={editFields}
         initialData={selectedProduct}
       />
     </>

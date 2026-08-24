@@ -32,8 +32,8 @@ export default function Sucursales() {
 
   // Campos alineados con la tabla sucursal de Supabase
   const editFields = [
-    { key: "codigo", label: "Código", placeholder: "SUC-001" },
-    { key: "descripcion", label: "Descripción" },
+    { key: "codigo", label: "Código", placeholder: "SUC-001", required: true },
+    { key: "descripcion", label: "Descripción", required: true },
     { key: "estado", label: "Estado", type: "checkbox" },
   ];
 
@@ -53,10 +53,37 @@ export default function Sucursales() {
 
   const handleSaveSucursal = async (formData) => {
     const values = {
-      codigo: formData.codigo.trim(),
-      descripcion: formData.descripcion.trim(),
+      codigo: formData.codigo?.trim() ?? "",
+      descripcion: formData.descripcion?.trim() ?? "",
       estado: Boolean(formData.estado),
     };
+
+    if (!values.codigo || !values.descripcion) {
+      setError("El código y la descripción son obligatorios.");
+      return false;
+    }
+
+    let duplicateQuery = supabase
+      .from("sucursal")
+      .select("id_sucursal")
+      .ilike("codigo", values.codigo)
+      .limit(1);
+
+    if (selectedSucursal) {
+      duplicateQuery = duplicateQuery.neq("id_sucursal", selectedSucursal.id_sucursal);
+    }
+
+    const { data: duplicate, error: duplicateError } = await duplicateQuery.maybeSingle();
+
+    if (duplicateError) {
+      setError(`No se pudo validar el código: ${duplicateError.message}`);
+      return false;
+    }
+
+    if (duplicate) {
+      setError("Ya existe una sucursal con ese código.");
+      return false;
+    }
 
     if (selectedSucursal) {
       const { data, error: updateError } = await supabase

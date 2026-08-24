@@ -13,7 +13,6 @@ export default function Proveedores() {
 
   // Configuración de los campos del modal
   const editFields = [
-    { key: "id", label: "ID" },
     { key: "razonSocial", label: "Razón Social" },
     { key: "cuit", label: "CUIT" },
     { key: "contacto", label: "Contacto" },
@@ -38,15 +37,10 @@ export default function Proveedores() {
   const handleSaveProveedor = (formData) => {
     if (selectedProveedor) {
       setProveedores((prev) =>
-        prev.map((item) => (item.id === formData.id ? formData : item))
+        prev.map((item) => (item === selectedProveedor ? formData : item))
       );
     } else {
-      // Si el usuario no ingresó un ID al crear, generamos uno temporal
-      const newEntry = {
-        ...formData,
-        id: formData.id || `PROV-${String(proveedores.length + 1).padStart(3, "0")}`,
-      };
-      setProveedores((prev) => [...prev, newEntry]);
+      setProveedores((prev) => [...prev, formData]);
     }
   };
 
@@ -119,9 +113,7 @@ export default function Proveedores() {
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveProveedor}
         title={selectedProveedor ? "Editar Proveedor" : "Nuevo Proveedor"}
-        fields={editFields.map((field) =>
-          field.key === "id" ? { ...field, readOnly: !!selectedProveedor } : field
-        )}
+        fields={editFields}
         initialData={selectedProveedor}
       />
     </>
