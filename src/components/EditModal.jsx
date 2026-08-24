@@ -1,10 +1,8 @@
-import { useState} from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 
-export default function EditModal({ isOpen, onClose, onSave, title, fields}) {
-  const [formData, setFormData] = useState({});
-
-  
+export default function EditModal({ isOpen, onClose, onSave, title, fields, initialData }) {
+  const [formData, setFormData] = useState(() => initialData ?? {});
 
   if (!isOpen) return null;
 
@@ -12,10 +10,10 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields}) {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave(formData);
-    onClose();
+    const saved = await onSave(formData);
+    if (saved !== false) onClose();
   };
 
   return (
@@ -101,8 +99,15 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields}) {
                 </label>
                 <input
                   type={field.type || "text"}
-                  value={formData[field.key] ?? ""}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  value={field.type === "checkbox" ? undefined : formData[field.key] ?? ""}
+                  checked={field.type === "checkbox" ? Boolean(formData[field.key]) : undefined}
+                  placeholder={field.placeholder}
+                  onChange={(e) =>
+                    handleChange(
+                      field.key,
+                      field.type === "checkbox" ? e.target.checked : e.target.value
+                    )
+                  }
                   disabled={field.readOnly}
                   style={{
                     padding: "0.5rem 0.75rem",

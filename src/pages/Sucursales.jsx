@@ -1,73 +1,113 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
+import { supabase } from "../lib/supabase.js";
 import { Plus, Search } from "lucide-react";
 
 export default function Sucursales() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSucursal, setSelectedSucursal] = useState(null);
+  const [error, setError] = useState("");
 
-  // Estado vacío listo para conectar con la API/Base de Datos
   const [sucursales, setSucursales] = useState([]);
 
-  // Configuración de los campos dinámicos para el Modal
+  useEffect(() => {
+    const loadSucursales = async () => {
+      const { data, error: loadError } = await supabase
+        .from("sucursal")
+        .select("id_sucursal, codigo, descripcion, estado, fecha_registro")
+        .order("id_sucursal", { ascending: true });
+
+      if (loadError) {
+        setError(`No se pudieron cargar las sucursales: ${loadError.message}`);
+        return;
+      }
+
+      setSucursales(data ?? []);
+    };
+
+    loadSucursales();
+  }, []);
+
+  // Campos alineados con la tabla sucursal de Supabase
   const editFields = [
-    { key: "id", label: "ID" },
-    { key: "nombre", label: "Nombre de Sucursal" },
-    { key: "direccion", label: "Dirección" },
-    { key: "telefono", label: "Teléfono" },
-    { key: "encargado", label: "Encargado / Responsable" },
+    { key: "codigo", label: "Código", placeholder: "SUC-001" },
+    { key: "descripcion", label: "Descripción" },
+    { key: "estado", label: "Estado", type: "checkbox" },
   ];
 
   // Abrir modal para Crear
   const handleOpenCreate = () => {
     setSelectedSucursal(null);
+    setError("");
     setIsModalOpen(true);
   };
 
   // Abrir modal para Editar
   const handleOpenEdit = (sucursal) => {
     setSelectedSucursal(sucursal);
+    setError("");
     setIsModalOpen(true);
   };
 
-  // Guardar (Alta / Modificación)
-  const handleSaveSucursal = (formData) => {
+  const handleSaveSucursal = async (formData) => {
+    const values = {
+      codigo: formData.codigo.trim(),
+      descripcion: formData.descripcion.trim(),
+      estado: Boolean(formData.estado),
+    };
+
     if (selectedSucursal) {
+      const { data, error: updateError } = await supabase
+        .from("sucursal")
+        .update(values)
+        .eq("id_sucursal", selectedSucursal.id_sucursal)
+        .select("id_sucursal, codigo, descripcion, estado, fecha_registro")
+        .single();
+
+      if (updateError) {
+        setError(`No se pudo actualizar la sucursal: ${updateError.message}`);
+        return false;
+      }
+
       setSucursales((prev) =>
-        prev.map((item) => (item.id === formData.id ? formData : item))
+        prev.map((item) => (item.id_sucursal === data.id_sucursal ? data : item))
       );
     } else {
-      const newEntry = {
-        ...formData,
-        id: formData.id || `SUC-${String(sucursales.length + 1).padStart(3, "0")}`,
-      };
-      setSucursales((prev) => [...prev, newEntry]);
+      const { data, error: insertError } = await supabase
+        .from("sucursal")
+        .insert(values)
+        .select("id_sucursal, codigo, descripcion, estado, fecha_registro")
+        .single();
+
+      if (insertError) {
+        setError(`No se pudo crear la sucursal: ${insertError.message}`);
+        return false;
+      }
+
+      setSucursales((prev) => [...prev, data]);
     }
+
+    return true;
   };
 
   // Filtro de búsqueda
   const filteredSucursales = sucursales.filter((s) => {
     const term = searchTerm.toLowerCase();
     return (
-      s.nombre?.toLowerCase().includes(term) ||
-      s.direccion?.toLowerCase().includes(term) ||
-      s.encargado?.toLowerCase().includes(term)
+      s.codigo?.toLowerCase().includes(term) ||
+      s.descripcion?.toLowerCase().includes(term)
     );
   });
 
   // Columnas para la DataTable
   const columns = [
-    { header: "ID", accessor: "id" },
-    {
-      header: "SUCURSAL",
-      render: (s) => <span style={{ fontWeight: "600" }}>{s.nombre}</span>,
-    },
+    { header: "ID", accessor: "id_sucursal" },
     { header: "Código", accessor: "codigo" },
-    { header: "Descripción", accessor: "descriocion" },
-    { header: "fecha de registro", accessor: "registro" },
-    { header: "estado", accessor: "estado" }
+    { header: "Descripción", accessor: "descripcion" },
+    { header: "Fecha de registro", accessor: "fecha_registro" },
+    { header: "Estado", render: (s) => (s.estado ? "Activo" : "Inactivo") }
   ];
 
   return (
@@ -96,12 +136,18 @@ export default function Sucursales() {
         </button>
       </header>
 
+      {error && (
+        <p style={{ color: "#b91c1c", marginBottom: "1rem" }} role="alert">
+          {error}
+        </p>
+      )}
+
       <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
         <div style={{ position: "relative", flex: 1 }}>
           <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
           <input
             type="text"
-            placeholder="Buscar por Sucursal, Dirección o Encargado..."
+            placeholder="Buscar por código o descripción..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" }}
@@ -112,14 +158,12 @@ export default function Sucursales() {
       <DataTable columns={columns} data={filteredSucursales} onEdit={handleOpenEdit} />
 
       <EditModal
-        key={selectedSucursal ? selectedSucursal.id : "nueva-sucursal"}
+          key={selectedSucursal ? selectedSucursal.id_sucursal : "nueva-sucursal"}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveSucursal}
         title={selectedSucursal ? "Editar Sucursal" : "Nueva Sucursal"}
-        fields={editFields.map((field) =>
-          field.key === "id" ? { ...field, readOnly: !!selectedSucursal } : field
-        )}
+        fields={editFields}
         initialData={selectedSucursal}
       />
     </>
