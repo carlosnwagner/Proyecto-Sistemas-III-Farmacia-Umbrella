@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 
+// Agregamos initialData a las propiedades que recibe el componente
 export default function EditModal({ isOpen, onClose, onSave, title, fields, initialData }) {
-  const [formData, setFormData] = useState(() => initialData ?? {});
+  const [formData, setFormData] = useState({});
+
+  // Efecto FUNDAMENTAL para cargar los datos del registro a editar
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(initialData || {});
+    }
+  }, [isOpen, initialData]);
 
   if (!isOpen) return null;
 
@@ -10,11 +18,23 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    const saved = await onSave(formData);
-    if (saved !== false) onClose();
+    onSave(formData);
+    onClose();
   };
+
+  // Estilo común para inputs y selects para que se vean idénticos
+  const commonInputStyle = (isReadOnly) => ({
+    padding: "0.5rem 0.75rem",
+    borderRadius: "0.375rem",
+    border: "1px solid #d1d5db",
+    fontSize: "0.875rem",
+    outline: "none",
+    backgroundColor: isReadOnly ? "#f3f4f6" : "#ffffff",
+    width: "100%",
+    boxSizing: "border-box",
+  });
 
   return (
     <div
@@ -37,12 +57,12 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
           backgroundColor: "#ffffff",
           borderRadius: "0.75rem",
           width: "100%",
-          maxWidth: "600px", // Aumentamos un poco el ancho para las 2 columnas
-          maxHeight: "85vh",  // Limita la altura al 85% de la pantalla
+          maxWidth: "600px",
+          maxHeight: "85vh",
           display: "flex",
           flexDirection: "column",
           boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
-          overflow: "hidden", // Contiene los bordes redondeados
+          overflow: "hidden",
         }}
       >
         {/* Cabecera Fija */}
@@ -77,7 +97,7 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
           <div
             style={{
               padding: "1.5rem",
-              overflowY: "auto", // Activa el scroll vertical si el contenido excede el alto
+              overflowY: "auto",
               display: "grid",
               gridTemplateColumns: "repeat(2, 1fr)",
               gap: "1rem",
@@ -87,7 +107,6 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
               <div
                 key={field.key}
                 style={{
-                  // Si el campo es la descripción, toma el ancho de ambas columnas
                   gridColumn: field.key === "descripcion" ? "span 2" : "span 1",
                   display: "flex",
                   flexDirection: "column",
@@ -97,29 +116,32 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
                 <label style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>
                   {field.label}
                 </label>
-                <input
-                  type={field.type || "text"}
-                  value={field.type === "checkbox" ? undefined : formData[field.key] ?? ""}
-                  checked={field.type === "checkbox" ? Boolean(formData[field.key]) : undefined}
-                  placeholder={field.placeholder}
-                  onChange={(e) =>
-                    handleChange(
-                      field.key,
-                      field.type === "checkbox" ? e.target.checked : e.target.value
-                    )
-                  }
-                  disabled={field.readOnly}
-                  style={{
-                    padding: "0.5rem 0.75rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid #d1d5db",
-                    fontSize: "0.875rem",
-                    outline: "none",
-                    backgroundColor: field.readOnly ? "#f3f4f6" : "#ffffff",
-                    width: "100%",
-                    boxSizing: "border-box",
-                  }}
-                />
+
+                {/* AQUÍ ESTÁ LA MAGIA: Decidimos si pintar un <select> o un <input> */}
+                {field.type === "select" ? (
+                  <select
+                    value={formData[field.key] ?? ""}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    disabled={field.readOnly}
+                    style={commonInputStyle(field.readOnly)}
+                    required
+                  >
+                    <option value="" disabled>Seleccione una opción...</option>
+                    {field.options?.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={field.type || "text"}
+                    value={formData[field.key] ?? ""}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    disabled={field.readOnly}
+                    style={commonInputStyle(field.readOnly)}
+                  />
+                )}
               </div>
             ))}
           </div>
