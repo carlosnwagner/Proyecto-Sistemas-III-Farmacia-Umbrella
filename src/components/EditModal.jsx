@@ -18,10 +18,10 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave(formData);
-    onClose();
+    const saved = await onSave(formData);
+    if (saved !== false) onClose();
   };
 
   // Estilo común para inputs y selects para que se vean idénticos
@@ -136,10 +136,18 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
                 ) : (
                   <input
                     type={field.type || "text"}
-                    value={formData[field.key] ?? ""}
-                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    {...(field.type === "checkbox"
+                      ? {
+                          checked: Boolean(formData[field.key]),
+                          onChange: (e) => handleChange(field.key, e.target.checked),
+                        }
+                      : {
+                          value: formData[field.key] ?? "",
+                          onChange: (e) => handleChange(field.key, e.target.value),
+                        })}
                     disabled={field.readOnly}
                     style={commonInputStyle(field.readOnly)}
+                    required={field.required}
                   />
                 )}
               </div>
