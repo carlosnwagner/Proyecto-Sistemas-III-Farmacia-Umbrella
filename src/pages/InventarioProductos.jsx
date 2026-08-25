@@ -1,8 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx"; // 1. Importamos el modal
 import { Search, Plus } from "lucide-react";
+import { supabase } from '../lib/supabase.js'
 
+// Servicios backend
+import { createArticulo } from '../services/articulos.js';
+import { getRubros, getUnidadesMedida } from '../services/catalogos.js';
+
+// --------------------- Componentes UI ------------------------
 function VialGauge({ current, total, status }) {
   const percentage = Math.min(100, Math.max(0, (current / total) * 100));
 
@@ -67,6 +73,8 @@ function Badge({ children, variant = "default" }) {
   );
 }
 
+// ------------------- Fin Componentes UI ------------------------
+
 function StatCard({ title, value, subtitle, alert }) {
   return (
     <div
@@ -105,14 +113,33 @@ export default function InventarioMedicamentos() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
+  // Lectura de productos desde bd
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    // NOTA: Cambiá 'productos' por el nombre real de tu tabla si es distinto
+    const { data, error } = await supabase.from('articulo').select('*');
+    if (error) {
+      console.error("Error al traer datos:", error);
+    } else {
+      setProducts(data || []);
+    }
+  };
+
   // Campos para el formulario dinámico del Modal
   const editFields = [
+    { key: "codigo", label: "Código / ID" },
+    { key: "codigo_barras", label: "Código de Barras" },
     { key: "nombre", label: "Nombre del Producto" },
     { key: "descripcion", label: "Descripción" },
     { key: "lote", label: "Lote" },
     { key: "categoria", label: "Categoría" },
+    { key: "unidad", label: "Unidad (ej. Kg, U)" },
     { key: "stock", label: "Stock Inicial", type: "number" },
-    { key: "precio", label: "Precio", type: "number" },
+    { key: "costo", label: "Costo", type: "number" },
+    { key: "precio_venta", label: "Precio de Venta", type: "number" },
     { key: "fechaVencimiento", label: "Fecha de Vencimiento", type: "date" },
     { key: "sucursal", label: "Sucursal" },
   ];
