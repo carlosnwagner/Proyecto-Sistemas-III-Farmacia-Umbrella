@@ -6,6 +6,7 @@ import { Plus, Search } from "lucide-react";
 
 export default function Sucursales() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("todos");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSucursal, setSelectedSucursal] = useState(null);
   const [error, setError] = useState("");
@@ -121,19 +122,35 @@ export default function Sucursales() {
 
   // Filtro de búsqueda
   const filteredSucursales = sucursales.filter((s) => {
-    const term = searchTerm.toLowerCase();
-    return (
+    const term = searchTerm.trim().toLowerCase();
+    const matchesSearch = (
       s.codigo?.toLowerCase().includes(term) ||
       s.descripcion?.toLowerCase().includes(term)
     );
+    const matchesStatus =
+      statusFilter === "todos" || s.estado === (statusFilter === "activo");
+
+    return matchesSearch && matchesStatus;
   });
+
+  const formatDate = (date) => {
+    if (!date) return "Sin fecha";
+
+    const parsedDate = new Date(date);
+    if (Number.isNaN(parsedDate.getTime())) return "Fecha inválida";
+
+    return new Intl.DateTimeFormat("es-AR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(parsedDate);
+  };
 
   // Columnas para la DataTable
   const columns = [
     { header: "ID", accessor: "id_sucursal" },
     { header: "Código", accessor: "codigo" },
     { header: "Descripción", accessor: "descripcion" },
-    { header: "Fecha de registro", accessor: "fecha_registro" },
+    { header: "Fecha de registro", render: (s) => formatDate(s.fecha_registro) },
     { header: "Estado", render: (s) => (s.estado ? "Activo" : "Inactivo") }
   ];
 
@@ -169,7 +186,7 @@ export default function Sucursales() {
         </p>
       )}
 
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", alignItems: "center" }}>
         <div style={{ position: "relative", flex: 1 }}>
           <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
           <input
@@ -180,6 +197,16 @@ export default function Sucursales() {
             style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" }}
           />
         </div>
+        <select
+          aria-label="Filtrar sucursales por estado"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          style={{ padding: "0.625rem 0.75rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", backgroundColor: "#ffffff", color: "#374151", outline: "none", minWidth: "10rem" }}
+        >
+          <option value="todos">Todos los estados</option>
+          <option value="activo">Activo</option>
+          <option value="inactivo">Inactivo</option>
+        </select>
       </div>
 
       <DataTable columns={columns} data={filteredSucursales} onEdit={handleOpenEdit} />
