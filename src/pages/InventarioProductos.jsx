@@ -5,7 +5,7 @@ import { Search, Plus } from "lucide-react";
 import { supabase } from '../lib/supabase.js'
 
 // Servicios backend
-import { createArticulo } from '../services/articulos.js';
+import { createArticulo, updateArticulo } from '../services/articulos.js';
 import { getRubros, getUnidadesMedida } from '../services/catalogos.js';
 
 // --------------------- Componentes UI ------------------------
@@ -73,8 +73,6 @@ function Badge({ children, variant = "default" }) {
   );
 }
 
-// ------------------- Fin Componentes UI ------------------------
-
 function StatCard({ title, value, subtitle, alert }) {
   return (
     <div
@@ -103,23 +101,26 @@ function StatCard({ title, value, subtitle, alert }) {
     </div>
   );
 }
+// ------------------- Fin Componentes UI ------------------------
 
-export default function InventarioMedicamentos() {
+export default function InventarioProductos() {
   const [products, setProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todas");
 
-  // 2. Estados para controlar el Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
-  // Lectura de productos desde bd
+  const [rubros, setRubros] = useState([]);
+  const [unidades, setUnidades] = useState([]);
+
+  // Carga de datos inicial
   useEffect(() => {
     fetchProducts();
+    cargarCatalogos();
   }, []);
 
   const fetchProducts = async () => {
-    // NOTA: Cambiá 'productos' por el nombre real de tu tabla si es distinto
     const { data, error } = await supabase.from('articulo').select('*');
     if (error) {
       console.error("Error al traer datos:", error);
@@ -128,23 +129,36 @@ export default function InventarioMedicamentos() {
     }
   };
 
-  // Campos para el formulario dinámico del Modal
-  const editFields = [
-    { key: "codigo", label: "Código / ID" },
-    { key: "codigo_barras", label: "Código de Barras" },
+  const cargarCatalogos = async () => {
+    const {data: dataRubros} = await getRubros();
+    const {data: dataUnidades} = await getUnidadesMedida();
+
+    setRubros(dataRubros);
+    setUnidades(dataUnidades);
+  };
+
+  // CAMPOS DE MODAL
+  const editFields = useMemo(() => [
+    { key: "codigo", label: "Código Interno", readOnly: !!selectedProduct },
+    { key: "codigo_barras", label: "Código de Barras", readOnly: !!selectedProduct },
     { key: "nombre", label: "Nombre del Producto" },
     { key: "descripcion", label: "Descripción" },
-    { key: "lote", label: "Lote" },
-    { key: "categoria", label: "Categoría" },
-    { key: "unidad", label: "Unidad (ej. Kg, U)" },
-    { key: "stock", label: "Stock Inicial", type: "number" },
-    { key: "costo", label: "Costo", type: "number" },
+    { 
+      key: "id_rubro", 
+      label: "Categoría / Rubro", 
+      type: "select",
+      options: rubros.map(r => ({ value: r.id_rubro, label: r.nombre })) 
+    },
+    { 
+      key: "id_unidad", 
+      label: "Unidad de Medida", 
+      type: "select", 
+      options: unidades.map(u => ({ value: u.id_unidad, label: u.nombre })) 
+    },
+    { key: "precio_costo", label: "Costo", type: "number" },
     { key: "precio_venta", label: "Precio de Venta", type: "number" },
-    { key: "fechaVencimiento", label: "Fecha de Vencimiento", type: "date" },
-    { key: "sucursal", label: "Sucursal" },
-  ];
+  ], [rubros, unidades]);
 
-  // Funciones de apertura
   const handleOpenCreate = () => {
     setSelectedProduct(null);
     setIsModalOpen(true);
@@ -155,26 +169,49 @@ export default function InventarioMedicamentos() {
     setIsModalOpen(true);
   };
 
-  // Guardar datos
-  const handleSaveProduct = (formData) => {
+  // GUARDADO DE DATOS
+  const handleSaveProduct = async (formData) => {
+
+    const payload = {
+      id_rubro: Number(formData.id_rubro),
+      id_unidad: Number(formData.id_unidad),
+      codigo: formData.codigo,
+      codigo_barras: formData.codigo_barras,
+      nombre: formData.nombre,
+      descripcion: formData.descripcion,
+      precio_costo: formData.precio_costo,
+      precio_venta: formData.precio_venta
+    };
+
     if (selectedProduct) {
-      setProducts((prev) =>
-        prev.map((item) => (item === selectedProduct ? formData : item))
-      );
+      // --- MODO EDICIÓN ---
+      const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
+
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        alert("¡Producto actualizado con éxito!");
+        fetchProducts();
+        setIsModalOpen(false);
+      }
+      
     } else {
-      const newEntry = {
-        ...formData,
-        stock: Number(formData.stock) || 0,
-        precio: Number(formData.precio) || 0,
-        diasVencimiento: 120, // Valor de prueba predeterminado
-        estadoStock: "normal",
-      };
-      setProducts((prev) => [...prev, newEntry]);
+      // --- MODO CREACIÓN ---
+      const { error } = await createArticulo(payload);
+
+      if (error) {
+        alert(`Error en el campo ${error.field}: ${error.message}`);
+      } else {
+        alert("¡Producto registrado con éxito!");
+        fetchProducts(); 
+        setIsModalOpen(false); 
+      }
     }
   };
 
+  // Adaptación de Filtros
   const categories = useMemo(() => {
-    const cats = new Set(products.map((p) => p.categoria).filter(Boolean));
+    const cats = new Set(products.map((p) => p.id_rubro).filter(Boolean));
     return ["Todas", ...Array.from(cats)];
   }, [products]);
 
@@ -183,24 +220,22 @@ export default function InventarioMedicamentos() {
       const matchesSearch =
         p.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.lote?.toLowerCase().includes(searchTerm.toLowerCase());
+        p.codigo_barras?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory =
-        selectedCategory === "Todas" || p.categoria === selectedCategory;
+        selectedCategory === "Todas" || String(p.id_rubro) === selectedCategory;
       return matchesSearch && matchesCategory;
     });
   }, [products, searchTerm, selectedCategory]);
 
   const stats = useMemo(() => {
     const total = products.length;
-    const stockBajo = products.filter((p) => p.estadoStock === "bajo" || p.estadoStock === "crítico").length;
-    const proximosVencer = products.filter((p) => p.diasVencimiento <= 90).length;
-    const valorTotal = products.reduce((acc, p) => acc + (p.precio || 0) * (p.stock || 0), 0);
-
-    return { total, stockBajo, proximosVencer, valorTotal };
+    const activos = products.filter(p => p.estado).length;
+    const valorTotal = products.reduce((acc, p) => acc + (p.precio_costo || 0), 0);
+    return { total, stockBajo: 0, proximosVencer: 0, valorTotal };
   }, [products]);
 
   const columns = [
-    { header: "ID", accessor: "codigo" },
+    /*{ header: "ID", accessor: "codigo" },
     { header: "NOMBRE", render: (p) => <span style={{ fontWeight: "600" }}>{p.nombre}</span> },
     { header: "DESCRIPCIÓN", accessor: "descripcion" },
     { header: "LOTE", accessor: "lote" },
@@ -220,7 +255,22 @@ export default function InventarioMedicamentos() {
       ),
     },
     { header: "PRECIO", render: (p) => <span style={{ fontWeight: "600" }}>${p.precio}</span> },
-    { header: "SUCURSAL", accessor: "sucursal" },
+    { header: "SUCURSAL", accessor: "sucursal" },*/
+
+    { header: "CÓDIGO", accessor: "codigo" },
+    { header: "C. BARRAS", accessor: "codigo_barras" },
+    { header: "NOMBRE", render: (p) => <span style={{ fontWeight: "600" }}>{p.nombre}</span> },
+    { header: "ID RUBRO", accessor: "id_rubro" },
+    { header: "COSTO", render: (p) => <span>${p.precio_costo}</span> },
+    { header: "PRECIO VENTA", render: (p) => <span style={{ fontWeight: "600", color: "#166534" }}>${p.precio_venta}</span> },
+    {
+      header: "ESTADO",
+      render: (p) => (
+        <Badge variant={p.estado === "Activo" ? "success" : "default"}>
+          {p.estado || "Activo"}
+        </Badge>
+      ),
+    },
   ];
 
   return (
@@ -228,74 +278,27 @@ export default function InventarioMedicamentos() {
       {/* Encabezado */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>
-            Inventario
-          </h1>
-          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>
-            {stats.total} productos registrados
-          </p>
+          <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Productos</h1>
+          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>{stats.total} productos registrados</p>
         </div>
-        <button
-          onClick={handleOpenCreate} // 3. Se asignó la función onClick al botón
-          style={{
-            backgroundColor: "#65482b",
-            color: "#ffffff",
-            border: "none",
-            padding: "0.625rem 1.25rem",
-            borderRadius: "0.5rem",
-            fontWeight: "600",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            cursor: "pointer",
-          }}
-        >
+        <button onClick={handleOpenCreate} style={{ backgroundColor: "#65482b", color: "#ffffff", border: "none", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
           <Plus size={18} /> Nuevo producto
         </button>
       </header>
 
       {/* Tarjetas */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
-        <StatCard title="PRODUCTOS ACTIVOS" value={stats.total} subtitle="En categorías" />
-        <StatCard title="STOCK BAJO / CRÍTICO" value={stats.stockBajo} subtitle="Requieren reposición" alert={stats.stockBajo > 0} />
-        <StatCard title="PRÓXIMOS A VENCER" value={stats.proximosVencer} subtitle="En 90 días o menos" alert={stats.proximosVencer > 0} />
-        <StatCard title="VALOR EN INVENTARIO" value={`$${stats.valorTotal.toLocaleString()}`} subtitle="Precio de lista" />
+        <StatCard title="PRODUCTOS REGISTRADOS" value={stats.total} subtitle="Total histórico" />
+        <StatCard title="PRODUCTOS ACTIVOS" value={stats.activos} subtitle="Disponibles" />
+        <StatCard title="VALOR COSTO INVENTARIO" value={`$${stats.valorTotal.toLocaleString()}`} subtitle="Inversión total" />
       </div>
 
       {/* Filtros */}
       <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
         <div style={{ position: "relative", flex: 1 }}>
           <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, código, lote..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "0.625rem 0.625rem 0.625rem 2.5rem",
-              borderRadius: "0.5rem",
-              border: "1px solid #d1d5db",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-          />
+          <input type="text" placeholder="Buscar por nombre o código..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" }} />
         </div>
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          style={{
-            padding: "0.625rem 1rem",
-            borderRadius: "0.5rem",
-            border: "1px solid #d1d5db",
-            backgroundColor: "#ffffff",
-            outline: "none",
-          }}
-        >
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
       </div>
 
       {/* Tabla Modularizada */}

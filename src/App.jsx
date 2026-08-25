@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import MainLayout from "./components/MainLayout.jsx";
-import Inventario from "./pages/Inventario.jsx";
+import Inventario from "./pages/InventarioProductos.jsx";
 import Proveedores from "./pages/Proveedores.jsx";
 import Sucursales from "./pages/Sucursales.jsx";
 import Depositos from "./pages/Depositos.jsx";

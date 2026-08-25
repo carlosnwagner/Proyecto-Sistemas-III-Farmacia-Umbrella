@@ -187,3 +187,46 @@ export async function createArticulo(payload) {
 
   return { data, error: null };
 }
+
+
+/**
+ * Modifica un artículo existente en la base de datos.
+ *
+ * @param {number} idArticulo - El ID único (primary key) del artículo a editar.
+ * @param {ArticuloInput} payload - Los datos del formulario.
+ */
+export async function updateArticulo(idArticulo, payload) {
+  // Reutilizacion de las validaciones
+  const { valid, errors } = validateArticuloPayload(payload);
+  if (!valid) {
+    return {
+      data: null,
+      error: { field: null, message: 'Revisá los campos marcados.', fieldErrors: errors },
+    };
+  }
+
+  const updatePayload = {
+    id_rubro: payload.id_rubro,
+    id_unidad: payload.id_unidad,
+    codigo: payload.codigo.trim(),
+    codigo_barras: payload.codigo_barras?.trim() || null,
+    nombre: payload.nombre.trim(),
+    descripcion: payload.descripcion?.trim() || null,
+    precio_costo: Number(payload.precio_costo),
+    precio_venta: Number(payload.precio_venta),
+  };
+
+  // UPDATE en Supabase 
+  const { data, error } = await supabase
+    .from('articulo')
+    .update(updatePayload)
+    .eq('id_articulo', idArticulo)
+    .select()
+    .single();
+
+  if (error) {
+    return { data: null, error: parseSupabaseError(error) };
+  }
+
+  return { data, error: null };
+}
