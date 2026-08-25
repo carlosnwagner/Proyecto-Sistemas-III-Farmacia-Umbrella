@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
 import { Search, ArrowLeft, PackageMinus } from "lucide-react";
+import { supabase } from "../lib/supabase.js";
 
 // Componente para la barra de capacidad/stock
 function VialGauge({ current, minimum, maxCapacity = 1000 }) {
@@ -101,27 +102,82 @@ function StatCard({ title, value, subtitle, alert }) {
 
 // COMPONENTE PRINCIPAL
 // Recibe "onBack" por props para simular la navegación hacia atrás
-export default function InventarioDeposito({ onBack = () => alert("Volver a depósitos") }) {
+export default function InventarioDeposito({ deposito, onBack = () => alert("Volver a depósitos") }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todas");
-
-  // Información del depósito actual (Simulado)
-  const [depositoInfo] = useState({
-    codigo: "DEP-001",
-    descripcion: "Depósito Central Planta Baja"
-  });
-
-  // Datos simulados de los artículos ASOCIADOS a este depósito
-  const [inventory, setInventory] = useState([
-    { id_relacion: 1, codigo: "ART-101", nombre: "Paracetamol 500mg", categoria: "Analgésicos", stock_actual: 850, stock_minimo: 200, estado: "Activo" },
-    { id_relacion: 2, codigo: "ART-102", nombre: "Ibuprofeno 400mg", categoria: "Analgésicos", stock_actual: 150, stock_minimo: 300, estado: "Activo" }, // Stock Bajo
-    { id_relacion: 3, codigo: "ART-103", nombre: "Amoxicilina 500mg", categoria: "Antibióticos", stock_actual: 0, stock_minimo: 100, estado: "Inactivo" }, // Sin stock
-    { id_relacion: 4, codigo: "ART-104", nombre: "Omeprazol 20mg", categoria: "Gástricos", stock_actual: 400, stock_minimo: 100, estado: "Activo" }
-  ]);
+  const [inventory, setInventory] = useState([]);
+  const [availableArticles, setAvailableArticles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   // Estados del Modal de Edición (Generalmente aquí solo se edita el stock mínimo o estado)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const depositoId = deposito?.id_deposito;
+
+  const fetchInventory = useCallback(async () => {
+    if (!depositoId) return;
+    setLoading(true);
+    setError("");
+
+    const { data, error: fetchError } = await supabase
+      .from("articulopordeposito")
+      .select(`
+        id_articulo_deposito,
+        id_articulo,
+        stock_actual,
+        stock_minimo,
+        estado,
+        articulo:id_articulo ( codigo, nombre )
+      `)
+      .eq("id_deposito", depositoId)
+      .order("id_articulo_deposito", { ascending: true });
+
+    if (fetchError) {
+      setError("No se pudo cargar el inventario del depósito.");
+      setInventory([]);
+    } else {
+      setInventory((data || []).map((item) => ({
+        ...item,
+        codigo: item.articulo?.codigo,
+        nombre: item.articulo?.nombre,
+        categoria: item.articulo?.categoria || "Sin categoría",
+        estado: item.estado === true || item.estado === "true" ? "Activo" : "Inactivo",
+      })));
+    }
+
+    setLoading(false);
+  }, [depositoId]);
+
+  useEffect(() => {
+    // La consulta sincroniza el estado local con Supabase al cambiar el depósito.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchInventory();
+  }, [fetchInventory]);
+
+  async function openStockAdjustment() {
+    const { data, error: articlesError } = await supabase
+      .from("articulo")
+      .select("id_articulo, codigo, nombre")
+      .eq("estado", true)
+      .order("nombre", { ascending: true });
+
+    if (articlesError) {
+      alert("No se pudieron cargar los productos: " + articlesError.message);
+      return;
+    }
+
+    const associatedIds = new Set(inventory.map((item) => item.id_articulo));
+    setAvailableArticles((data || []).filter((article) => !associatedIds.has(article.id_articulo)));
+    setSelectedItem({ id_articulo: "", stock_actual: 0, stock_minimo: 10 });
+    setIsModalOpen(true);
+  }
+
+  const adjustmentFields = [
+    { key: "id_articulo", label: "Producto", type: "select", options: availableArticles.map((article) => ({ value: String(article.id_articulo), label: `[${article.codigo}] ${article.nombre}` })) },
+    { key: "stock_actual", label: "Stock Inicial", type: "number" },
+    { key: "stock_minimo", label: "Stock Mínimo Permitido", type: "number" },
+  ];
 
   const editFields = [
     { key: "codigo", label: "Código", readOnly: true },
@@ -135,11 +191,57 @@ export default function InventarioDeposito({ onBack = () => alert("Volver a dep�
     setIsModalOpen(true);
   };
 
-  const handleSaveItem = (formData) => {
+  const handleSaveItem = async (formData) => {
+    if (!formData.id_articulo_deposito) {
+      const stockInicial = Number(formData.stock_actual) || 0;
+      const { data: association, error: insertError } = await supabase
+        .from("articulopordeposito")
+        .insert({
+          id_articulo: Number(formData.id_articulo),
+          id_deposito: deposito.id_deposito,
+          stock_actual: stockInicial,
+          stock_minimo: Number(formData.stock_minimo) || 0,
+          estado: true,
+          fecha_registro: new Date().toISOString(),
+        })
+        .select("id_articulo_deposito")
+        .single();
+
+      if (insertError) {
+        alert("No se pudo ajustar el stock: " + insertError.message);
+        return false;
+      }
+
+      if (stockInicial > 0) {
+        await supabase.from("movimientostock").insert({
+          id_articulo_deposito: association.id_articulo_deposito,
+          id_lote: null,
+          tipo_movimiento: "INGRESO_INICIAL",
+          cantidad: stockInicial,
+          fecha_movimiento: new Date().toISOString(),
+        });
+      }
+
+      await fetchInventory();
+      return true;
+    }
+
+    const { error: updateError } = await supabase
+      .from("articulopordeposito")
+      .update({
+        stock_minimo: Number(formData.stock_minimo) || 0,
+        estado: formData.estado === "Activo",
+      })
+      .eq("id_articulo_deposito", formData.id_articulo_deposito);
+
+    if (updateError) {
+      alert("No se pudieron guardar los parámetros: " + updateError.message);
+      return false;
+    }
+
     setInventory((prev) =>
-      prev.map((item) => (item.id_relacion === formData.id_relacion ? { ...item, ...formData, stock_minimo: Number(formData.stock_minimo) } : item))
+      prev.map((item) => (item.id_articulo_deposito === formData.id_articulo_deposito ? { ...item, ...formData, stock_minimo: Number(formData.stock_minimo) } : item))
     );
-    setIsModalOpen(false);
   };
 
   // Lógica de Filtros y Estadísticas
@@ -180,7 +282,7 @@ export default function InventarioDeposito({ onBack = () => alert("Volver a dep�
     {
       header: "ESTADO",
       render: (p) => {
-        let variant = "default";
+        let variant;
         let label = p.estado;
         
         if (p.estado === "Inactivo") variant = "danger";
@@ -208,15 +310,15 @@ export default function InventarioDeposito({ onBack = () => alert("Volver a dep�
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "2rem" }}>
         <div>
           <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>
-            Inventario: {depositoInfo.codigo}
+            Inventario: {deposito?.codigo}
           </h1>
           <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>
-            {depositoInfo.descripcion} — {stats.total} productos asociados
+            {deposito?.descripcion} — {stats.total} productos asociados
           </p>
         </div>
         
         {/* Aquí podrías agregar un botón para movimientos rápidos o auditorías si lo necesitas */}
-        <button style={{ backgroundColor: "#ffffff", color: "#65482b", border: "1px solid #d1d5db", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+        <button onClick={openStockAdjustment} style={{ backgroundColor: "#ffffff", color: "#65482b", border: "1px solid #d1d5db", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
           <PackageMinus size={18} /> Ajuste de Stock
         </button>
       </header>
@@ -252,17 +354,22 @@ export default function InventarioDeposito({ onBack = () => alert("Volver a dep�
         </select>
       </div>
 
-      {/* Tabla Modularizada (Reutilizando tu DataTable) */}
-      <DataTable columns={columns} data={filteredInventory} onEdit={handleOpenEdit} />
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "3rem", color: "#6b7280" }}>Cargando inventario del depósito...</div>
+      ) : error ? (
+        <div style={{ textAlign: "center", padding: "3rem", color: "#991b1b" }}>{error}</div>
+      ) : (
+        <DataTable columns={columns} data={filteredInventory} onEdit={handleOpenEdit} />
+      )}
 
       {/* Modal para Editar Parámetros del Stock */}
       <EditModal
-        key={selectedItem ? selectedItem.id_relacion : "editar-stock"}
+        key={selectedItem ? (selectedItem.id_articulo_deposito || "nuevo") : "editar-stock"}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveItem}
-        title="Modificar Parámetros de Stock"
-        fields={editFields}
+        title={selectedItem?.id_articulo_deposito ? "Modificar Parámetros de Stock" : "Ajuste de Stock"}
+        fields={selectedItem?.id_articulo_deposito ? editFields : adjustmentFields}
         initialData={selectedItem}
       />
     </div>
