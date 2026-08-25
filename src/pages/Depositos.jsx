@@ -68,7 +68,6 @@ export default function Depositos() {
 
   // 2. CONFIGURACIÓN DE CAMPOS DEL MODAL
   const editFields = [
-  { key: "id_deposito", label: "ID Depósito", type: "text", readOnly: true },
   { key: "codigo", label: "Depósito (Código)", type: "text" },
   { 
     key: "id_sucursal", 
@@ -364,7 +363,7 @@ const handleSaveDeposito = async (formData) => {
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveDeposito}
         title={selectedDeposito ? "Editar Depósito" : "Nuevo Depósito"}
-        fields={editFields.filter((f) => selectedDeposito || f.key !== "id_deposito")} 
+        fields={editFields}
         initialData={selectedDeposito}
       />
 

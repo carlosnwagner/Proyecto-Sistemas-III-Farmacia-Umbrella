@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import EditModal from "../components/EditModal.jsx";
-import { Plus, Search, Trash2, Edit2 } from "lucide-react";
+import { Plus, Search, Edit2 } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
 
 export default function Sucursales() {
@@ -11,10 +11,6 @@ export default function Sucursales() {
   
   const [sucursales, setSucursales] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Estados para controlar el modo de selección y los elementos elegidos
-  const [isSelecting, setIsSelecting] = useState(false);
-  const [selectedIds, setSelectedIds] = useState([]);
 
   // 1. OBTENER SUCURSALES DESDE SUPABASE
   const fetchSucursales = async () => {
@@ -39,7 +35,6 @@ export default function Sucursales() {
 
   // 2. CAMPOS DEL MODAL
   const editFields = [
-    { key: "id_sucursal", label: "ID Sucursal", readOnly: true },
     { key: "codigo", label: "Código (Ej: SUC-001)" },
     { key: "descripcion", label: "Descripción" },
     { 
@@ -120,64 +115,7 @@ export default function Sucursales() {
     }
   };
 
-  // 4. ELIMINAR INDIVIDUAL O MASIVO
-  const handleDeleteSingle = async (id_sucursal) => {
-    if (!window.confirm("¿Estás seguro que desea eliminar esta sucursal?")) return;
-
-    try {
-      const { error } = await supabase
-        .from('sucursal')
-        .delete()
-        .eq('id_sucursal', id_sucursal);
-
-      if (error) throw error;
-
-      setSucursales((prev) => prev.filter((item) => item.id_sucursal !== id_sucursal));
-      setSelectedIds((prev) => prev.filter((id) => id !== id_sucursal));
-    } catch (error) {
-      console.error("Error al eliminar:", error.message);
-      alert("No se pudo eliminar el registro.");
-    }
-  };
-
-  const handleBatchDelete = async () => {
-    if (selectedIds.length === 0) return;
-    if (!window.confirm(`¿Estás seguro que deseas eliminar las ${selectedIds.length} sucursales seleccionadas?`)) return;
-
-    try {
-      const { error } = await supabase
-        .from('sucursal')
-        .delete()
-        .in('id_sucursal', selectedIds);
-
-      if (error) throw error;
-
-      setSucursales((prev) => prev.filter((item) => !selectedIds.includes(item.id_sucursal)));
-      setSelectedIds([]);
-      setIsSelecting(false);
-    } catch (error) {
-      console.error("Error en borrado masivo:", error.message);
-      alert("No se pudieron eliminar los registros seleccionados.");
-    }
-  };
-
-  // 5. MANEJO DE CHECKBOXES
-  const handleToggleSelectAll = () => {
-    const allIds = filteredSucursales.map((s) => s.id_sucursal);
-    if (selectedIds.length === allIds.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(allIds);
-    }
-  };
-
-  const handleSelectOne = (id) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
-
-  // 6. FILTRAR BÚSQUEDA Y ESTADO
+  // 4. FILTRAR BÚSQUEDA Y ESTADO
   const filteredSucursales = sucursales.filter((s) => {
     const term = searchTerm.toLowerCase();
     const matchesSearch = 
@@ -192,19 +130,16 @@ export default function Sucursales() {
     return matchesSearch && matchesEstado;
   });
 
-  const allSelected = filteredSucursales.length > 0 && selectedIds.length === filteredSucursales.length;
-
   return (
     <>
-      {/* HEADER CON "+ Agregar" A LA IZQUIERDA Y "Borrar" A SU DERECHA */}
+      {/* HEADER */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
           <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Sucursales</h1>
           <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>{sucursales.length} sucursales registradas</p>
         </div>
         
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          {/* Botón de Agregar primero */}
+        <div>
           <button
             onClick={handleOpenCreate}
             style={{
@@ -221,28 +156,6 @@ export default function Sucursales() {
             }}
           >
             <Plus size={18} /> Agregar
-          </button>
-
-          {/* Botón de Borrar después */}
-          <button
-            onClick={() => {
-              setIsSelecting(!isSelecting);
-              if (isSelecting) setSelectedIds([]);
-            }}
-            style={{
-              backgroundColor: isSelecting ? "#fee2e2" : "#ffffff",
-              color: isSelecting ? "#991b1b" : "#374151",
-              border: "1px solid #d1d5db",
-              padding: "0.625rem 1.25rem",
-              borderRadius: "0.5rem",
-              fontWeight: "600",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              cursor: "pointer",
-            }}
-          >
-            <Trash2 size={18} /> {isSelecting ? "Cancelar Selección" : "Borrar"}
           </button>
         </div>
       </header>
@@ -278,7 +191,6 @@ export default function Sucursales() {
           <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.9rem" }}>
             <thead style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb", color: "#4b5563", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
               <tr>
-                {isSelecting && <th style={{ padding: "0.75rem 1rem", width: "40px" }}></th>}
                 <th style={{ padding: "0.75rem 1rem" }}>ID</th>
                 <th style={{ padding: "0.75rem 1rem" }}>Código</th>
                 <th style={{ padding: "0.75rem 1rem" }}>Descripción</th>
@@ -290,34 +202,23 @@ export default function Sucursales() {
             <tbody>
               {filteredSucursales.length === 0 ? (
                 <tr>
-                  <td colSpan={isSelecting ? 7 : 6} style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
                     No se encontraron sucursales registradas.
                   </td>
                 </tr>
               ) : (
                 filteredSucursales.map((s) => {
                   const isActivo = s.estado === true || s.estado === "Activo" || s.estado === 1;
-                  const isChecked = selectedIds.includes(s.id_sucursal);
 
                   return (
                     <tr 
                       key={s.id_sucursal} 
                       style={{ 
                         borderBottom: "1px solid #e5e7eb", 
-                        backgroundColor: isChecked ? "#f0fdf4" : "#ffffff",
+                        backgroundColor: "#ffffff",
                         transition: "background-color 0.15s ease"
                       }}
                     >
-                      {isSelecting && (
-                        <td style={{ padding: "1rem" }}>
-                          <input 
-                            type="checkbox" 
-                            checked={isChecked}
-                            onChange={() => handleSelectOne(s.id_sucursal)}
-                            style={{ cursor: "pointer" }}
-                          />
-                        </td>
-                      )}
                       <td style={{ padding: "1rem", color: "#111827", fontWeight: "500" }}>{s.id_sucursal}</td>
                       <td style={{ padding: "1rem", color: "#111827" }}>{s.codigo}</td>
                       <td style={{ padding: "1rem", color: "#111827", fontWeight: "600" }}>{s.descripcion}</td>
@@ -349,13 +250,6 @@ export default function Sucursales() {
                           >
                             <Edit2 size={16} />
                           </button>
-                          <button
-                            onClick={() => handleDeleteSingle(s.id_sucursal)}
-                            style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444" }}
-                            title="Eliminar"
-                          >
-                            <Trash2 size={16} />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -365,42 +259,6 @@ export default function Sucursales() {
             </tbody>
           </table>
           
-          {/* BARRA INFERIOR */}
-          {isSelecting && (
-            <div style={{ padding: "0.75rem 1.5rem", backgroundColor: "#f9fafb", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem", color: "#374151", fontWeight: "600" }}>
-                  <input 
-                    type="checkbox" 
-                    onChange={handleToggleSelectAll}
-                    checked={allSelected}
-                    style={{ cursor: "pointer" }}
-                  />
-                  Seleccionar todas
-                </label>
-                <span style={{ fontSize: "0.85rem", color: "#6b7280", marginLeft: "1rem" }}>
-                  Seleccionadas: <strong>{selectedIds.length}</strong> de {filteredSucursales.length}
-                </span>
-              </div>
-              
-              <button
-                onClick={handleBatchDelete}
-                disabled={selectedIds.length === 0}
-                style={{
-                  backgroundColor: selectedIds.length > 0 ? "#ef4444" : "#f3f4f6",
-                  color: selectedIds.length > 0 ? "#ffffff" : "#9ca3af",
-                  border: "none",
-                  padding: "0.5rem 1rem",
-                  borderRadius: "0.375rem",
-                  fontWeight: "600",
-                  fontSize: "0.85rem",
-                  cursor: selectedIds.length > 0 ? "pointer" : "not-allowed"
-                }}
-              >
-                Eliminar Seleccionadas ({selectedIds.length})
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -411,9 +269,7 @@ export default function Sucursales() {
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveSucursal}
         title={selectedSucursal ? "Editar Sucursal" : "Nueva Sucursal"}
-        fields={editFields.map((field) =>
-          field.key === "id_sucursal" ? { ...field, readOnly: !!selectedSucursal } : field
-        )}
+        fields={editFields}
         initialData={selectedSucursal}
       />
     </>
