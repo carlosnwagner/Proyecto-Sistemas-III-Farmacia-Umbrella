@@ -30,7 +30,7 @@ export default function App() {
           <Route path="/inventario" element={<Inventario />} />
           <Route path="/pedidos" element={<PaginaEnConstruccion titulo="Pedidos" />} />
           <Route path="/proveedores" element={<Proveedores />} />
-          <Route path="/pago-proveedores" element={<RegistarPagoProveedor />} />
+          <Route path="/pagos-proveedores" element={<RegistarPagoProveedor titulo="Pago Proveedor" />} />
           <Route path="/sucursales" element={<Sucursales />} />
           <Route path="/depositos" element={<Depositos />} />
           <Route path="/ventas" element={<PaginaEnConstruccion titulo="Ventas" />} />

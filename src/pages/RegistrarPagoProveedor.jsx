@@ -84,6 +84,7 @@ export default function RegistrarPagoProveedor() {
   const importeTotal = aplicaciones.reduce((suma, a) => suma + a.importe_aplicado, 0).toFixed(2);
 
   return (
+    <>
     <div className="pagos-pagina">
       <div className="contenedor-principal">
         {/* Título principal igual al inventario */}
@@ -197,5 +198,6 @@ export default function RegistrarPagoProveedor() {
         </div>
       </div>
     </div>
+    </>
   );
 }
