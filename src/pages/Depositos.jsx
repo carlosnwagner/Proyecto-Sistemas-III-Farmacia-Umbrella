@@ -180,7 +180,7 @@ const handleSaveDeposito = async (formData) => {
 
     // Validar duplicados en articulopordeposito
     const { data: existente } = await supabase
-      .from("articulopordeposito")
+      .from("articulo_deposito")
       .select("id_articulo_deposito")
       .eq("id_articulo", formDataAsociar.id_articulo)
       .eq("id_deposito", depositoAAsociar.id_deposito)
@@ -195,7 +195,7 @@ const handleSaveDeposito = async (formData) => {
     const stockMinimo = parseInt(formDataAsociar.stock_minimo) || 0;
 
     const { data: nuevaAsociacion, error: errInsert } = await supabase
-      .from("articulopordeposito")
+      .from("articulo_deposito")
       .insert([
         {
           id_articulo: parseInt(formDataAsociar.id_articulo),
