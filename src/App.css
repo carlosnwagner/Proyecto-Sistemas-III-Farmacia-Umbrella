@@ -1,18 +1,20 @@
-/* === ESTILO COMPLETO FARMACIA UMBRELLA — ACTUALIZADO === */
+/* === ESTILO UNIFICADO FARMACIA UMBRELLA — COMPATIBLE CON COMPONENTES DEL EQUIPO === */
 :root {
-  --fondo-pagina: #F8F5F0;
-  --fondo-tarjeta: #FFFFFF;
-  --verde-oscuro: #4A7C59;
-  --marron-boton: #704230;    /* Marrón del botón "+ Nuevo producto" de la foto */
-  --marron-oscuro: #5C4A3B;   /* Títulos principales, negrita */
-  --marron-claro: #8A7A6C;    /* Texto secundario */
+  --fondo-pagina: #f9fafb;
+  --fondo-tarjeta: #ffffff;
+  --marron-principal: #65482b;    /* Igual al botón y Sidebar del equipo */
+  --marron-oscuro: #2d241e;       /* Fondo Sidebar */
+  --marron-medio: #4a3c32;        /* Activo Sidebar */
+  --marron-claro: #8a7a6c;
+  --verde-acento: #84cc16;        /* Verde de resaltado del equipo */
+  --texto-principal: #374151;
+  --texto-secundario: #6b7280;
+  --borde-suave: #e5e7eb;
   --alerta-naranja: #E8A838;
   --alerta-rojo: #D65C4F;
-  --borde-suave: #E9E2D8;
-  --sombra-suave: 0 2px 8px rgba(92, 74, 59, 0.08);
-  --redondeo: 10px;
-  --fuente-principal: 'Inter', 'Segoe UI', Roboto, sans-serif;
-  --fuente-titulos: 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --sombra-suave: 0 1px 3px rgba(0,0,0,0.05);
+  --redondeo: 0.75rem;
+  --fuente-principal: sans-serif;
 }
 
 * { 
@@ -24,14 +26,14 @@
 body { 
   background-color: var(--fondo-pagina); 
   font-family: var(--fuente-principal); 
-  color: var(--marron-oscuro); 
+  color: var(--texto-principal); 
   line-height: 1.5; 
 }
 
-.pagos-pagina { 
-  padding: 2rem; 
-  max-width: 1200px; 
-  margin: 0 auto; 
+/* Contenedor de tus pantallas adaptado al MainLayout */
+.pagos-pagina, .notas-pagina {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .contenedor-principal { 
@@ -40,56 +42,50 @@ body {
   gap: 1.5rem; 
 }
 
-/* Títulos: estilo formal, negrita marrón como la foto */
+/* Títulos alineados al estilo del equipo */
 .titulo-pagina { 
-  font-size: 1.8rem; 
+  font-size: 1.5rem; 
   font-weight: 700; 
   color: var(--marron-oscuro); 
-  font-family: var(--fuente-titulos);
-  letter-spacing: 0.3px;
   margin-bottom: 0.5rem;
 }
-
 .subtitulo { 
-  color: var(--marron-claro); 
+  color: var(--texto-secundario); 
   font-size: 1rem; 
   margin-bottom: 1rem;
 }
-
 .subtitulo-seccion { 
   font-size: 1.1rem; 
   font-weight: 600; 
   color: var(--marron-oscuro); 
-  font-family: var(--fuente-titulos);
   margin-bottom: 0.5rem; 
 }
 
 /* Alertas */
 .alerta { 
-  padding: 0.8rem 1.2rem; 
+  padding: 0.8rem 1.25rem; 
   border-radius: var(--redondeo); 
   font-weight: 500; 
 }
 .exito { 
-  background-color: #E6F2E9; 
-  color: var(--verde-oscuro); 
-  border: 1px solid #C8E0CC; 
+  background-color: #f0fdf4; 
+  color: #166534; 
+  border: 1px solid #bbf7d0; 
 }
 .error { 
-  background-color: #F9E8E6; 
-  color: var(--alerta-rojo); 
-  border: 1px solid #F2D4D0; 
+  background-color: #fef2f2; 
+  color: #991b1b; 
+  border: 1px solid #fecaca; 
 }
 
-/* Tarjetas y formulario */
+/* Tarjetas iguales a DataTable del equipo */
 .tarjeta-formulario { 
   background: var(--fondo-tarjeta); 
-  padding: 2rem; 
+  padding: 1.5rem; 
   border-radius: var(--redondeo); 
   box-shadow: var(--sombra-suave); 
   border: 1px solid var(--borde-suave); 
 }
-
 .form-contenido { 
   display: flex; 
   flex-direction: column; 
@@ -99,36 +95,29 @@ body {
 .grupo-campo { 
   display: flex; 
   flex-direction: column; 
-  gap: 0.5rem; 
+  gap: 0.375rem; 
 }
-
 label { 
-  font-weight: 500; 
-  color: var(--marron-oscuro); 
+  font-weight: 600; 
+  color: var(--texto-principal); 
+  font-size: 0.875rem;
 }
-
 .campo-entrada { 
   width: 100%; 
-  padding: 0.75rem 1rem; 
+  padding: 0.5rem 0.75rem; 
   border: 1px solid var(--borde-suave); 
-  border-radius: var(--redondeo); 
-  font-size: 1rem; 
-  color: var(--marron-oscuro); 
-  background: #FCFAF7; 
+  border-radius: 0.375rem; 
+  font-size: 0.875rem; 
+  color: var(--texto-principal); 
+  background: #ffffff; 
 }
 .campo-entrada:focus { 
   outline: none; 
-  border-color: var(--marron-boton); 
-  background: #FFFFFF; 
+  border-color: var(--marron-principal); 
+  box-shadow: 0 0 0 2px rgba(101, 72, 43, 0.15);
 }
-.campo-error { 
-  border-color: var(--alerta-rojo); 
-}
-.texto-error { 
-  color: var(--alerta-rojo); 
-  font-size: 0.85rem; 
-  margin-top: 0.25rem; 
-}
+.campo-error { border-color: var(--alerta-rojo); }
+.texto-error { color: var(--alerta-rojo); font-size: 0.75rem; }
 
 .fila-doble { 
   display: grid; 
@@ -136,89 +125,72 @@ label {
   gap: 1.5rem; 
 }
 
-/* Tabla estilo inventario */
+/* Tabla adaptada al estilo de DataTable */
 .tabla-contenedor { 
-  overflow-x: auto; 
   border: 1px solid var(--borde-suave); 
   border-radius: var(--redondeo); 
+  overflow: hidden;
 }
 .tabla-facturas { 
   width: 100%; 
   border-collapse: collapse; 
-  background: #FFFFFF; 
+  background: #ffffff; 
 }
 .tabla-facturas th { 
-  background-color: #F8F5F0; 
-  padding: 0.8rem 1rem; 
+  background-color: #f9fafb; 
+  padding: 0.875rem 1.25rem; 
   text-align: left; 
   font-weight: 600; 
-  color: var(--marron-oscuro); 
+  color: var(--texto-secundario); 
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   border-bottom: 1px solid var(--borde-suave); 
 }
 .tabla-facturas td { 
-  padding: 0.8rem 1rem; 
+  padding: 1rem 1.25rem; 
   border-bottom: 1px solid var(--borde-suave); 
-  color: var(--marron-oscuro); 
+  color: var(--texto-principal); 
+  font-size: 0.875rem;
 }
-.tabla-facturas tr:hover { 
-  background-color: #FCFAF7; 
-}
-.saldo-pendiente { 
-  font-weight: 500; 
-  color: var(--alerta-naranja); 
-}
+.tabla-facturas tr:hover { background-color: #f9fafb; }
+.saldo-pendiente { font-weight: 600; color: var(--alerta-naranja); }
 .input-aplicacion { 
   width: 120px; 
-  padding: 0.5rem; 
+  padding: 0.5rem 0.75rem; 
   border: 1px solid var(--borde-suave); 
-  border-radius: 6px; 
+  border-radius: 0.375rem; 
   text-align: right; 
+  font-size: 0.875rem;
 }
 
-/* Tarjeta importe total */
+/* Tarjeta total */
 .tarjeta-total { 
-  background: #F8F5F0; 
-  padding: 1.2rem; 
+  background: #f9fafb; 
+  padding: 1.25rem; 
   border-radius: var(--redondeo); 
   display: flex; 
   justify-content: space-between; 
   align-items: center; 
   border: 1px solid var(--borde-suave); 
 }
-.etiqueta-total { 
-  font-weight: 500; 
-  color: var(--marron-oscuro); 
-}
-.valor-total { 
-  font-size: 1.4rem; 
-  font-weight: 700; 
-  color: var(--marron-boton); 
-}
+.etiqueta-total { font-weight: 600; color: var(--marron-oscuro); }
+.valor-total { font-size: 1.4rem; font-weight: 700; color: var(--marron-principal); }
 
-/* Botón PRINCIPAL — Marrón igual a "+ Nuevo producto" */
+/* Botón PRINCIPAL → IGUAL al EditModal del equipo */
 .boton-principal { 
   align-self: flex-end; 
-  padding: 0.85rem 2rem; 
-  background-color: var(--marron-boton); 
-  color: #FFFFFF; 
-  font-size: 1rem; 
+  padding: 0.5rem 1rem; 
+  background-color: var(--marron-principal); 
+  color: #ffffff; 
+  font-size: 0.875rem; 
   font-weight: 600; 
-  font-family: var(--fuente-titulos);
   border: none; 
-  border-radius: var(--redondeo); 
+  border-radius: 0.375rem; 
   cursor: pointer; 
-  transition: background 0.2s; 
+  transition: background 0.2s ease; 
 }
-.boton-principal:hover { 
-  background-color: #5E3627; /* Más oscuro al pasar el mouse */
-}
-.boton-principal:disabled { 
-  opacity: 0.6; 
-  cursor: not-allowed; 
-}
+.boton-principal:hover { background-color: #503822; }
+.boton-principal:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.aviso { 
-  color: var(--marron-claro); 
-  font-style: italic; 
-  padding: 1rem; 
-}
+.aviso { color: var(--texto-secundario); font-style: italic; padding: 1rem; }

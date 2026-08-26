@@ -1,12 +1,58 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>sist-farm-umb</title>
+    <title>Farmacia Umbrella</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 🎨 CONFIGURACIÓN EXACTA DEL PROTOTIPO -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              // Fondo principal — color crema/beige del prototipo
+              fondo: '#F3EEE5',
+              // Marrón oscuro para textos y encabezados
+              marron: {
+                900: '#3D2C20',
+                800: '#5C3F2F',
+                700: '#7A5842',
+                600: '#967259',
+              },
+              // Botón marrón oscuro
+              boton: '#6B4226',
+              // Tarjetas blancas con tono cálido
+              tarjeta: '#FFFCF8',
+              // Bordes suaves
+              borde: '#E5DED0',
+              // Acento para alertas/naranja
+              alerta: '#D47D29',
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            },
+          },
+        }
+      }
+    </script>
+    
+    <!-- 🔤 FUENTE IGUAL AL PROTOTIPO -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style type="text/tailwindcss">
+      @layer utilities {
+        .shadow-suave { box-shadow: 0 1px 3px rgba(61, 44, 32, 0.06); }
+        .borde-suave { border: 1px solid #E5DED0; }
+        .texto-mas-oscuro { color: #3D2C20; }
+        .texto-mas-claro { color: #7A5842; }
+      }
+    </style>
   </head>
-  <body>
+  <body class="bg-fondo text-marron-900 font-sans m-0 p-0">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

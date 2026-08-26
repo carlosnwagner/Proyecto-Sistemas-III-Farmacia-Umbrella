@@ -10,7 +10,6 @@ export default function RegistrarNotaCreditoDebito() {
   const [facturas, setFacturas] = useState([]);
   const [cargando, setCargando] = useState(false);
 
-  // Campos del formulario (coinciden con NotaCreditoDebitoInput)
   const [idFactura, setIdFactura] = useState('');
   const [tipoNota, setTipoNota] = useState('');
   const [numeroComprobante, setNumeroComprobante] = useState('');
@@ -20,7 +19,6 @@ export default function RegistrarNotaCreditoDebito() {
   const [exito, setExito] = useState(null);
   const [errores, setErrores] = useState({});
 
-  // 📥 Cargar facturas disponibles al abrir la pantalla
   useEffect(() => {
     const cargarFacturas = async () => {
       setCargando(true);
@@ -31,7 +29,6 @@ export default function RegistrarNotaCreditoDebito() {
     cargarFacturas();
   }, []);
 
-  // 🚀 Enviar formulario → usa createNotaCreditoDebito de tu compañera
   const manejarSubmit = async (e) => {
     e.preventDefault();
     setErrores({}); setExito(null); setCargando(true);
@@ -52,18 +49,16 @@ export default function RegistrarNotaCreditoDebito() {
       else setErrores({ general: error.message });
     } else {
       setExito(`✅ Nota de ${data.tipo_nota} registrada correctamente. N° ${data.numero_comprobante} | Importe: $${data.importe.toFixed(2)}`);
-      // Reiniciar formulario
       setIdFactura(''); setTipoNota(''); setNumeroComprobante('');
       setFecha(new Date().toISOString().split('T')[0]); setImporte('');
     }
     setCargando(false);
   };
 
-  // 📌 Mostrar automáticamente el proveedor de la factura elegida (regla de diseño)
   const facturaSeleccionada = facturas.find(f => f.id_factura_proveedor === Number(idFactura));
 
   return (
-    <div className="pagos-pagina">
+    <div className="notas-pagina">
       <div className="contenedor-principal">
         <h1 className="titulo-pagina">Registrar Nota de Crédito / Débito</h1>
         <p className="subtitulo">Corregir o ajustar una factura de proveedor</p>
@@ -74,7 +69,6 @@ export default function RegistrarNotaCreditoDebito() {
         <div className="tarjeta-formulario">
           <form onSubmit={manejarSubmit} className="form-contenido">
             
-            {/* 1. Elegir factura → el proveedor sale solo */}
             <div className="grupo-campo">
               <label>Factura a corregir *</label>
               <select 
@@ -93,15 +87,13 @@ export default function RegistrarNotaCreditoDebito() {
               </select>
               {errores.id_factura_proveedor && <span className="texto-error">{errores.id_factura_proveedor}</span>}
               
-              {/* 🎯 Proveedor automático → NO se edita */}
               {facturaSeleccionada && (
-                <p style={{marginTop:'0.5rem', color:'var(--verde-oscuro)', fontWeight:'500'}}>
+                <p style={{marginTop:'0.5rem', color:'var(--marron-principal)', fontWeight:'600'}}>
                   ✅ Proveedor asociado: {facturaSeleccionada.proveedor?.razon_social}
                 </p>
               )}
             </div>
 
-            {/* Fila: Tipo de Nota + Fecha */}
             <div className="fila-doble">
               <div className="grupo-campo">
                 <label>Tipo de Nota *</label>
@@ -132,7 +124,6 @@ export default function RegistrarNotaCreditoDebito() {
               </div>
             </div>
 
-            {/* Número de Comprobante */}
             <div className="grupo-campo">
               <label>Número de Comprobante de la Nota *</label>
               <input 
@@ -147,7 +138,6 @@ export default function RegistrarNotaCreditoDebito() {
               {errores.numero_comprobante && <span className="texto-error">{errores.numero_comprobante}</span>}
             </div>
 
-            {/* Importe */}
             <div className="grupo-campo">
               <label>Importe de la Nota ($) *</label>
               <input 
@@ -164,9 +154,8 @@ export default function RegistrarNotaCreditoDebito() {
               {errores.importe && <span className="texto-error">{errores.importe}</span>}
             </div>
 
-            {/* Botón mismo estilo */}
             <button type="submit" className="boton-principal" disabled={cargando}>
-              {cargando ? 'Guardando...' : '✓ Registrar Nota'}
+              {cargando ? 'Guardando...' : 'Registrar Nota'}
             </button>
           </form>
         </div>
