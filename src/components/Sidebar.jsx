@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom"; // 1. Agregamos useLocation
+import { Link, useLocation } from "react-router-dom";
 import {
   Home,
   Package,
@@ -25,9 +25,11 @@ export default function Sidebar() {
     { key: "Inventario", label: "Inventario", path: "/inventario", icon: Package },
     { key: "Depósitos", label: "Pedidos", path: "/pedidos", icon: ClipboardList },
     { key: "Proveedores", label: "Proveedores", path: "/proveedores", icon: Truck },
-    { key: "Sucursales", label: "Sucursales", path: "/sucursales", icon: MapPin }, // Corregido
+    { key: "Pagos", label: "Pagos a Proveedores", path: "/pagos-proveedores", icon: Truck },
+    { key: "Notas", label: "Notas Crédito/Débito", path: "/notas-credito-debito", icon: ClipboardList },
+    { key: "Sucursales", label: "Sucursales", path: "/sucursales", icon: MapPin },
     { key: "Depositos", label: "Depósitos", path: "/depositos", icon: Warehouse },
-    { key: "Ventas", label: "Ventas", path: "/ventas", icon: Globe },             // Corregido
+    { key: "Ventas", label: "Ventas", path: "/ventas", icon: Globe },
     { key: "reportes", label: "Reportes", path: "/reportes", icon: BarChart3 },
   ];
 
