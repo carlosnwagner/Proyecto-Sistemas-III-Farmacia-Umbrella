@@ -10,6 +10,7 @@ export default function MainLayout() {
     if (path.startsWith("/inventario")) return "Inventario";
     if (path.startsWith("/pedidos")) return "Depósitos";
     if (path.startsWith("/proveedores")) return "Proveedores";
+    if (path.startsWith("/pago-proveedores")) return "Pagos";
     if (path.startsWith("/sucursales")) return "Sucursales";
     if (path.startsWith("/ventas")) return "Ventas";
     if (path.startsWith("/reportes")) return "reportes";
