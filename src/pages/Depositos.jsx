@@ -336,10 +336,21 @@ export default function Depositos() {
     setIsAsociarModalOpen(false);
   };
 
-  const filteredDepositos = depositos.filter((d) => 
-    d.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    d.descripcion?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+// Función auxiliar para quitar acentos y pasar a minúsculas
+  const normalizarTexto = (texto) =>
+    (texto || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+  const filteredDepositos = depositos.filter((d) => {
+    const term = normalizarTexto(searchTerm);
+    return (
+      normalizarTexto(d.codigo).includes(term) ||
+      normalizarTexto(d.descripcion).includes(term) ||
+      normalizarTexto(d.sucursal?.descripcion).includes(term)
+    );
+  });
 
   // RENDER DE VISTA INVENTARIO DETALLADO
   if (vistaActual === "inventario") {
@@ -375,7 +386,7 @@ export default function Depositos() {
           <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
           <input 
             type="text" 
-            placeholder="Buscar por Código o Descripción..." 
+            placeholder="Buscar ..." 
             value={searchTerm} 
             onChange={(e) => setSearchTerm(e.target.value)} 
             style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" }} 
