@@ -1,69 +1,113 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
 import { Plus, Search } from "lucide-react";
+import { supabase } from '../lib/supabase.js';
+// SERVICIOS BACKEND
+import { createProveedor, updateProveedor } from '../services/proveedores.js';
 
 export default function Proveedores() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProveedor, setSelectedProveedor] = useState(null);
-
-  // Arreglo vacío listo para recibir los datos de la base de datos
   const [proveedores, setProveedores] = useState([]);
 
-  // Configuración de los campos del modal
-  const editFields = [
-    { key: "razonSocial", label: "Razón Social" },
-    { key: "cuit", label: "CUIT" },
-    { key: "contacto", label: "Contacto" },
-    { key: "telefono", label: "Teléfono" },
-    { key: "email", label: "Email", type: "email" },
-    { key: "fechaRegistro", label: "Fecha de Registro", type: "date" }, // Clave en camelCase y tipo date
-  ];
+  // CARGA DE DATOS DESDE SUPABASE
+  useEffect(() => {
+    fetchProveedores();
+  }, []);
 
-  // Abrir para crear (limpia la selección)
+  const fetchProveedores = async () => {
+    const {data, error} = await supabase
+      .from('proveedor')
+      .select('*')
+      .order('razon_social', {ascending: true});
+    
+    if (error) console.error("Error al traer proveedores:", error);
+    else setProveedores(data || []);
+  }
+
+  // Configuración de Campos de Modal
+  const editFields = useMemo(() => [
+    { key: "razon_social", label: "Razón Social" },
+    { 
+      key: "identificacion_fiscal", 
+      label: "Identificación Fiscal (CUIT)", 
+      readOnly: !!selectedProveedor 
+    },
+    { key: "datos_comerciales", label: "Condiciones Comerciales" },
+    { key: "datos_contacto", label: "Datos de Contacto (Teléfono/Email)" },
+  ], [selectedProveedor]);
+
+  
   const handleOpenCreate = () => {
     setSelectedProveedor(null);
     setIsModalOpen(true);
   };
 
-  // Abrir para editar
   const handleOpenEdit = (proveedor) => {
     setSelectedProveedor(proveedor);
     setIsModalOpen(true);
   };
 
-  // Guardar datos localmente (aquí irá la llamada a fetch/axios POST o PUT)
-  const handleSaveProveedor = (formData) => {
+  // GUARDADO DE DATOS
+  const handleSaveProveedor = async (formData) => {
+    // payload
+    const payload = {
+      razon_social: formData.razon_social,
+      identificacion_fiscal: formData.identificacion_fiscal,
+      datos_comerciales: formData.datos_comerciales,
+      datos_contacto: formData.datos_contacto
+
+    }
+
     if (selectedProveedor) {
-      setProveedores((prev) =>
-        prev.map((item) => (item === selectedProveedor ? formData : item))
-      );
+      // --- MODO EDICIÓN ---
+      const { error } = await updateProveedor(selectedProveedor.id_proveedor, payload);
+      
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        alert("¡Proveedor actualizado con éxito!");
+        fetchProveedores();
+        setIsModalOpen(false);
+      }
     } else {
-      setProveedores((prev) => [...prev, formData]);
+      // --- MODO CREACIÓN ---
+      const { error } = await createProveedor(payload);
+      
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        alert("¡Proveedor registrado con éxito!");
+        fetchProveedores();
+        setIsModalOpen(false);
+      }
     }
   };
 
   const filteredProveedores = proveedores.filter((p) => {
     const term = searchTerm.toLowerCase();
     return (
-      p.razonSocial?.toLowerCase().includes(term) ||
-      p.cuit?.toLowerCase().includes(term) ||
-      p.contacto?.toLowerCase().includes(term)
+      p.razon_social?.toLowerCase().includes(term) ||
+      p.identificacion_fiscal?.toLowerCase().includes(term) ||
+      p.datos_contacto?.toLowerCase().includes(term)
     );
   });
 
   const columns = [
-    { header: "ID", accessor: "id" },
+    { header: "ID", accessor: "id_proveedor" },
     {
       header: "RAZÓN SOCIAL",
-      render: (p) => <span style={{ fontWeight: "600" }}>{p.razonSocial}</span>,
+      render: (p) => <span style={{ fontWeight: "600" }}>{p.razon_social}</span>,
     },
-    { header: "CUIT", accessor: "cuit" },
-    { header: "CONTACTO", accessor: "contacto" },
-    { header: "TELÉFONO", accessor: "telefono" },
-    { header: "EMAIL", accessor: "email" },
-    { header: "FECHA DE REGISTRO", accessor: "fechaRegistro" }, // Columna agregada aquí
+    { header: "CUIT", accessor: "identificacion_fiscal" },
+    { header: "COMERCIAL", accessor: "datos_comerciales" },
+    { header: "CONTACTO", accessor: "datos_contacto" },
+    { 
+      header: "FECHA REGISTRO", 
+      render: (p) => <span>{new Date(p.fecha_registro).toLocaleDateString()}</span> 
+    },
   ];
 
   return (
@@ -75,18 +119,7 @@ export default function Proveedores() {
         </div>
         <button
           onClick={handleOpenCreate}
-          style={{
-            backgroundColor: "#65482b",
-            color: "#ffffff",
-            border: "none",
-            padding: "0.625rem 1.25rem",
-            borderRadius: "0.5rem",
-            fontWeight: "600",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            cursor: "pointer",
-          }}
+          style={{ backgroundColor: "#65482b", color: "#ffffff", border: "none", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}
         >
           <Plus size={18} /> Nuevo proveedor
         </button>
@@ -108,7 +141,7 @@ export default function Proveedores() {
       <DataTable columns={columns} data={filteredProveedores} onEdit={handleOpenEdit} />
 
       <EditModal
-        key={selectedProveedor ? selectedProveedor.id : "nuevo-proveedor"}
+        key={selectedProveedor ? selectedProveedor.id_proveedor : "nuevo-proveedor"}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveProveedor}
