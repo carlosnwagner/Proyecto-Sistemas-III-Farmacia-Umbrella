@@ -116,54 +116,80 @@ export default function Depositos() {
 
   // 3. GUARDAR DEPÓSITO (INSERT / UPDATE)
   const handleSaveDeposito = async (formData) => {
-    const valorSucursal = formData.id_sucursal !== undefined 
-      ? formData.id_sucursal 
-      : selectedDeposito?.id_sucursal;
+      const codigoLimpio = (formData.codigo || "").trim().toUpperCase();
 
-    const idSucursalFinal = (valorSucursal !== "" && valorSucursal !== null && valorSucursal !== undefined)
-      ? parseInt(valorSucursal) 
-      : null;
-
-    const estadoBoolean = formData.estado === "Activo" || formData.estado === true;
-
-    if (selectedDeposito && selectedDeposito.id_deposito) {
-      const { error } = await supabase
-        .from("deposito")
-        .update({
-          codigo: formData.codigo,
-          id_sucursal: idSucursalFinal,
-          descripcion: formData.descripcion,
-          estado: estadoBoolean
-        })
-        .eq("id_deposito", selectedDeposito.id_deposito);
-
-      if (error) {
-        alert("Error al actualizar depósito: " + error.message);
-      } else {
-        setIsModalOpen(false);
-        fetchDatos();
+      if (!codigoLimpio) {
+        alert("Debe ingresar un código para el depósito.");
+        return;
       }
-    } else {
-      const { error } = await supabase
+
+      // 1. Validar que el código no exista previamente
+      const { data: codigoExistente, error: errCheck } = await supabase
         .from("deposito")
-        .insert([
-          {
-            codigo: formData.codigo,
+        .select("id_deposito")
+        .ilike("codigo", codigoLimpio) // Comparación insensible a mayúsculas/minúsculas
+        .neq("id_deposito", selectedDeposito?.id_deposito || 0) // Si edita, excluye al depósito actual
+        .maybeSingle();
+
+      if (errCheck) {
+        console.error("Error al validar código:", errCheck);
+      }
+
+      if (codigoExistente) {
+        alert(`El código "${codigoLimpio}" ya está registrado en otro depósito.`);
+        return;
+      }
+
+      const valorSucursal = formData.id_sucursal !== undefined 
+        ? formData.id_sucursal 
+        : selectedDeposito?.id_sucursal;
+
+      const idSucursalFinal = (valorSucursal !== "" && valorSucursal !== null && valorSucursal !== undefined)
+        ? parseInt(valorSucursal) 
+        : null;
+
+      const estadoBoolean = formData.estado === "Activo" || formData.estado === true;
+
+      if (selectedDeposito && selectedDeposito.id_deposito) {
+        // UPDATE
+        const { error } = await supabase
+          .from("deposito")
+          .update({
+            codigo: codigoLimpio,
             id_sucursal: idSucursalFinal,
             descripcion: formData.descripcion,
-            estado: estadoBoolean,
-            fecha_registro: new Date().toISOString()
-          }
-        ]);
+            estado: estadoBoolean
+          })
+          .eq("id_deposito", selectedDeposito.id_deposito);
 
-      if (error) {
-        alert("Error al crear el depósito: " + error.message);
+        if (error) {
+          alert("Error al actualizar depósito: " + error.message);
+        } else {
+          setIsModalOpen(false);
+          fetchDatos();
+        }
       } else {
-        setIsModalOpen(false);
-        fetchDatos();
+        // INSERT
+        const { error } = await supabase
+          .from("deposito")
+          .insert([
+            {
+              codigo: codigoLimpio,
+              id_sucursal: idSucursalFinal,
+              descripcion: formData.descripcion,
+              estado: estadoBoolean,
+              fecha_registro: new Date().toISOString()
+            }
+          ]);
+
+        if (error) {
+          alert("Error al crear el depósito: " + error.message);
+        } else {
+          setIsModalOpen(false);
+          fetchDatos();
+        }
       }
-    }
-  };
+    };
 
   // 4. ABRIR MODAL DE ASOCIACIÓN HU 3
 // 4. ABRIR MODAL DE ASOCIACIÓN HU 3 (Filtrando artículos no asociados)

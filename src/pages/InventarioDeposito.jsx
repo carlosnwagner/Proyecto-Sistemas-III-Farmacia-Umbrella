@@ -106,7 +106,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
   const [availableArticles, setAvailableArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
+  const [selectedStockStatus, setSelectedStockStatus] = useState("Todos");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState("asociar");
   const [selectedItem, setSelectedItem] = useState(null);
@@ -398,11 +398,24 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
 
   const filteredInventory = useMemo(() => {
     return inventory.filter((p) => {
-      const matchesSearch = p.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) || p.codigo?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch =
+        p.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.codigo?.toLowerCase().includes(searchTerm.toLowerCase());
+      
       const matchesCategory = selectedCategory === "Todas" || p.categoria === selectedCategory;
-      return matchesSearch && matchesCategory;
+
+      let matchesStock = true;
+      if (selectedStockStatus === "STOCK_SALUDABLE") {
+        matchesStock = p.stock_actual > p.stock_minimo;
+      } else if (selectedStockStatus === "STOCK_BAJO") {
+        matchesStock = p.stock_actual > 0 && p.stock_actual <= p.stock_minimo;
+      } else if (selectedStockStatus === "SIN_STOCK") {
+        matchesStock = p.stock_actual === 0;
+      }
+
+      return matchesSearch && matchesCategory && matchesStock;
     });
-  }, [inventory, searchTerm, selectedCategory]);
+  }, [inventory, searchTerm, selectedCategory, selectedStockStatus]);
 
   const stats = useMemo(() => {
     const total = inventory.length;
@@ -429,18 +442,26 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       render: (p) => {
         let variant;
         let label = p.estado;
-        
-        if (p.estado === "Inactivo") variant = "danger";
-        else if (p.stock_actual === 0) { variant = "danger"; label = "Sin Stock"; }
-        else if (p.stock_actual <= p.stock_minimo) { variant = "warning"; label = "Stock Bajo"; }
-        else variant = "success";
+
+        if (p.estado === "Inactivo") {
+          variant = "default"; // Gris neutro para diferenciarlo de Sin Stock
+          label = "Inactivo";
+        } else if (p.stock_actual === 0) {
+          variant = "danger"; // Rojo exclusivamente para quiebre de stock
+          label = "Sin Stock";
+        } else if (p.stock_actual <= p.stock_minimo) {
+          variant = "warning"; // Naranja para stock bajo
+          label = "Stock Bajo";
+        } else {
+          variant = "success"; // Verde para stock saludable
+          label = "Activo";
+        }
 
         return <Badge variant={variant}>{label}</Badge>;
-      },
-    }
+      },}
   ];
 
-  return (
+ return (
     <div style={{ padding: "1rem", backgroundColor: "#F7F4EE", minHeight: "100vh" }}>
       <button 
         onClick={onBack}
@@ -502,6 +523,16 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
+        <select
+          value={selectedStockStatus}
+          onChange={(e) => setSelectedStockStatus(e.target.value)}
+          style={{ padding: "0.625rem 1rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", backgroundColor: "#ffffff", outline: "none", color: "#374151", fontWeight: "500" }}
+        >
+          <option value="Todos">Todos los Estados</option>
+          <option value="STOCK_SALUDABLE">STOCK SALUDABLE</option>
+          <option value="STOCK_BAJO">STOCK BAJO</option>
+          <option value="SIN_STOCK">SIN STOCK (QUIEBRE)</option>
+        </select>
       </div>
 
       {loading ? (
@@ -526,7 +557,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       )}
 
       {/* 2. Modal Nativo para Ajuste de Stock con Buscador Integrado */}
-{/* Modal Nativo para Ajuste de Stock con Buscador Tipo Tienda */}
+      {/* Modal Nativo para Ajuste de Stock con Buscador Tipo Tienda */}
       {isModalOpen && modalMode === "ajuste" && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" }}>
           <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", width: "100%", maxWidth: "520px", maxHeight: "90vh", overflowY: "visible", padding: "1.5rem", boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}>
@@ -767,5 +798,4 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
         </div>
       )}
     </div>
-  );
-}
+  );}
