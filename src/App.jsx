@@ -1,43 +1,40 @@
-import React, { useState } from 'react';
-import RegistrarPagoProveedor from './components/RegistrarPagoProveedor';
-import RegistrarNotaCreditoDebito from './components/RegistrarNotaCreditoDebito';
-import './App.css';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import MainLayout from "./components/MainLayout.jsx";
+import Inventario from "./pages/InventarioProductos.jsx";
+import Proveedores from "./pages/Proveedores.jsx";
+import Sucursales from "./pages/Sucursales.jsx";
+import Depositos from "./pages/Depositos.jsx";
+
+function PaginaEnConstruccion({ titulo }) {
+  return (
+    <div>
+      <h1 style={{ fontSize: "1.875rem", fontWeight: "700", color: "#111827" }}>
+        {titulo}
+      </h1>
+      <p style={{ color: "#6b7280", marginTop: "0.5rem" }}>
+        Sección en desarrollo.
+      </p>
+    </div>
+  );
+}
 
 export default function App() {
-  const [pantalla, setPantalla] = useState('pagos');
-
   return (
-    <div className="pagos-pagina">
-      {/* Menú de navegación entre las 2 HU */}
-      <div style={{marginBottom:'1.5rem', display:'flex', gap:'1rem'}}>
-        <button 
-          onClick={() => setPantalla('pagos')}
-          style={{
-            padding:'0.6rem 1.2rem', 
-            background: pantalla==='pagos' ? 'var(--verde-oscuro)' : 'transparent', 
-            color: pantalla==='pagos' ? 'white' : 'var(--marron-oscuro)', 
-            border:'none', borderRadius:'var(--redondeo)', cursor:'pointer',
-            fontWeight:'500'
-          }}
-        >
-          HU33 — Pagos a Proveedores
-        </button>
-        <button 
-          onClick={() => setPantalla('notas')}
-          style={{
-            padding:'0.6rem 1.2rem', 
-            background: pantalla==='notas' ? 'var(--verde-oscuro)' : 'transparent', 
-            color: pantalla==='notas' ? 'white' : 'var(--marron-oscuro)', 
-            border:'none', borderRadius:'var(--redondeo)', cursor:'pointer',
-            fontWeight:'500'
-          }}
-        >
-          HU31 — Notas de Crédito/Débito
-        </button>
-      </div>
-
-      {pantalla === 'pagos' && <RegistrarPagoProveedor />}
-      {pantalla === 'notas' && <RegistrarNotaCreditoDebito />}
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<MainLayout />}>
+          <Route path="/" element={<Navigate to="/inventario" replace />} />
+          <Route path="/inicio" element={<PaginaEnConstruccion titulo="Inicio" />} />
+          <Route path="/inventario" element={<Inventario />} />
+          <Route path="/pedidos" element={<PaginaEnConstruccion titulo="Pedidos" />} />
+          <Route path="/proveedores" element={<Proveedores />} />
+          <Route path="/sucursales" element={<Sucursales />} />
+          <Route path="/depositos" element={<Depositos />} />
+          <Route path="/ventas" element={<PaginaEnConstruccion titulo="Ventas" />} />
+          <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
+          <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }

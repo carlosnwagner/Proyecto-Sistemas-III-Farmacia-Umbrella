@@ -1,0 +1,154 @@
+import { useState, useEffect, useMemo } from "react";
+import DataTable from "../components/DataTable.jsx";
+import EditModal from "../components/EditModal.jsx";
+import { Plus, Search } from "lucide-react";
+import { supabase } from '../lib/supabase.js';
+// SERVICIOS BACKEND
+import { createProveedor, updateProveedor } from '../services/proveedores.js';
+
+export default function Proveedores() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedProveedor, setSelectedProveedor] = useState(null);
+  const [proveedores, setProveedores] = useState([]);
+
+  // CARGA DE DATOS DESDE SUPABASE
+  useEffect(() => {
+    fetchProveedores();
+  }, []);
+
+  const fetchProveedores = async () => {
+    const {data, error} = await supabase
+      .from('proveedor')
+      .select('*')
+      .order('razon_social', {ascending: true});
+    
+    if (error) console.error("Error al traer proveedores:", error);
+    else setProveedores(data || []);
+  }
+
+  // Configuración de Campos de Modal
+  const editFields = useMemo(() => [
+    { key: "razon_social", label: "Razón Social" },
+    { 
+      key: "identificacion_fiscal", 
+      label: "Identificación Fiscal (CUIT)", 
+      readOnly: !!selectedProveedor 
+    },
+    { key: "datos_comerciales", label: "Condiciones Comerciales" },
+    { key: "datos_contacto", label: "Datos de Contacto (Teléfono/Email)" },
+  ], [selectedProveedor]);
+
+  
+  const handleOpenCreate = () => {
+    setSelectedProveedor(null);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (proveedor) => {
+    setSelectedProveedor(proveedor);
+    setIsModalOpen(true);
+  };
+
+  // GUARDADO DE DATOS
+  const handleSaveProveedor = async (formData) => {
+    // payload
+    const payload = {
+      razon_social: formData.razon_social,
+      identificacion_fiscal: formData.identificacion_fiscal,
+      datos_comerciales: formData.datos_comerciales,
+      datos_contacto: formData.datos_contacto
+
+    }
+
+    if (selectedProveedor) {
+      // --- MODO EDICIÓN ---
+      const { error } = await updateProveedor(selectedProveedor.id_proveedor, payload);
+      
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        alert("¡Proveedor actualizado con éxito!");
+        fetchProveedores();
+        setIsModalOpen(false);
+      }
+    } else {
+      // --- MODO CREACIÓN ---
+      const { error } = await createProveedor(payload);
+      
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        alert("¡Proveedor registrado con éxito!");
+        fetchProveedores();
+        setIsModalOpen(false);
+      }
+    }
+  };
+
+  const filteredProveedores = proveedores.filter((p) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      p.razon_social?.toLowerCase().includes(term) ||
+      p.identificacion_fiscal?.toLowerCase().includes(term) ||
+      p.datos_contacto?.toLowerCase().includes(term)
+    );
+  });
+
+  const columns = [
+    { header: "ID", accessor: "id_proveedor" },
+    {
+      header: "RAZÓN SOCIAL",
+      render: (p) => <span style={{ fontWeight: "600" }}>{p.razon_social}</span>,
+    },
+    { header: "CUIT", accessor: "identificacion_fiscal" },
+    { header: "COMERCIAL", accessor: "datos_comerciales" },
+    { header: "CONTACTO", accessor: "datos_contacto" },
+    { 
+      header: "FECHA REGISTRO", 
+      render: (p) => <span>{new Date(p.fecha_registro).toLocaleDateString()}</span> 
+    },
+  ];
+
+  return (
+    <>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+        <div>
+          <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Proveedores</h1>
+          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>{proveedores.length} proveedores registrados</p>
+        </div>
+        <button
+          onClick={handleOpenCreate}
+          style={{ backgroundColor: "#65482b", color: "#ffffff", border: "none", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}
+        >
+          <Plus size={18} /> Nuevo proveedor
+        </button>
+      </header>
+
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
+        <div style={{ position: "relative", flex: 1 }}>
+          <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+          <input
+            type="text"
+            placeholder="Buscar por Razón Social, CUIT o Contacto..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" }}
+          />
+        </div>
+      </div>
+
+      <DataTable columns={columns} data={filteredProveedores} onEdit={handleOpenEdit} />
+
+      <EditModal
+        key={selectedProveedor ? selectedProveedor.id_proveedor : "nuevo-proveedor"}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSave={handleSaveProveedor}
+        title={selectedProveedor ? "Editar Proveedor" : "Nuevo Proveedor"}
+        fields={editFields}
+        initialData={selectedProveedor}
+      />
+    </>
+  );
+}
