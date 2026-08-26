@@ -15,8 +15,11 @@ import {
 export default function Sidebar() {
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredButton, setHoveredButton] = useState(null);
+  
+  // Obtenemos la ruta real en la que está la app
   const location = useLocation();
 
+  // 2. Corregimos las rutas (path)
   const menuItems = [
     { key: "Inicio", label: "Inicio", path: "/inicio", icon: Home },
     { key: "Inventario", label: "Inventario", path: "/inventario", icon: Package },
@@ -106,6 +109,8 @@ export default function Sidebar() {
       >
         {menuItems.map((item) => {
           const Icon = item.icon;
+          
+          // 3. Verifica si la URL actual coincide exactamente con el path
           const isActive = location.pathname === item.path;
           const isItemHovered = hoveredButton === item.key;
 
