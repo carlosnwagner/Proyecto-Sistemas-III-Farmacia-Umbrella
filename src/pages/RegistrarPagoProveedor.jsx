@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { 
-  getFacturasPendientesPorProveedor, 
-  createPagoProveedor 
+import { supabase } from '../lib/supabase'; 
+import {
+  getFacturasPendientesPorProveedor,
+  createPagoProveedor
 } from '../services/pagos';
 import '../App.css';
 
@@ -18,15 +19,27 @@ export default function RegistrarPagoProveedor() {
   const [exito, setExito] = useState(null);
   const [errores, setErrores] = useState({});
 
+  // CARGA DE PROVEEDORES
   useEffect(() => {
     const cargarProveedores = async () => {
-      const { supabase } = await import('../lib/supabase');
+      console.log('🔄 Cargando proveedores...');
+      
+      // TABLA = "proveedor"— CAMPOS = razon_social, identificacion_fiscal
       const { data, error } = await supabase
-        .from('proveedores')
-        .select('id_proveedor, nombre, cuit')
-        .order('nombre');
-      if (!error) setProveedores(data);
+        .from('proveedor') 
+        .select('id_proveedor, razon_social, identificacion_fiscal')
+        .order('razon_social', { ascending: true });
+
+      if (error) {
+        console.error('❌ Error cargando proveedores:', error);
+        setErrores({ general: `No se pudieron cargar los proveedores: ${error.message}` });
+        return;
+      }
+
+      console.log(`Proveedores cargados: ${data?.length || 0}`);
+      setProveedores(data || []);
     };
+
     cargarProveedores();
   }, []);
 
@@ -38,8 +51,10 @@ export default function RegistrarPagoProveedor() {
     }
     const cargarFacturas = async () => {
       setCargando(true);
+      console.log(`🔄 Cargando facturas para proveedor ${idProveedor}...`);
       const res = await getFacturasPendientesPorProveedor(Number(idProveedor));
-      setFacturas(res.data);
+      console.log('Facturas recibidas:', res?.data);
+      setFacturas(res.data || []);
       setAplicaciones([]);
       setCargando(false);
     };
@@ -74,7 +89,7 @@ export default function RegistrarPagoProveedor() {
       else if (error.field) setErrores({ [error.field]: error.message });
       else setErrores({ general: error.message });
     } else {
-      setExito(`✅ Pago registrado correctamente (N° ${data?.id_pago || ''}). Egreso generado.`);
+      setExito(`Pago registrado correctamente (N° ${data?.id_pago || ''}). Egreso generado.`);
       setIdProveedor(''); setFechaPago(new Date().toISOString().split('T')[0]);
       setMedioPago(''); setAplicaciones([]); setFacturas([]);
     }
@@ -89,6 +104,12 @@ export default function RegistrarPagoProveedor() {
         <div>
           <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Registrar Pago a Proveedor</h1>
           <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>Complete los datos para registrar y aplicar el pago</p>
+          {/* Diagnóstico */}
+          <p style={{ fontSize: "0.8rem", color: proveedores.length === 0 ? "#b91c1c" : "#2E7D32", marginTop: "0.25rem" }}>
+            {proveedores.length === 0 
+              ? " No hay proveedores cargados" 
+              : `${proveedores.length} proveedores disponibles`}
+          </p>
         </div>
       </header>
 
@@ -100,16 +121,16 @@ export default function RegistrarPagoProveedor() {
           {/* Proveedor */}
           <div style={{ marginBottom: "1.25rem" }}>
             <label style={{ display: "block", fontWeight: "500", marginBottom: "0.5rem", color: "#374151" }}>Proveedor *</label>
-            <select 
-              value={idProveedor} 
-              onChange={(e) => setIdProveedor(e.target.value)} 
+            <select
+              value={idProveedor}
+              onChange={(e) => setIdProveedor(e.target.value)}
               required
               style={{ width: "100%", padding: "0.625rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none" }}
             >
               <option value="">-- Seleccionar proveedor --</option>
               {proveedores.map(p => (
                 <option key={p.id_proveedor} value={p.id_proveedor}>
-                  {p.nombre} · CUIT {p.cuit}
+                  {p.razon_social} · CUIT {p.identificacion_fiscal}
                 </option>
               ))}
             </select>
@@ -120,7 +141,7 @@ export default function RegistrarPagoProveedor() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
             <div>
               <label style={{ display: "block", fontWeight: "500", marginBottom: "0.5rem", color: "#374151" }}>Fecha de Pago *</label>
-              <input 
+              <input
                 type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} required
                 style={{ width: "100%", padding: "0.625rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none" }}
               />
@@ -129,7 +150,7 @@ export default function RegistrarPagoProveedor() {
 
             <div>
               <label style={{ display: "block", fontWeight: "500", marginBottom: "0.5rem", color: "#374151" }}>Medio de Pago *</label>
-              <select 
+              <select
                 value={medioPago} onChange={(e) => setMedioPago(e.target.value)} required
                 style={{ width: "100%", padding: "0.625rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none" }}
               >
@@ -145,6 +166,8 @@ export default function RegistrarPagoProveedor() {
             <h3 style={{ fontSize: "1rem", fontWeight: "600", color: "#374151", marginBottom: "0.75rem" }}>Facturas Pendientes / Saldo</h3>
             {cargando ? (
               <p style={{ color: "#6b7280" }}>Cargando facturas...</p>
+            ) : !idProveedor ? (
+              <p style={{ color: "#6b7280" }}>Seleccioná un proveedor para ver sus facturas</p>
             ) : facturas.length === 0 ? (
               <p style={{ color: "#6b7280" }}>El proveedor no tiene facturas pendientes o parciales.</p>
             ) : (
@@ -194,8 +217,8 @@ export default function RegistrarPagoProveedor() {
           </div>
 
           {/* Botón */}
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={cargando}
             style={{
               backgroundColor: "#65482b",

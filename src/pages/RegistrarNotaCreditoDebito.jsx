@@ -48,7 +48,7 @@ export default function RegistrarNotaCreditoDebito() {
       else if (error.field) setErrores({ [error.field]: error.message });
       else setErrores({ general: error.message });
     } else {
-      setExito(`✅ Nota de ${data.tipo_nota} registrada correctamente. N° ${data.numero_comprobante} | Importe: $${data.importe.toFixed(2)}`);
+      setExito(`Nota de ${data.tipo_nota} registrada correctamente. N° ${data.numero_comprobante} | Importe: $${data.importe.toFixed(2)}`);
       setIdFactura(''); setTipoNota(''); setNumeroComprobante('');
       setFecha(new Date().toISOString().split('T')[0]); setImporte('');
     }
@@ -92,7 +92,7 @@ export default function RegistrarNotaCreditoDebito() {
             
             {facturaSeleccionada && (
               <p style={{ marginTop:'0.5rem', color:'#65482b', fontWeight:'600' }}>
-                ✅ Proveedor asociado: {facturaSeleccionada.proveedor?.razon_social}
+                Proveedor asociado: {facturaSeleccionada.proveedor?.razon_social}
               </p>
             )}
           </div>
