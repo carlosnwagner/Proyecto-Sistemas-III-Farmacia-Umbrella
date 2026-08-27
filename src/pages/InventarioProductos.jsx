@@ -139,12 +139,12 @@ export default function InventarioProductos() {
   const handleOpenEdit = (product) => {
     setSelectedProduct({
       ...product,
-      estado: product.estado === true || product.estado === "Activo" || product.estado === 1
+      estado: Boolean(product.estado)
     });
     setIsModalOpen(true);
   };
 
-  // GUARDADO DE DATOS CON VALIDACIONES
+  // GUARDADO DE DATOS CON VALIDACIONES Y ESTADO BOOLEANO ESTRICTO
   const handleSaveProduct = async (formData) => {
     if (!formData.codigo || formData.codigo.trim() === "") {
       alert("El código interno es obligatorio.");
@@ -156,6 +156,20 @@ export default function InventarioProductos() {
       return;
     }
 
+    // Evaluación limpia y robusta del estado proveniente del modal
+    let estadoBoolean = true;
+    if (selectedProduct) {
+      if (
+        formData.estado === false || 
+        formData.estado === "false" || 
+        formData.estado === "Inactivo" || 
+        formData.estado === 0 || 
+        formData.estado === "0"
+      ) {
+        estadoBoolean = false;
+      }
+    }
+
     const payload = {
       id_rubro: Number(formData.id_rubro),
       id_unidad: Number(formData.id_unidad),
@@ -165,7 +179,7 @@ export default function InventarioProductos() {
       descripcion: formData.descripcion,
       precio_costo: Number(formData.precio_costo),
       precio_venta: Number(formData.precio_venta),
-      estado: selectedProduct ? (formData.estado === true || formData.estado === "Activo" || formData.estado === "true") : true
+      estado: Boolean(selectedProduct ? estadoBoolean : true) // Forzamos booleano estricto aquí
     };
 
     if (selectedProduct) {
@@ -210,7 +224,6 @@ export default function InventarioProductos() {
     return { total, activos, valorTotal };
   }, [products]);
 
-  // Se eliminó la línea del ID RUBRO para ocultarlo de la tabla
   const columns = [
     { header: "CÓDIGO", accessor: "codigo" },
     { header: "C. BARRAS", accessor: "codigo_barras" },

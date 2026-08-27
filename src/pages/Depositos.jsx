@@ -21,7 +21,6 @@ export default function Depositos() {
   const [selectedDeposito, setSelectedDeposito] = useState(null);
 
   // Estados para Modal HU 3 (Asociar Producto con Lote)
-  const [searchAjuste, setSearchAjuste] = useState("");
   const [isAsociarModalOpen, setIsAsociarModalOpen] = useState(false);
   const [depositoAAsociar, setDepositoAAsociar] = useState(null);
   const [formDataAsociar, setFormDataAsociar] = useState({ 
@@ -71,8 +70,7 @@ export default function Depositos() {
   }
 
   // 2. CONFIGURACIÓN DE CAMPOS DEL MODAL DE DEPÓSITO
-  const editFields = [
-    { key: "id_deposito", label: "ID Depósito", type: "text", readOnly: true },
+  const baseEditFields = [
     { key: "codigo", label: "Depósito (Código)", type: "text" },
     { 
       key: "id_sucursal", 
@@ -95,12 +93,17 @@ export default function Depositos() {
     },
   ];
 
+  // Si estamos creando, filtramos el campo "estado" para que no se muestre
+  const editFields = selectedDeposito && selectedDeposito.id_deposito 
+    ? baseEditFields 
+    : baseEditFields.filter(f => f.key !== "estado");
+
   const handleOpenCreate = () => {
     setSelectedDeposito({
       codigo: "",
       id_sucursal: "",
       descripcion: "",
-      estado: "Activo"
+      estado: "Activo" // Por defecto activo en creaciones nuevas
     });
     setIsModalOpen(true);
   };
@@ -124,7 +127,10 @@ export default function Depositos() {
       ? parseInt(valorSucursal) 
       : null;
 
-    const estadoBoolean = formData.estado === "Activo" || formData.estado === true;
+    // Si es nuevo, estado por defecto es true (Activo). Si edita, toma el valor seleccionado.
+    const estadoBoolean = selectedDeposito && selectedDeposito.id_deposito 
+      ? (formData.estado === "Activo" || formData.estado === true)
+      : true;
 
     if (selectedDeposito && selectedDeposito.id_deposito) {
       const { error } = await supabase
@@ -151,7 +157,7 @@ export default function Depositos() {
             codigo: formData.codigo,
             id_sucursal: idSucursalFinal,
             descripcion: formData.descripcion,
-            estado: estadoBoolean,
+            estado: true, // Forzar activo al registrar nuevo
             fecha_registro: new Date().toISOString()
           }
         ]);
@@ -166,7 +172,6 @@ export default function Depositos() {
   };
 
   // 4. ABRIR MODAL DE ASOCIACIÓN HU 3
-// 4. ABRIR MODAL DE ASOCIACIÓN HU 3 (Filtrando artículos no asociados)
   const abrirModalAsociar = async (deposito) => {
     if (!deposito.estado) {
       alert("No se pueden asociar productos a un depósito inactivo.");
@@ -182,7 +187,6 @@ export default function Depositos() {
       fecha_vencimiento: ""
     });
 
-    // 1. Obtener todos los artículos activos del catálogo general
     const { data: todosArticulos, error: errArt } = await supabase
       .from("articulo")
       .select("id_articulo, codigo, nombre")
@@ -194,7 +198,6 @@ export default function Depositos() {
       return;
     }
 
-    // 2. Obtener los artículos que YA están asociados a este depósito
     const { data: yaAsociados, error: errAsoc } = await supabase
       .from("articulo_deposito")
       .select("id_articulo")
@@ -204,7 +207,6 @@ export default function Depositos() {
       console.error("Error al consultar asociaciones:", errAsoc);
     }
 
-    // 3. Crear conjunto de IDs existentes y filtrar la lista
     const idsExistentes = new Set((yaAsociados || []).map((item) => item.id_articulo));
     const disponibles = (todosArticulos || []).filter(
       (art) => !idsExistentes.has(art.id_articulo)
@@ -225,7 +227,6 @@ export default function Depositos() {
     const stockInicial = parseInt(formDataAsociar.stock_inicial) || 0;
     const stockMinimo = parseInt(formDataAsociar.stock_minimo) || 0;
 
-    // Validación si hay stock inicial: exige datos de lote
     if (stockInicial > 0) {
       if (!formDataAsociar.numero_lote.trim()) {
         alert("Debe ingresar el número de lote para el stock inicial.");
@@ -237,7 +238,6 @@ export default function Depositos() {
       }
     }
 
-    // Verificar si ya está asociado
     const { data: existente } = await supabase
       .from("articulo_deposito")
       .select("id_articulo_deposito")
@@ -250,7 +250,6 @@ export default function Depositos() {
       return;
     }
 
-    // A. Insertar en articulo_deposito
     const { data: nuevaAsociacion, error: errInsert } = await supabase
       .from("articulo_deposito")
       .insert([
@@ -271,9 +270,7 @@ export default function Depositos() {
       return;
     }
 
-    // B. Si ingresó unidades iniciales, crear Lote y registrar Movimiento
     if (stockInicial > 0 && nuevaAsociacion) {
-      // Crear Lote
       const { data: nuevoLote, error: errLote } = await supabase
         .from("lote")
         .insert([
@@ -294,7 +291,6 @@ export default function Depositos() {
         alert("Producto asociado, pero ocurrió un error al registrar el lote: " + errLote.message);
       }
 
-      // Registrar Auditoría en movimiento_stock
       await supabase.from("movimiento_stock").insert([
         {
           id_articulo_deposito: nuevaAsociacion.id_articulo_deposito,
@@ -315,7 +311,6 @@ export default function Depositos() {
     d.descripcion?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // RENDER DE VISTA INVENTARIO DETALLADO
   if (vistaActual === "inventario") {
     return (
       <InventarioDeposito 
@@ -371,7 +366,6 @@ export default function Depositos() {
               
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
-                  <span style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: "600", textTransform: "uppercase" }}>ID: {deposito.id_deposito}</span>
                   <h3 style={{ margin: "0.25rem 0 0", fontSize: "1.125rem", color: "#111827", fontWeight: "700" }}>{deposito.codigo}</h3>
                 </div>
                 <span 
@@ -453,11 +447,11 @@ export default function Depositos() {
 
       {/* Modal ABM de Depósitos */}
       <EditModal
-        key={selectedDeposito ? selectedDeposito.id_deposito : "nuevo-deposito"}
+        key={selectedDeposito && selectedDeposito.id_deposito ? selectedDeposito.id_deposito : "nuevo-deposito"}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveDeposito}
-        title={selectedDeposito ? "Editar Depósito" : "Nuevo Depósito"}
+        title={selectedDeposito && selectedDeposito.id_deposito ? "Editar Depósito" : "Nuevo Depósito"}
         fields={editFields}
         initialData={selectedDeposito}
       />
@@ -511,7 +505,6 @@ export default function Depositos() {
                 </div>
               </div>
 
-              {/* Campos condicionales de Lote si se ingresa stock > 0 */}
               {Number(formDataAsociar.stock_inicial) > 0 && (
                 <div style={{ padding: "1rem", backgroundColor: "#f8fafc", borderRadius: "0.5rem", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                   <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>Datos del Lote Inicial</span>
