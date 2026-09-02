@@ -3,6 +3,8 @@ import { supabase } from "../lib/supabase.js"; // Ajusta la ruta a tu cliente de
 import EditModal from "../components/EditModal.jsx";
 import InventarioDeposito from "./InventarioDeposito.jsx"; 
 import { Plus, Search, Building2, FileText, CalendarDays, PackagePlus, Eye, Edit3 } from "lucide-react";
+import toast, { Toaster } from "react-hot-toast"; // <--- NOTIFICACIONES MODERNAS
+import { showAlert } from "../lib/alerts.js";
 
 export default function Depositos() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -34,18 +36,15 @@ export default function Depositos() {
   async function fetchDatos() {
     setLoading(true);
 
-    // Obtener sucursales activas para el selector
-    // Obtener sucursales activas para el selector
     const { data: sucursalesData, error: errSuc } = await supabase
       .from("sucursal")
       .select("id_sucursal, descripcion")
-      .eq("estado", true); // <--- CAMBIO: true booleano en lugar de "Activo"
+      .eq("estado", true);
 
     if (!errSuc && sucursalesData) {
       setSucursales(sucursalesData);
     }
 
-    // Obtener depósitos con la información de su sucursal relacionada
     const { data: depositosData, error: errDep } = await supabase
       .from("deposito")
       .select(`
@@ -68,93 +67,95 @@ export default function Depositos() {
 
   // 2. CONFIGURACIÓN DE CAMPOS DEL MODAL
   const editFields = [
-  { key: "id_deposito", label: "ID Depósito", type: "text", readOnly: true },
-  { key: "codigo", label: "Depósito (Código)", type: "text" },
-  { 
-    key: "id_sucursal", 
-    label: "Sucursal Abastecida", 
-    type: "select", 
-    options: sucursales.map((s) => ({ 
-      value: String(s.id_sucursal), // <-- Siempre string
-      label: `${s.id_sucursal} - ${s.descripcion}` 
-    })) 
-  },
-  { key: "descripcion", label: "Descripción", type: "text" },
-  { 
-    key: "estado", 
-    label: "Estado", 
-    type: "select", 
-    options: [
-      { value: "Activo", label: "Activo" }, 
-      { value: "Inactivo", label: "Inactivo" }
-    ] 
-  },
-];
+    { key: "id_deposito", label: "ID Depósito", type: "text", readOnly: true },
+    { key: "codigo", label: "Depósito (Código)", type: "text" },
+    { 
+      key: "id_sucursal", 
+      label: "Sucursal Abastecida", 
+      type: "select", 
+      options: sucursales.map((s) => ({ 
+        value: String(s.id_sucursal), 
+        label: `${s.id_sucursal} - ${s.descripcion}` 
+      })) 
+    },
+    { key: "descripcion", label: "Descripción", type: "text" },
+    { 
+      key: "estado", 
+      label: "Estado", 
+      type: "select", 
+      options: [
+        { value: "Activo", label: "Activo" }, 
+        { value: "Inactivo", label: "Inactivo" }
+      ] 
+    },
+  ];
 
-const handleOpenCreate = () => {
-  setSelectedDeposito({
-    codigo: "",
-    id_sucursal: "",
-    descripcion: "",
-    estado: "Activo"
-  });
-  setIsModalOpen(true);
-};
+  const handleOpenCreate = () => {
+    setSelectedDeposito({
+      codigo: "",
+      id_sucursal: "",
+      descripcion: "",
+      estado: "Activo"
+    });
+    setIsModalOpen(true);
+  };
 
-const handleOpenEdit = (deposito) => {
-  setSelectedDeposito({
-    ...deposito,
-    id_sucursal: deposito.id_sucursal ? String(deposito.id_sucursal) : "",
-    estado: deposito.estado ? "Activo" : "Inactivo"
-  });
-  setIsModalOpen(true);
-};
+  const handleOpenEdit = (deposito) => {
+    setSelectedDeposito({
+      ...deposito,
+      id_sucursal: deposito.id_sucursal ? String(deposito.id_sucursal) : "",
+      estado: deposito.estado ? "Activo" : "Inactivo"
+    });
+    setIsModalOpen(true);
+  };
 
   // 3. GUARDAR EN SUPABASE: INSERT O UPDATE
-const handleSaveDeposito = async (formData) => {
-  const idSucursalFinal = formData.id_sucursal ? parseInt(formData.id_sucursal) : null;
-  const estadoBoolean = formData.estado === "Activo" || formData.estado === true;
+  const handleSaveDeposito = async (formData) => {
+    const idSucursalFinal = formData.id_sucursal ? parseInt(formData.id_sucursal) : null;
+    const estadoBoolean = formData.estado === "Activo" || formData.estado === true;
 
-  if (selectedDeposito && selectedDeposito.id_deposito) {
-    // ACTUALIZAR
-    const { error } = await supabase
-      .from("deposito")
-      .update({
-        codigo: formData.codigo,
-        id_sucursal: idSucursalFinal,
-        descripcion: formData.descripcion,
-        estado: estadoBoolean
-      })
-      .eq("id_deposito", selectedDeposito.id_deposito);
-
-    if (error) {
-      alert("Error al actualizar depósito: " + error.message);
-    } else {
-      setIsModalOpen(false);
-      fetchDatos();
-    }
-  } else {
-    // CREAR
-    const { error } = await supabase
-      .from("deposito")
-      .insert([
-        {
+    if (selectedDeposito && selectedDeposito.id_deposito) {
+      // ACTUALIZAR
+       const { error } = await supabase
+        .from("deposito")
+        .update({
           codigo: formData.codigo,
           id_sucursal: idSucursalFinal,
           descripcion: formData.descripcion,
-          estado: estadoBoolean,
-          fecha_registro: new Date().toISOString()
-        }
-      ]);
+          estado: estadoBoolean
+        })
+       .eq("id_deposito", selectedDeposito.id_deposito);
 
-    if (error) {
-      alert("Error al crear el depósito: " + error.message);
+      if (error) {
+        showAlert.errorSave("Error al actualizar depósito: " + error.message);
+      } else {
+        showAlert.successSave("Depósito actualizado correctamente");
+        setIsModalOpen(false);
+        fetchDatos();
+      }
     } else {
-      setIsModalOpen(false);
-      fetchDatos();
-    }
+  // CREAR
+  const { error } = await supabase
+    .from("deposito")
+    .insert([
+      {
+        codigo: formData.codigo,
+        id_sucursal: idSucursalFinal,
+        descripcion: formData.descripcion,
+        estado: estadoBoolean,
+        fecha_registro: new Date().toISOString()
+      }
+    ]);
+
+  if (error) {
+    showAlert.errorSave("Error al crear el depósito: " + error.message);
+  } else {
+    showAlert.successSave("Depósito creado exitosamente");
+    setIsModalOpen(false);
+    fetchDatos();
   }
-};
+  }
+  };
 
   // 4. LÓGICA DE APERTURA HU 3 (Cargar medicamentos activos)
   const abrirModalAsociar = async (deposito) => {
@@ -174,7 +175,7 @@ const handleSaveDeposito = async (formData) => {
   const handleGuardarAsociacion = async (e) => {
     e.preventDefault();
     if (!formDataAsociar.id_articulo) {
-      alert("Debes seleccionar un producto.");
+      toast.error("Debes seleccionar un producto.");
       return;
     }
 
@@ -187,7 +188,7 @@ const handleSaveDeposito = async (formData) => {
       .maybeSingle();
 
     if (existente) {
-      alert("Este artículo ya está asociado a este depósito.");
+      toast.error("Este artículo ya está asociado a este depósito.");
       return;
     }
 
@@ -202,7 +203,7 @@ const handleSaveDeposito = async (formData) => {
           id_deposito: depositoAAsociar.id_deposito,
           stock_actual: stockInicial,
           stock_minimo: stockMinimo,
-          estado: "true",
+          estado: true, // <--- Se corrigió "true" (string) a true (booleano)
           fecha_registro: new Date().toISOString()
         }
       ])
@@ -210,7 +211,7 @@ const handleSaveDeposito = async (formData) => {
       .single();
 
     if (errInsert) {
-      alert("Error al asociar: " + errInsert.message);
+      toast.error("Error al asociar: " + errInsert.message);
       return;
     }
 
@@ -227,7 +228,7 @@ const handleSaveDeposito = async (formData) => {
       ]);
     }
 
-    alert("¡Producto asociado exitosamente!");
+    toast.success("¡Producto asociado exitosamente!");
     setIsAsociarModalOpen(false);
   };
 
@@ -248,6 +249,9 @@ const handleSaveDeposito = async (formData) => {
 
   return (
     <div style={{ padding: "1rem" }}>
+      {/* Componente para renderizar los mensajes Flotantes (Toasts) */}
+      <Toaster position="top-right" reverseOrder={false} />
+
       {/* Header */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>

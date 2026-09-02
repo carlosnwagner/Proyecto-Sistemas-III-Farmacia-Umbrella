@@ -3,6 +3,7 @@ import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
 import { Plus, Search } from "lucide-react";
 import { supabase } from '../lib/supabase.js';
+import { showAlert } from "../lib/alerts.js";
 // SERVICIOS BACKEND
 import { createProveedor, updateProveedor } from '../services/proveedores.js';
 
@@ -12,20 +13,28 @@ export default function Proveedores() {
   const [selectedProveedor, setSelectedProveedor] = useState(null);
   const [proveedores, setProveedores] = useState([]);
 
+  // Estado local para notificaciones flotantes (Toasts)
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+
+  const showToast = (message, type = "success") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: "", type: "success" }), 3500);
+  };
+
   // CARGA DE DATOS DESDE SUPABASE
   useEffect(() => {
     fetchProveedores();
   }, []);
 
   const fetchProveedores = async () => {
-    const {data, error} = await supabase
+    const { data, error } = await supabase
       .from('proveedor')
       .select('*')
-      .order('razon_social', {ascending: true});
+      .order('razon_social', { ascending: true });
     
     if (error) console.error("Error al traer proveedores:", error);
     else setProveedores(data || []);
-  }
+  };
 
   // Configuración de Campos de Modal
   const editFields = useMemo(() => [
@@ -39,7 +48,6 @@ export default function Proveedores() {
     { key: "datos_contacto", label: "Datos de Contacto (Teléfono/Email)" },
   ], [selectedProveedor]);
 
-  
   const handleOpenCreate = () => {
     setSelectedProveedor(null);
     setIsModalOpen(true);
@@ -52,38 +60,38 @@ export default function Proveedores() {
 
   // GUARDADO DE DATOS
   const handleSaveProveedor = async (formData) => {
-    // payload
     const payload = {
       razon_social: formData.razon_social,
       identificacion_fiscal: formData.identificacion_fiscal,
       datos_comerciales: formData.datos_comerciales,
       datos_contacto: formData.datos_contacto
-
-    }
+    };
 
     if (selectedProveedor) {
-      // --- MODO EDICIÓN ---
-      const { error } = await updateProveedor(selectedProveedor.id_proveedor, payload);
-      
-      if (error) {
-        alert(`Error: ${error.message}`);
-      } else {
-        alert("¡Proveedor actualizado con éxito!");
-        fetchProveedores();
-        setIsModalOpen(false);
-      }
-    } else {
-      // --- MODO CREACIÓN ---
-      const { error } = await createProveedor(payload);
-      
-      if (error) {
-        alert(`Error: ${error.message}`);
-      } else {
-        alert("¡Proveedor registrado con éxito!");
-        fetchProveedores();
-        setIsModalOpen(false);
-      }
-    }
+  // --- MODO EDICIÓN ---
+  const { error } = await updateProveedor(selectedProveedor.id_proveedor, payload);
+  
+  if (error) {
+    showAlert.errorSave(`Error: ${error.message}`);
+  } else {
+    showAlert.successSave("¡Proveedor actualizado con éxito!");
+    fetchProveedores();
+    setIsModalOpen(false);
+  }
+} else {
+  // --- MODO CREACIÓN ---
+  const { error } = await createProveedor(payload);
+  
+  if (error) {
+    showAlert.errorSave(`Error: ${error.message}`);
+  } else {
+    showAlert.successSave("¡Proveedor registrado con éxito!");
+    fetchProveedores();
+    setIsModalOpen(false);
+  }
+}
+
+   
   };
 
   const filteredProveedores = proveedores.filter((p) => {
@@ -106,12 +114,34 @@ export default function Proveedores() {
     { header: "CONTACTO", accessor: "datos_contacto" },
     { 
       header: "FECHA REGISTRO", 
-      render: (p) => <span>{new Date(p.fecha_registro).toLocaleDateString()}</span> 
+      render: (p) => <span>{p.fecha_registro ? new Date(p.fecha_registro).toLocaleDateString() : "-"}</span> 
     },
   ];
 
   return (
-    <>
+    <div style={{ padding: "1rem" }}>
+      {/* Toast Flotante Custom */}
+      {toast.show && (
+        <div 
+          style={{
+            position: "fixed",
+            top: "20px",
+            right: "20px",
+            zIndex: 9999,
+            padding: "0.75rem 1.25rem",
+            borderRadius: "0.5rem",
+            color: "#ffffff",
+            backgroundColor: toast.type === "error" ? "#ef4444" : "#10b981",
+            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+            fontWeight: "600",
+            fontSize: "0.875rem",
+            transition: "all 0.3s ease"
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
+
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
           <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Proveedores</h1>
@@ -149,6 +179,6 @@ export default function Proveedores() {
         fields={editFields}
         initialData={selectedProveedor}
       />
-    </>
+    </div>
   );
 }

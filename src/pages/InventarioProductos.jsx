@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import DataTable from "../components/DataTable.jsx";
-import EditModal from "../components/EditModal.jsx"; // 1. Importamos el modal
+import EditModal from "../components/EditModal.jsx";
 import { Search, Plus } from "lucide-react";
-import { supabase } from '../lib/supabase.js'
+import { supabase } from '../lib/supabase.js';
+import { showAlert } from "../lib/alerts.js";
 
 // Servicios backend
 import { createArticulo, updateArticulo } from '../services/articulos.js';
@@ -108,6 +109,14 @@ export default function InventarioProductos() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todas");
 
+  // Estado local para notificaciones flotantes (Toasts)
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+
+  const showToast = (message, type = "success") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: "", type: "success" }), 3500);
+  };
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
@@ -130,11 +139,11 @@ export default function InventarioProductos() {
   };
 
   const cargarCatalogos = async () => {
-    const {data: dataRubros} = await getRubros();
-    const {data: dataUnidades} = await getUnidadesMedida();
+    const { data: dataRubros } = await getRubros();
+    const { data: dataUnidades } = await getUnidadesMedida();
 
-    setRubros(dataRubros);
-    setUnidades(dataUnidades);
+    setRubros(dataRubros || []);
+    setUnidades(dataUnidades || []);
   };
 
   // CAMPOS DE MODAL
@@ -157,7 +166,7 @@ export default function InventarioProductos() {
     },
     { key: "precio_costo", label: "Costo", type: "number" },
     { key: "precio_venta", label: "Precio de Venta", type: "number" },
-  ], [rubros, unidades]);
+  ], [rubros, unidades, selectedProduct]);
 
   const handleOpenCreate = () => {
     setSelectedProduct(null);
@@ -182,31 +191,33 @@ export default function InventarioProductos() {
       precio_costo: formData.precio_costo,
       precio_venta: formData.precio_venta
     };
+     if (selectedProduct) {
+  // --- MODO EDICIÓN ---
+  const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
 
-    if (selectedProduct) {
-      // --- MODO EDICIÓN ---
-      const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
+  if (error) {
+    showAlert.errorSave(`Error: ${error.message}`);
+  } else {
+    showAlert.successSave("¡Producto actualizado con éxito!");
+    fetchProducts();
+    setIsModalOpen(false);
+  }
+  
+} else {
+  // --- MODO CREACIÓN ---
+  const { error } = await createArticulo(payload);
 
-      if (error) {
-        alert(`Error: ${error.message}`);
-      } else {
-        alert("¡Producto actualizado con éxito!");
-        fetchProducts();
-        setIsModalOpen(false);
-      }
-      
-    } else {
-      // --- MODO CREACIÓN ---
-      const { error } = await createArticulo(payload);
+  if (error) {
+    showAlert.errorSave(`Error en el campo ${error.field}: ${error.message}`);
+  } else {
+    showAlert.successSave("¡Producto registrado con éxito!");
+    fetchProducts(); 
+    setIsModalOpen(false); 
+  }
+}
 
-      if (error) {
-        alert(`Error en el campo ${error.field}: ${error.message}`);
-      } else {
-        alert("¡Producto registrado con éxito!");
-        fetchProducts(); 
-        setIsModalOpen(false); 
-      }
-    }
+    
+
   };
 
   // Adaptación de Filtros
@@ -231,32 +242,10 @@ export default function InventarioProductos() {
     const total = products.length;
     const activos = products.filter(p => p.estado).length;
     const valorTotal = products.reduce((acc, p) => acc + (p.precio_costo || 0), 0);
-    return { total, stockBajo: 0, proximosVencer: 0, valorTotal };
+    return { total, activos, stockBajo: 0, proximosVencer: 0, valorTotal };
   }, [products]);
 
   const columns = [
-    /*{ header: "ID", accessor: "codigo" },
-    { header: "NOMBRE", render: (p) => <span style={{ fontWeight: "600" }}>{p.nombre}</span> },
-    { header: "DESCRIPCIÓN", accessor: "descripcion" },
-    { header: "LOTE", accessor: "lote" },
-    { header: "ESTADO", accessor: "estado" },
-    {
-      header: "STOCK",
-      render: (p) => (
-        <VialGauge current={p.stock} total={p.stockMaximo || 5000} status={p.estadoStock} />
-      ),
-    },
-    {
-      header: "VENCIMIENTO",
-      render: (p) => (
-        <Badge variant={p.diasVencimiento <= 90 ? "warning" : "success"}>
-          {p.fechaVencimiento}
-        </Badge>
-      ),
-    },
-    { header: "PRECIO", render: (p) => <span style={{ fontWeight: "600" }}>${p.precio}</span> },
-    { header: "SUCURSAL", accessor: "sucursal" },*/
-
     { header: "CÓDIGO", accessor: "codigo" },
     { header: "C. BARRAS", accessor: "codigo_barras" },
     { header: "NOMBRE", render: (p) => <span style={{ fontWeight: "600" }}>{p.nombre}</span> },
@@ -266,15 +255,37 @@ export default function InventarioProductos() {
     {
       header: "ESTADO",
       render: (p) => (
-        <Badge variant={p.estado === "Activo" ? "success" : "default"}>
-          {p.estado || "Activo"}
+        <Badge variant={p.estado === "Activo" || p.estado === true ? "success" : "default"}>
+          {p.estado === true || p.estado === "Activo" ? "Activo" : "Inactivo"}
         </Badge>
       ),
     },
   ];
 
   return (
-    <>
+    <div style={{ padding: "1rem" }}>
+      {/* Toast Flotante Custom */}
+      {toast.show && (
+        <div 
+          style={{
+            position: "fixed",
+            top: "20px",
+            right: "20px",
+            zIndex: 9999,
+            padding: "0.75rem 1.25rem",
+            borderRadius: "0.5rem",
+            color: "#ffffff",
+            backgroundColor: toast.type === "error" ? "#ef4444" : "#10b981",
+            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+            fontWeight: "600",
+            fontSize: "0.875rem",
+            transition: "all 0.3s ease"
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
+
       {/* Encabezado */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
@@ -304,7 +315,7 @@ export default function InventarioProductos() {
       {/* Tabla Modularizada */}
       <DataTable columns={columns} data={filteredProducts} onEdit={handleOpenEdit} />
 
-      {/* 4. Render del EditModal */}
+      {/* Render del EditModal */}
       <EditModal
         key={selectedProduct ? selectedProduct.codigo : "nuevo-producto"}
         isOpen={isModalOpen}
@@ -314,6 +325,6 @@ export default function InventarioProductos() {
         fields={editFields}
         initialData={selectedProduct}
       />
-    </>
+    </div>
   );
 }
