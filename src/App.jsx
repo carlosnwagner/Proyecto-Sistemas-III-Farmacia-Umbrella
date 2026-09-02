@@ -8,6 +8,7 @@ import Sucursales from "./pages/Sucursales.jsx";
   
 import Depositos from "./pages/Depositos.jsx";
 import OrdenesCompra from "./pages/OrdenesCompra.jsx";
+import FacturasProveedores from "./pages/FacturasProveedores.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="/inicio" element={<PaginaEnConstruccion titulo="Inicio" />} />
           <Route path="/inventario" element={<Inventario />} />
           <Route path="/ordenes-compra" element={<OrdenesCompra />} />
+          <Route path="/facturas-proveedores" element={<FacturasProveedores />} />
           <Route path="/proveedores" element={<Proveedores />} />
           <Route path="/pagos-proveedores" element={<RegistarPagoProveedor titulo="Pago Proveedor" />} />
           <Route path="/notas-credito-debito" element={<RegistarNotaCreditoDebito titulo="Notas Crédito/Débito" />} />
