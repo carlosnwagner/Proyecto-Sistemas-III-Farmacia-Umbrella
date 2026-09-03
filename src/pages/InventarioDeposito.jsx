@@ -3,6 +3,7 @@ import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
 import { Search, ArrowLeft, PackageMinus, Plus } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
+import { showAlert } from "../lib/alerts.js";
 
 // Componente para la barra de capacidad/stock
 function VialGauge({ current, minimum, maxCapacity = 1000 }) {
@@ -80,7 +81,7 @@ function StatCard({ title, value, subtitle, alert }) {
         border: "1px solid #f3f4f6",
         display: "flex",
         flexDirection: "column",
-        justifyContent: "space-between",
+        justifyIn: "space-between",
       }}
     >
       <div>
@@ -167,7 +168,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       .order("nombre", { ascending: true });
 
     if (articlesError) {
-      alert("No se pudieron cargar los productos: " + articlesError.message);
+      showAlert.errorSave("No se pudieron cargar los productos: " + articlesError.message);
       return;
     }
 

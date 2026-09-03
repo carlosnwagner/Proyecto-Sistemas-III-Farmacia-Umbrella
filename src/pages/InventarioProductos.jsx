@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
 import { Search, Plus } from "lucide-react";
-import { supabase } from '../lib/supabase.js'
+import { supabase } from '../lib/supabase.js';
+import { showAlert } from "../lib/alerts.js";
 
 // Servicios backend
 import { createArticulo, updateArticulo } from '../services/articulos.js';
@@ -71,6 +72,14 @@ export default function InventarioProductos() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todas");
 
+  // Estado local para notificaciones flotantes (Toasts)
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+
+  const showToast = (message, type = "success") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: "", type: "success" }), 3500);
+  };
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
@@ -93,8 +102,8 @@ export default function InventarioProductos() {
   };
 
   const cargarCatalogos = async () => {
-    const {data: dataRubros} = await getRubros();
-    const {data: dataUnidades} = await getUnidadesMedida();
+    const { data: dataRubros } = await getRubros();
+    const { data: dataUnidades } = await getUnidadesMedida();
 
     setRubros(dataRubros || []);
     setUnidades(dataUnidades || []);
@@ -181,6 +190,9 @@ export default function InventarioProductos() {
       precio_venta: Number(formData.precio_venta),
       estado: Boolean(selectedProduct ? estadoBoolean : true) // Forzamos booleano estricto aquí
     };
+     if (selectedProduct) {
+  // --- MODO EDICIÓN ---
+  const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
 
     if (selectedProduct) {
       const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
@@ -244,7 +256,7 @@ export default function InventarioProductos() {
   ];
 
   return (
-    <>
+    <div>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
           <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Productos</h1>
@@ -279,6 +291,6 @@ export default function InventarioProductos() {
         fields={selectedProduct ? editFields : editFields.filter(f => f.key !== "estado")}
         initialData={selectedProduct}
       />
-    </>
+    </div>
   );
 }

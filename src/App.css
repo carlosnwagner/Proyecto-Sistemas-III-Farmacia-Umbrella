@@ -1,4 +1,4 @@
-/* === ESTILO UNIFICADO FARMACIA UMBRELLA — COMPATIBLE CON COMPONENTES DEL EQUIPO === */
+/* === ESTILO COMPLETO FARMACIA UMBRELLA — ACTUALIZADO === */
 :root {
   --fondo-pagina: #f9fafb;
   --fondo-tarjeta: #ffffff;
@@ -193,4 +193,8 @@ label {
 .boton-principal:hover { background-color: #503822; }
 .boton-principal:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.aviso { color: var(--texto-secundario); font-style: italic; padding: 1rem; }
+.aviso { 
+  color: var(--marron-claro); 
+  font-style: italic; 
+  padding: 1rem; 
+}

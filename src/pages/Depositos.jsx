@@ -3,6 +3,8 @@ import { supabase } from "../lib/supabase.js";
 import EditModal from "../components/EditModal.jsx";
 import InventarioDeposito from "./InventarioDeposito.jsx"; 
 import { Plus, Search, Building2, FileText, CalendarDays, PackagePlus, Eye, Edit3 } from "lucide-react";
+import toast, { Toaster } from "react-hot-toast"; // <--- NOTIFICACIONES MODERNAS
+import { showAlert } from "../lib/alerts.js";
 
 export default function Depositos() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -220,7 +222,7 @@ export default function Depositos() {
   const handleGuardarAsociacion = async (e) => {
     e.preventDefault();
     if (!formDataAsociar.id_articulo) {
-      alert("Debes seleccionar un producto.");
+      toast.error("Debes seleccionar un producto.");
       return;
     }
 
@@ -246,7 +248,7 @@ export default function Depositos() {
       .maybeSingle();
 
     if (existente) {
-      alert("Este artículo ya está asociado a este depósito.");
+      toast.error("Este artículo ya está asociado a este depósito.");
       return;
     }
 
@@ -322,6 +324,9 @@ export default function Depositos() {
 
   return (
     <div style={{ padding: "1rem" }}>
+      {/* Componente para renderizar los mensajes Flotantes (Toasts) */}
+      <Toaster position="top-right" reverseOrder={false} />
+
       {/* Header */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
