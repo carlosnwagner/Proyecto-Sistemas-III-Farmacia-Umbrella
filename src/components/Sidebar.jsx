@@ -24,7 +24,7 @@ export default function Sidebar() {
   const menuItems = [
     { key: "Inicio", label: "Inicio", path: "/inicio", icon: Home },
     { key: "Inventario", label: "Inventario", path: "/inventario", icon: Package },
-    { key: "OrdenesCompra", label: "Orden de compra", path: "/ordenes-compra", icon: ClipboardList },
+  { key: "OrdenesCompra", label: "Órdenes de compra", path: "/ordenes-compra", icon: ClipboardList },
     { key: "Facturas", label: "Facturas de proveedores", path: "/facturas-proveedores", icon: FileText },
     { key: "Proveedores", label: "Proveedores", path: "/proveedores", icon: Truck },
     { key: "Pagos", label: "Pagos a Proveedores", path: "/pagos-proveedores", icon: Truck },
