@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase.js";
-import { showAlert } from "../lib/alerts.js";
 import AsociarProductoModal from "../components/AsociarProductoModal.jsx";
 import AjusteStockModal from "../components/AjusteStockModal.jsx";
 import HistorialMovimientosModal from "../components/HistorialMovimientosModal.jsx";
@@ -31,35 +30,6 @@ export default function InventarioDeposito() {
   const [itemEditarMinimo, setItemEditarMinimo] = useState(null);
   const [nuevoStockMinimo, setNuevoStockMinimo] = useState("");
 
-// Componente para las tarjetas superiores
-function StatCard({ title, value, subtitle, alert }) {
-  return (
-    <div
-      style={{
-        backgroundColor: "#ffffff",
-        borderRadius: "0.75rem",
-        padding: "1.25rem",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-        border: "1px solid #f3f4f6",
-        display: "flex",
-        flexDirection: "column",
-        justifyIn: "space-between",
-      }}
-    >
-      <div>
-        <div style={{ fontSize: "0.75rem", fontWeight: "600", color: "#6b7280", textTransform: "uppercase" }}>
-          {title}
-        </div>
-        <div style={{ fontSize: "1.875rem", fontWeight: "700", color: alert ? "#dc2626" : "#221C16", margin: "0.25rem 0" }}>
-          {value}
-        </div>
-      </div>
-      <div style={{ fontSize: "0.875rem", color: alert ? "#dc2626" : "#7D756D", fontWeight: alert ? "600" : "400" }}>
-        {subtitle}
-      </div>
-    </div>
-  );
-}
   useEffect(() => {
     async function init() {
       const { data: deps } = await supabase
@@ -93,38 +63,8 @@ function StatCard({ title, value, subtitle, alert }) {
       `)
       .eq("id_deposito", depId);
 
-    if (fetchError) {
-      console.error("Error al cargar inventario:", fetchError);
-      setError("No se pudo cargar el inventario: " + fetchError.message);
-      setInventory([]);
-    } else {
-      setInventory(
-        (data || []).map((item) => ({
-          ...item,
-          codigo: item.articulo?.codigo || "S/C",
-          nombre: item.articulo?.nombre || "Sin nombre",
-          categoria: item.articulo?.rubro?.nombre || "Sin categoría",
-          estado: item.estado === true || item.estado === "true" || item.estado === "Activo" ? "Activo" : "Inactivo",
-        }))
-      );
-    }
-
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    fetchInventory();
-  }, [fetchInventory]);
-
-  // 2. MODAL: AGREGAR NUEVO ARTÍCULO (HU 3)
-  async function openNewAssociation() {
-    const { data, error: articlesError } = await supabase
-      .from("articulo")
-      .select("id_articulo, codigo, nombre")
-      .order("nombre", { ascending: true });
-
-    if (articlesError) {
-      showAlert.errorSave("No se pudieron cargar los productos: " + articlesError.message);
+    if (!articulosDep) {
+      setInventario([]);
       return;
     }
 
