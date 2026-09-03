@@ -1,73 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import DataTable from "../components/DataTable.jsx";
-import EditModal from "../components/EditModal.jsx";
-import { Search, ArrowLeft, PackageMinus, Plus } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase.js";
 import { showAlert } from "../lib/alerts.js";
+import AsociarProductoModal from "../components/AsociarProductoModal.jsx";
+import AjusteStockModal from "../components/AjusteStockModal.jsx";
+import HistorialMovimientosModal from "../components/HistorialMovimientosModal.jsx";
+import HistorialDepositoModal from "../components/HistorialDepositoModal.jsx";
+import { Plus, PackageCheck, ClipboardList, Edit2, X } from "lucide-react";
 
-// Componente para la barra de capacidad/stock
-function VialGauge({ current, minimum, maxCapacity = 1000 }) {
-  const percentage = Math.min(100, Math.max(0, (current / maxCapacity) * 100));
+export default function InventarioDeposito() {
+  const params = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
-  let fillColor = "#22c55e"; // Verde (Normal)
-  if (current === 0) fillColor = "#ef4444"; // Rojo (Sin stock)
-  else if (current <= minimum) fillColor = "#f59e0b"; // Naranja (Stock Bajo)
+  const activeId = params.id || searchParams.get("id");
 
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-      <div
-        style={{
-          width: "60px",
-          height: "8px",
-          backgroundColor: "#e5e7eb",
-          borderRadius: "9999px",
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
-        <div
-          style={{
-            width: `${percentage}%`,
-            height: "100%",
-            backgroundColor: fillColor,
-            borderRadius: "9999px",
-            transition: "width 0.3s ease",
-          }}
-        />
-      </div>
-      <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>
-        {current}
-      </span>
-    </div>
-  );
-}
+  const [listaDepositos, setListaDepositos] = useState([]);
+  const [deposito, setDeposito] = useState(null);
+  const [inventario, setInventario] = useState([]);
+  const [search, setSearch] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("Todas");
 
-// Componente para las etiquetas de estado
-function Badge({ children, variant = "default" }) {
-  const styles = {
-    default: { backgroundColor: "#f3f4f6", color: "#374151" },
-    success: { backgroundColor: "#dcfce7", color: "#166534" },
-    warning: { backgroundColor: "#fef3c7", color: "#92400e" },
-    danger: { backgroundColor: "#fee2e2", color: "#991b1b" },
-  };
+  // Modales
+  const [isModalAsociarOpen, setIsModalAsociarOpen] = useState(false);
+  const [isModalAjusteOpen, setIsModalAjusteOpen] = useState(false);
+  const [isModalHistorialDepOpen, setIsModalHistorialDepOpen] = useState(false);
+  const [articuloSeleccionadoHistorial, setArticuloSeleccionadoHistorial] = useState(null);
 
-  return (
-    <span
-      style={{
-        padding: "0.25rem 0.625rem",
-        borderRadius: "9999px",
-        fontSize: "0.75rem",
-        fontWeight: "700",
-        display: "inline-flex",
-        alignItems: "center",
-        textTransform: "uppercase",
-        ...styles[variant],
-      }}
-    >
-      {children}
-    </span>
-  );
-}
+  // Modal para Editar Mínimo
+  const [itemEditarMinimo, setItemEditarMinimo] = useState(null);
+  const [nuevoStockMinimo, setNuevoStockMinimo] = useState("");
 
 // Componente para las tarjetas superiores
 function StatCard({ title, value, subtitle, alert }) {
@@ -98,44 +60,38 @@ function StatCard({ title, value, subtitle, alert }) {
     </div>
   );
 }
+  useEffect(() => {
+    async function init() {
+      const { data: deps } = await supabase
+        .from("deposito")
+        .select("id_deposito, codigo, descripcion, rubros_permitidos, id_sucursal")
+        .order("id_deposito", { ascending: true });
 
-export default function InventarioDeposito({ deposito, onBack = () => alert("Volver a depósitos") }) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchAjuste, setSearchAjuste] = useState(""); // <-- Estado fundamental para el buscador de ajuste
-  const [selectedCategory, setSelectedCategory] = useState("Todas");
-  const [inventory, setInventory] = useState([]);
-  const [availableArticles, setAvailableArticles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+      if (deps && deps.length > 0) {
+        setListaDepositos(deps);
+        const target = deps.find(d => String(d.id_deposito) === String(activeId)) || deps[0];
+        setDeposito(target);
+        fetchInventario(target.id_deposito);
+      }
+    }
+    init();
+  }, [activeId]);
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState("asociar");
-  const [selectedItem, setSelectedItem] = useState(null);
-  const depositoId = deposito?.id_deposito;
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-
-  // 1. CARGA DEL INVENTARIO DEL DEPÓSITO
-  const fetchInventory = useCallback(async () => {
-    if (!depositoId) return;
-    setLoading(true);
-    setError("");
-
-    const { data, error: fetchError } = await supabase
+  async function fetchInventario(depId) {
+    const { data: articulosDep } = await supabase
       .from("articulo_deposito")
       .select(`
         id_articulo_deposito,
         id_articulo,
-        stock_actual,
         stock_minimo,
-        estado,
-        articulo:articulo (
+        articulo:id_articulo (
+          id_articulo,
           codigo,
           nombre,
-          rubro:rubro ( nombre )
+          rubro:id_rubro (nombre)
         )
       `)
-      .eq("id_deposito", depositoId)
-      .order("id_articulo_deposito", { ascending: true });
+      .eq("id_deposito", depId);
 
     if (fetchError) {
       console.error("Error al cargar inventario:", fetchError);
@@ -172,496 +128,303 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       return;
     }
 
-    const associatedIds = new Set(inventory.map((item) => item.id_articulo));
-    const disponibles = (data || []).filter((article) => !associatedIds.has(article.id_articulo));
-    
-    setAvailableArticles(disponibles);
-    setModalMode("asociar");
-    setSelectedItem({ 
-      id_articulo: "", 
-      stock_actual: 0, 
-      stock_minimo: 10,
-      numero_lote: "",
-      fecha_vencimiento: ""
-    });
-    setIsModalOpen(true);
+    const calculados = await Promise.all(
+      articulosDep.map(async (item) => {
+        const { data: movs } = await supabase
+          .from("movimiento_stock")
+          .select("cantidad, tipo_movimiento")
+          .eq("id_articulo_deposito", item.id_articulo_deposito);
+
+        const stockReal = (movs || []).reduce((sum, m) => {
+          const cant = Math.abs(Number(m.cantidad) || 0);
+          const tipoNorm = (m.tipo_movimiento || "").toUpperCase();
+          const esResta = tipoNorm.includes("EGRESO") || 
+                          tipoNorm.includes("MERMA") || 
+                          tipoNorm.includes("ROTURA") || 
+                          tipoNorm.includes("VENCIMIENTO");
+          return esResta ? sum - cant : sum + cant;
+        }, 0);
+
+        return { ...item, stock_actual: Math.max(0, stockReal) };
+      })
+    );
+
+    setInventario(calculados);
   }
 
-  // 3. MODAL: AJUSTE DE STOCK
-  const openStockAdjustment = () => {
-      if (inventory.length === 0) {
-        alert("No hay productos en este depósito para ajustar.");
-        return;
-      }
-      const primerProd = inventory[0];
-      setSearchAjuste("");
-      setDropdownOpen(false);
-      setModalMode("ajuste");
-      setSelectedItem({
-        id_articulo_deposito:"",
-        tipo_movimiento: "AJUSTE_AUDITORIA",
-        nuevo_stock: primerProd ? primerProd.stock_actual : 0,
-      });
-      setIsModalOpen(true);
-    };
-  // 4. MODAL: EDITAR PARÁMETROS
-  const handleOpenEdit = (item) => {
-    setModalMode("editar");
-    setSelectedItem({
-      ...item,
-      stock_minimo: item.stock_minimo,
-      estado: item.estado,
-    });
-    setIsModalOpen(true);
+  const handleCambiarDeposito = (nuevoId) => {
+    navigate(`/depositos/${nuevoId}/inventario`);
   };
 
-  // Artículos filtrados para el modal de ajuste
-  const articulosFiltradosAjuste = useMemo(() => {
-    const term = (searchAjuste || "").toLowerCase();
-    return inventory.filter(
-      (item) =>
-        item.nombre?.toLowerCase().includes(term) ||
-        item.codigo?.toLowerCase().includes(term)
-    );
-  }, [inventory, searchAjuste]);
+  const handleAbrirModalMinimo = (e, item) => {
+    e.stopPropagation();
+    setItemEditarMinimo(item);
+    setNuevoStockMinimo(item.stock_minimo);
+  };
 
-  const editFields = [
-    { key: "codigo", label: "Código", readOnly: true },
-    { key: "nombre", label: "Producto", readOnly: true },
-    { key: "stock_minimo", label: "Stock Mínimo Permitido", type: "number" },
-    { key: "estado", label: "Estado", type: "select", options: [{ value: "Activo", label: "Activo" }, { value: "Inactivo", label: "Inactivo" }] },
-  ];
+  const handleGuardarMinimo = async (e) => {
+    e.preventDefault();
+    if (!itemEditarMinimo) return;
 
-  // 5. GUARDAR DATOS
-  const handleSaveItem = async (formData) => {
-    let idUsuarioActual = null;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user?.id) idUsuarioActual = user.id;
+    const { error } = await supabase
+      .from("articulo_deposito")
+      .update({ stock_minimo: parseInt(nuevoStockMinimo) || 0 })
+      .eq("id_articulo_deposito", itemEditarMinimo.id_articulo_deposito);
 
-    // --- MODO 1: ASOCIAR / AGREGAR PRODUCTO ---
-    if (modalMode === "asociar") {
-      if (!formData.id_articulo) {
-        alert("Debes seleccionar un producto.");
-        return;
-      }
-
-      const stockInicial = parseInt(formData.stock_actual) || 0;
-      const stockMinimo = parseInt(formData.stock_minimo) || 0;
-
-      if (stockInicial > 0 && (!formData.numero_lote?.trim() || !formData.fecha_vencimiento)) {
-        alert("Si ingresa stock inicial, debe indicar el N° de Lote y Fecha de Vencimiento.");
-        return;
-      }
-
-      const { data: nuevaAsoc, error: insertError } = await supabase
-        .from("articulo_deposito")
-        .insert([
-          {
-            id_articulo: parseInt(formData.id_articulo),
-            id_deposito: deposito.id_deposito,
-            stock_actual: stockInicial,
-            stock_minimo: stockMinimo,
-            estado: true,
-            fecha_registro: new Date().toISOString(),
-          }
-        ])
-        .select("id_articulo_deposito")
-        .single();
-
-      if (insertError) {
-        alert("Error al asociar: " + insertError.message);
-        return;
-      }
-
-      if (stockInicial > 0 && nuevaAsoc) {
-        const { data: loteData, error: loteError } = await supabase
-          .from("lote")
-          .insert([
-            {
-              id_articulo: parseInt(formData.id_articulo),
-              id_deposito: parseInt(deposito.id_deposito),
-              numero_lote: (formData.numero_lote || "").trim(),
-              fecha_vencimiento: formData.fecha_vencimiento,
-              cantidad: stockInicial,
-              estado: "Vigente",
-              fecha_registro: new Date().toISOString(),
-            }
-          ])
-          .select("id_lote")
-          .single();
-
-        if (loteError) {
-          console.error("Error al registrar el lote:", loteError);
-          alert("Error al registrar el lote en la base de datos: " + loteError.message);
-          return;
-        }
-
-        const { error: movError } = await supabase
-          .from("movimiento_stock")
-          .insert([
-            {
-              id_articulo_deposito: nuevaAsoc.id_articulo_deposito,
-              id_lote: loteData ? loteData.id_lote : null,
-              id_usuario: idUsuarioActual,
-              tipo_movimiento: "INGRESO_INICIAL",
-              cantidad: stockInicial,
-              fecha_movimiento: new Date().toISOString(),
-            }
-          ]);
-
-        if (movError) {
-          console.error("Error al registrar movimiento_stock:", movError);
-          alert("El lote se creó pero falló el movimiento: " + movError.message);
-          return;
-        }
-      }
-
-      alert("¡Producto agregado al depósito con éxito!");
-      setIsModalOpen(false);
-      await fetchInventory();
-      return;
-    }
-
-    // --- MODO 2: AJUSTE DE STOCK ---
-    if (modalMode === "ajuste") {
-      const idRelacion = parseInt(formData.id_articulo_deposito);
-      const nuevoStock = parseInt(formData.nuevo_stock);
-
-      if (!idRelacion || isNaN(nuevoStock) || nuevoStock < 0) {
-        alert("Seleccione un producto e ingrese un stock válido.");
-        return;
-      }
-
-      const itemPrevio = inventory.find((i) => i.id_articulo_deposito === idRelacion);
-      const stockAnterior = itemPrevio?.stock_actual || 0;
-      const diferencia = Math.abs(nuevoStock - stockAnterior);
-
-      const { error: updateStockErr } = await supabase
-        .from("articulo_deposito")
-        .update({ stock_actual: nuevoStock })
-        .eq("id_articulo_deposito", idRelacion);
-
-      if (updateStockErr) {
-        alert("Error al actualizar el stock: " + updateStockErr.message);
-        return;
-      }
-
-      const { error: movErr } = await supabase
-        .from("movimiento_stock")
-        .insert([
-          {
-            id_articulo_deposito: idRelacion,
-            id_lote: null,
-            id_usuario: idUsuarioActual,
-            tipo_movimiento: formData.tipo_movimiento || "AJUSTE_AUDITORIA",
-            cantidad: diferencia,
-            fecha_movimiento: new Date().toISOString(),
-          }
-        ]);
-
-      if (movErr) {
-        console.error("Error en movimiento_stock:", movErr);
-        alert("Stock actualizado, pero falló el registro de auditoría: " + movErr.message);
-        return;
-      }
-
-      alert("¡Ajuste de stock y movimiento guardados correctamente!");
-      setIsModalOpen(false);
-      await fetchInventory();
-      return;
-    }
-
-    // --- MODO 3: EDITAR PARÁMETROS ---
-    if (modalMode === "editar") {
-      const { error: updateError } = await supabase
-        .from("articulo_deposito")
-        .update({
-          stock_minimo: parseInt(formData.stock_minimo) || 0,
-          estado: formData.estado === "Activo" || formData.estado === true,
-        })
-        .eq("id_articulo_deposito", formData.id_articulo_deposito);
-
-      if (updateError) {
-        alert("Error al actualizar: " + updateError.message);
-        return;
-      }
-
-      alert("¡Parámetros actualizados!");
-      setIsModalOpen(false);
-      await fetchInventory();
+    if (error) {
+      alert("Error al actualizar: " + error.message);
+    } else {
+      setItemEditarMinimo(null);
+      fetchInventario(deposito.id_deposito);
     }
   };
 
-  const categories = useMemo(() => {
-    const cats = new Set(inventory.map((p) => p.categoria).filter(Boolean));
-    return ["Todas", ...Array.from(cats)];
-  }, [inventory]);
+  const totalAsociados = inventario.length;
+  const stockOptimo = inventario.filter(i => i.stock_actual > i.stock_minimo).length;
+  const stockBajo = inventario.filter(i => i.stock_actual <= i.stock_minimo && i.stock_actual > 0).length;
+  const sinStock = inventario.filter(i => i.stock_actual === 0).length;
 
-  const filteredInventory = useMemo(() => {
-    return inventory.filter((p) => {
-      const matchesSearch = p.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) || p.codigo?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCategory = selectedCategory === "Todas" || p.categoria === selectedCategory;
-      return matchesSearch && matchesCategory;
-    });
-  }, [inventory, searchTerm, selectedCategory]);
-
-  const stats = useMemo(() => {
-    const total = inventory.length;
-    const stockBajo = inventory.filter((p) => p.stock_actual > 0 && p.stock_actual <= p.stock_minimo).length;
-    const sinStock = inventory.filter((p) => p.stock_actual === 0).length;
-    const itemsSaludables = total - stockBajo - sinStock;
-
-    return { total, stockBajo, sinStock, itemsSaludables };
-  }, [inventory]);
-
-  const columns = [
-    { header: "CÓDIGO", accessor: "codigo" },
-    { header: "PRODUCTO", render: (p) => <span style={{ fontWeight: "600", color: "#221C16" }}>{p.nombre}</span> },
-    { header: "CATEGORÍA", accessor: "categoria" },
-    {
-      header: "STOCK ACTUAL",
-      render: (p) => (
-        <VialGauge current={p.stock_actual} minimum={p.stock_minimo} maxCapacity={1000} />
-      ),
-    },
-    { header: "STOCK MÍNIMO", render: (p) => <span style={{ color: "#7D756D", fontWeight: "600" }}>{p.stock_minimo}</span> },
-    {
-      header: "ESTADO",
-      render: (p) => {
-        let variant;
-        let label = p.estado;
-        
-        if (p.estado === "Inactivo") variant = "danger";
-        else if (p.stock_actual === 0) { variant = "danger"; label = "Sin Stock"; }
-        else if (p.stock_actual <= p.stock_minimo) { variant = "warning"; label = "Stock Bajo"; }
-        else variant = "success";
-
-        return <Badge variant={variant}>{label}</Badge>;
-      },
-    }
-  ];
+  const productosFiltrados = inventario.filter((item) => {
+    const txt = search.toLowerCase();
+    const matchTxt = item.articulo?.nombre?.toLowerCase().includes(txt) || item.articulo?.codigo?.toLowerCase().includes(txt);
+    if (filtroEstado === "Todas") return matchTxt;
+    if (filtroEstado === "Optimo") return matchTxt && item.stock_actual > item.stock_minimo;
+    if (filtroEstado === "Stock Bajo") return matchTxt && item.stock_actual <= item.stock_minimo && item.stock_actual > 0;
+    if (filtroEstado === "Sin Stock") return matchTxt && item.stock_actual === 0;
+    return matchTxt;
+  });
 
   return (
-    <div style={{ padding: "1rem", backgroundColor: "#F7F4EE", minHeight: "100vh" }}>
-      <button 
-        onClick={onBack}
-        style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "transparent", border: "none", color: "#65482b", fontWeight: "600", cursor: "pointer", marginBottom: "1.5rem", padding: 0 }}
-      >
-        <ArrowLeft size={18} /> Volver a Depósitos
-      </button>
+    <div style={{ padding: "2rem" }}>
+      {/* Selector superior */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+        <button
+          onClick={() => navigate("/depositos")}
+          style={{ background: "none", border: "none", cursor: "pointer", color: "#65482b", fontWeight: "bold", fontSize: "1rem" }}
+        >
+          ← Volver a Depósitos
+        </button>
 
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "2rem" }}>
-        <div>
-          <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>
-            Inventario: {deposito?.codigo}
-          </h1>
-          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>
-            {deposito?.descripcion} — {stats.total} productos asociados
-          </p>
-        </div>
-        
-        <div style={{ display: "flex", gap: "0.75rem" }}>
-          <button 
-            onClick={openStockAdjustment} 
-            style={{ backgroundColor: "#ffffff", color: "#65482b", border: "1px solid #d1d5db", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}
-          >
-            <PackageMinus size={18} /> Ajuste de Stock
-          </button>
-          <button 
-            onClick={openNewAssociation} 
-            style={{ backgroundColor: "#4E6B4F", color: "#ffffff", border: "none", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}
-          >
-            <Plus size={18} /> Agregar Productos
-          </button>
-        </div>
-      </header>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
-        <StatCard title="PRODUCTOS ASOCIADOS" value={stats.total} subtitle="Total en catálogo" />
-        <StatCard title="STOCK SALUDABLE" value={stats.itemsSaludables} subtitle="Por encima del mínimo" />
-        <StatCard title="STOCK BAJO" value={stats.stockBajo} subtitle="Requieren reposición" alert={stats.stockBajo > 0} />
-        <StatCard title="SIN STOCK (QUIEBRE)" value={stats.sinStock} subtitle="Agotados completamente" alert={stats.sinStock > 0} />
+        {listaDepositos.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <label style={{ fontSize: "0.9rem", fontWeight: "600", color: "#374151" }}>Cambiar de depósito:</label>
+            <select
+              value={deposito?.id_deposito || ""}
+              onChange={(e) => handleCambiarDeposito(e.target.value)}
+              style={{ padding: "0.45rem 0.75rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", fontWeight: "500", backgroundColor: "#fff" }}
+            >
+              {listaDepositos.map(d => (
+                <option key={d.id_deposito} value={d.id_deposito}>
+                  {d.codigo} – {d.descripcion}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
-        <div style={{ position: "relative", flex: 1 }}>
-          <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
-          <input
-            type="text"
-            placeholder="Buscar por producto o código..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" }}
-          />
+      {/* Cabecera y Botones */}
+      {deposito && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "1rem" }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: "1.85rem", color: "#111827" }}>Inventario: {deposito.codigo}</h1>
+            <p style={{ color: "#6b7280", margin: "0.25rem 0 0 0", fontSize: "0.95rem" }}>
+              {deposito.descripcion} — {totalAsociados} productos en existencia
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
+            <button
+              onClick={() => setIsModalHistorialDepOpen(true)}
+              style={{
+                backgroundColor: "#4b5563",
+                color: "#ffffff",
+                border: "none",
+                padding: "0.6rem 1.1rem",
+                borderRadius: "0.5rem",
+                fontWeight: "600",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.45rem",
+                cursor: "pointer"
+              }}
+              title="Ver auditoría general de todos los movimientos de este depósito"
+            >
+              <ClipboardList size={18} /> Movimientos del Depósito
+            </button>
+
+            <button
+              onClick={() => setIsModalAsociarOpen(true)}
+              style={{
+                backgroundColor: "#365314",
+                color: "#ffffff",
+                border: "none",
+                padding: "0.6rem 1.1rem",
+                borderRadius: "0.5rem",
+                fontWeight: "600",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.45rem",
+                cursor: "pointer"
+              }}
+            >
+              <Plus size={18} /> Asociar Producto
+            </button>
+
+            <button
+              onClick={() => setIsModalAjusteOpen(true)}
+              style={{
+                backgroundColor: "#65482b",
+                color: "#ffffff",
+                border: "none",
+                padding: "0.6rem 1.1rem",
+                borderRadius: "0.5rem",
+                fontWeight: "600",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.45rem",
+                cursor: "pointer"
+              }}
+            >
+              <PackageCheck size={18} /> Ajuste Masivo de Stock
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Tarjetas de Métricas - Con STOCK ÓPTIMO / ALTO */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
+        <div style={{ background: "#fff", padding: "1.25rem", borderRadius: "0.5rem", border: "1px solid #e5e7eb" }}>
+          <span style={{ fontSize: "0.75rem", fontWeight: "bold", color: "#6b7280" }}>PRODUCTOS ASOCIADOS</span>
+          <h2 style={{ margin: "0.25rem 0 0 0", fontSize: "1.75rem" }}>{totalAsociados}</h2>
+        </div>
+        <div style={{ background: "#fff", padding: "1.25rem", borderRadius: "0.5rem", border: "1px solid #e5e7eb" }}>
+          <span style={{ fontSize: "0.75rem", fontWeight: "bold", color: "#6b7280" }}>STOCK ÓPTIMO (ALTO)</span>
+          <h2 style={{ margin: "0.25rem 0 0 0", fontSize: "1.75rem", color: "#16a34a" }}>{stockOptimo}</h2>
+        </div>
+        <div style={{ background: "#fff", padding: "1.25rem", borderRadius: "0.5rem", border: "1px solid #e5e7eb" }}>
+          <span style={{ fontSize: "0.75rem", fontWeight: "bold", color: "#6b7280" }}>STOCK BAJO</span>
+          <h2 style={{ margin: "0.25rem 0 0 0", fontSize: "1.75rem", color: "#ca8a04" }}>{stockBajo}</h2>
+        </div>
+        <div style={{ background: "#fff", padding: "1.25rem", borderRadius: "0.5rem", border: "1px solid #e5e7eb" }}>
+          <span style={{ fontSize: "0.75rem", fontWeight: "bold", color: "#6b7280" }}>SIN STOCK (QUIEBRE)</span>
+          <h2 style={{ margin: "0.25rem 0 0 0", fontSize: "1.75rem", color: "#dc2626" }}>{sinStock}</h2>
+        </div>
+      </div>
+
+      {/* Búsqueda y Filtros */}
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.25rem" }}>
+        <input
+          type="text"
+          placeholder="Buscar por código o nombre..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ flex: 1, padding: "0.55rem 0.85rem", borderRadius: "0.375rem", border: "1px solid #d1d5db" }}
+        />
         <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          style={{ padding: "0.625rem 1rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", backgroundColor: "#ffffff", outline: "none", color: "#374151", fontWeight: "500" }}
+          value={filtroEstado}
+          onChange={(e) => setFiltroEstado(e.target.value)}
+          style={{ padding: "0.55rem 0.85rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", backgroundColor: "#fff" }}
         >
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
+          <option value="Todas">Todas</option>
+          <option value="Optimo">Stock Óptimo (Alto)</option>
+          <option value="Stock Bajo">Stock Bajo</option>
+          <option value="Sin Stock">Sin Stock</option>
         </select>
       </div>
 
-      {loading ? (
-        <div style={{ textAlign: "center", padding: "3rem", color: "#6b7280" }}>Cargando inventario del depósito...</div>
-      ) : error ? (
-        <div style={{ textAlign: "center", padding: "3rem", color: "#991b1b" }}>{error}</div>
-      ) : (
-        <DataTable columns={columns} data={filteredInventory} onEdit={handleOpenEdit} />
-      )}
-
-      {/* 1. Modal Reutilizable para Modificar Parámetros de Stock */}
-      {isModalOpen && modalMode === "editar" && (
-        <EditModal
-          key="modal-editar"
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSave={handleSaveItem}
-          title="Modificar Parámetros de Stock"
-          fields={editFields}
-          initialData={selectedItem}
-        />
-      )}
-
-      {/* 2. Modal Nativo para Ajuste de Stock con Buscador Integrado */}
-{/* Modal Nativo para Ajuste de Stock con Buscador Tipo Tienda */}
-      {isModalOpen && modalMode === "ajuste" && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" }}>
-          <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", width: "100%", maxWidth: "520px", maxHeight: "90vh", overflowY: "visible", padding: "1.5rem", boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "#111827", marginTop: 0, marginBottom: "1.25rem" }}>
-              Ajuste de Stock / Movimientos
-            </h2>
-
-            <form onSubmit={(e) => { e.preventDefault(); handleSaveItem(selectedItem); }} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              
-              {/* Buscador Único Integrado con Desplegable */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", position: "relative" }}>
-                <label style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>Producto</label>
-                <div style={{ position: "relative" }}>
-                  <Search size={16} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
-                  <input
-                    type="text"
-                    placeholder="Escribe el nombre o código del producto..."
-                    value={searchAjuste}
-                    onFocus={() => setDropdownOpen(true)}
-                    onChange={(e) => {
-                      setSearchAjuste(e.target.value);
-                      setDropdownOpen(true);
-                    }}
-                    style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.25rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box", fontSize: "0.875rem" }}
-                    required
-                  />
-                </div>
-
-                {/* Lista Flotante de Resultados */}
-                {dropdownOpen && (
-                  <ul
-                    style={{
-                      position: "absolute",
-                      top: "100%",
-                      left: 0,
-                      right: 0,
-                      maxHeight: "180px",
-                      overflowY: "auto",
-                      backgroundColor: "#ffffff",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "0.375rem",
-                      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                      margin: "0.25rem 0 0",
-                      padding: 0,
-                      listStyle: "none",
-                      zIndex: 20,
-                    }}
-                  >
-                    {articulosFiltradosAjuste.length === 0 ? (
-                      <li style={{ padding: "0.75rem 1rem", fontSize: "0.85rem", color: "#6b7280", textAlign: "center" }}>
-                        No se encontraron productos coincidentes
-                      </li>
-                    ) : (
-                      articulosFiltradosAjuste.map((item) => (
-                        <li
-                          key={item.id_articulo_deposito}
-                          onMouseDown={() => {
-                            setSelectedItem({
-                              ...selectedItem,
-                              id_articulo_deposito: String(item.id_articulo_deposito),
-                              nuevo_stock: item.stock_actual,
-                            });
-                            setSearchAjuste(`[${item.codigo}] ${item.nombre}`);
-                            setDropdownOpen(false);
-                          }}
-                          style={{
-                            padding: "0.625rem 1rem",
-                            fontSize: "0.875rem",
-                            cursor: "pointer",
-                            borderBottom: "1px solid #f3f4f6",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            backgroundColor: String(selectedItem?.id_articulo_deposito) === String(item.id_articulo_deposito) ? "#f3f4f6" : "#ffffff",
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#FAF8F4")}
-                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = String(selectedItem?.id_articulo_deposito) === String(item.id_articulo_deposito) ? "#f3f4f6" : "#ffffff")}
-                        >
-                          <span>
-                            <strong style={{ color: "#221C16" }}>[{item.codigo}]</strong> {item.nombre}
-                          </span>
-                          <span style={{ fontSize: "0.75rem", color: "#7D756D", fontWeight: "600" }}>
-                            Stock: {item.stock_actual}
-                          </span>
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                )}
-              </div>
-
-              {/* Selector de Tipo de Movimiento */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                <label style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>Tipo de Movimiento</label>
-                <select 
-                  value={selectedItem?.tipo_movimiento || "AJUSTE_AUDITORIA"}
-                  onChange={(e) => setSelectedItem({ ...selectedItem, tipo_movimiento: e.target.value })}
-                  style={{ padding: "0.625rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", width: "100%", boxSizing: "border-box", fontSize: "0.875rem" }}
+      {/* Tabla con clic para abrir el Historial del producto */}
+      <div style={{ background: "#fff", borderRadius: "0.5rem", border: "1px solid #e5e7eb", overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.9rem" }}>
+          <thead>
+            <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb", color: "#6b7280" }}>
+              <th style={{ padding: "0.85rem 1rem" }}>CÓDIGO</th>
+              <th style={{ padding: "0.85rem 1rem" }}>PRODUCTO</th>
+              <th style={{ padding: "0.85rem 1rem" }}>CATEGORÍA</th>
+              <th style={{ padding: "0.85rem 1rem" }}>STOCK ACTUAL</th>
+              <th style={{ padding: "0.85rem 1rem" }}>STOCK MÍNIMO</th>
+              <th style={{ padding: "0.85rem 1rem" }}>ESTADO</th>
+              <th style={{ padding: "0.85rem 1rem", textAlign: "right" }}>ACCIONES</th>
+            </tr>
+          </thead>
+          <tbody>
+            {productosFiltrados.length > 0 ? (
+              productosFiltrados.map((item) => (
+                <tr
+                  key={item.id_articulo_deposito}
+                  onClick={() => setArticuloSeleccionadoHistorial(item)}
+                  style={{ borderBottom: "1px solid #e5e7eb", cursor: "pointer", transition: "background-color 0.15s ease" }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f9fafb"}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                  title="Haz clic para ver trazabilidad e historial"
                 >
-                  <option value="AJUSTE_AUDITORIA">Ajuste por Conteo / Auditoría</option>
-                  <option value="MERMA_ROTURA">Merma / Rotura</option>
-                  <option value="VENCIMIENTO">Baja por Vencimiento</option>
-                  <option value="Ingreso">Ingreso Manual Simple</option>
-                  <option value="Egreso">Egreso Manual Simple</option>
-                  <option value="Ajuste">Ajuste General</option>
-                </select>
-              </div>
+                  <td style={{ padding: "0.85rem 1rem", fontWeight: "bold" }}>{item.articulo?.codigo}</td>
+                  <td style={{ padding: "0.85rem 1rem", fontWeight: "500" }}>{item.articulo?.nombre}</td>
+                  <td style={{ padding: "0.85rem 1rem", color: "#4b5563" }}>{item.articulo?.rubro?.nombre || "General"}</td>
+                  <td style={{ padding: "0.85rem 1rem", fontWeight: "bold", fontSize: "1.05rem" }}>{item.stock_actual}</td>
+                  <td style={{ padding: "0.85rem 1rem" }}>{item.stock_minimo}</td>
+                  <td style={{ padding: "0.85rem 1rem" }}>
+                    <span style={{
+                      padding: "0.2rem 0.55rem", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: "bold",
+                      backgroundColor: item.stock_actual === 0 ? "#fee2e2" : item.stock_actual <= item.stock_minimo ? "#fef9c3" : "#dcfce7",
+                      color: item.stock_actual === 0 ? "#991b1b" : item.stock_actual <= item.stock_minimo ? "#854d0e" : "#166534"
+                    }}>
+                      {item.stock_actual === 0 ? "SIN STOCK" : item.stock_actual <= item.stock_minimo ? "STOCK BAJO" : "ÓPTIMO"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "0.85rem 1rem", textAlign: "right" }}>
+                    <button
+                      onClick={(e) => handleAbrirModalMinimo(e, item)}
+                      style={{ padding: "0.35rem 0.75rem", fontSize: "0.78rem", border: "1px solid #d1d5db", borderRadius: "0.25rem", cursor: "pointer", background: "#fff", display: "inline-flex", alignItems: "center", gap: "0.3rem", fontWeight: "600" }}
+                      title="Modificar Stock Mínimo de Alerta"
+                    >
+                      <Edit2 size={13} /> Mínimo
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="7" style={{ padding: "2.5rem", textAlign: "center", color: "#6b7280" }}>
+                  No hay productos asociados a este depósito.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-              {/* Entrada de Stock Físico Real */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                <label style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>Nuevo Stock Físico Real</label>
-                <input 
-                  type="number" 
+      {/* Modal para Definir Stock Mínimo */}
+      {itemEditarMinimo && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200, padding: "1rem" }}>
+          <div style={{ backgroundColor: "#fff", padding: "1.5rem", borderRadius: "0.5rem", width: "100%", maxWidth: "420px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: "700" }}>Definir Stock Mínimo de Alerta</h3>
+              <button onClick={() => setItemEditarMinimo(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#6b7280" }}><X size={18} /></button>
+            </div>
+            <p style={{ fontSize: "0.9rem", color: "#4b5563", margin: "0 0 1rem 0" }}>
+              Producto: <b>{itemEditarMinimo.articulo?.nombre}</b>
+            </p>
+            <form onSubmit={handleGuardarMinimo} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={{ fontSize: "0.85rem", fontWeight: "600", display: "block", marginBottom: "0.25rem" }}>
+                  Cantidad mínima para generar alerta
+                </label>
+                <input
+                  type="number"
                   min="0"
-                  value={selectedItem?.nuevo_stock ?? 0}
-                  onChange={(e) => setSelectedItem({ ...selectedItem, nuevo_stock: e.target.value })}
-                  style={{ padding: "0.625rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", width: "100%", boxSizing: "border-box", fontSize: "0.875rem" }}
                   required
+                  value={nuevoStockMinimo}
+                  onChange={e => setNuevoStockMinimo(e.target.value)}
+                  style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", boxSizing: "border-box" }}
                 />
               </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
-                <button 
-                  type="button" 
-                  onClick={() => setIsModalOpen(false)} 
-                  style={{ padding: "0.5rem 1rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", backgroundColor: "#ffffff", color: "#374151", fontWeight: "600", cursor: "pointer" }}
-                >
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                <button type="button" onClick={() => setItemEditarMinimo(null)} style={{ padding: "0.5rem 1rem", border: "1px solid #d1d5db", background: "#fff", borderRadius: "0.375rem", cursor: "pointer" }}>
                   Cancelar
                 </button>
-                <button 
-                  type="submit" 
-                  style={{ padding: "0.5rem 1rem", borderRadius: "0.375rem", border: "none", backgroundColor: "#4E6B4F", color: "#ffffff", fontWeight: "600", cursor: "pointer" }}
-                >
-                  Guardar Ajuste
+                <button type="submit" style={{ padding: "0.5rem 1.25rem", background: "#365314", color: "#fff", border: "none", borderRadius: "0.375rem", fontWeight: "bold", cursor: "pointer" }}>
+                  Guardar
                 </button>
               </div>
             </form>
@@ -669,103 +432,42 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
         </div>
       )}
 
-      {/* 3. Modal Nativo para Agregar Producto con Lote Condicional */}
-      {isModalOpen && modalMode === "asociar" && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" }}>
-          <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", width: "100%", maxWidth: "520px", maxHeight: "90vh", overflowY: "auto", padding: "1.5rem", boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "#111827", marginTop: 0, marginBottom: "1.25rem" }}>
-              Agregar Producto a {deposito?.codigo}
-            </h2>
-            
-            <form onSubmit={(e) => { e.preventDefault(); handleSaveItem(selectedItem); }} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                <label style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>Producto (Catálogo)</label>
-                <select 
-                  value={selectedItem?.id_articulo || ""} 
-                  onChange={(e) => setSelectedItem({ ...selectedItem, id_articulo: e.target.value })}
-                  style={{ padding: "0.625rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", width: "100%", boxSizing: "border-box", fontSize: "0.875rem" }}
-                  required
-                >
-                  <option value="" disabled>Seleccione un producto...</option>
-                  {availableArticles.map((art) => (
-                    <option key={art.id_articulo} value={art.id_articulo}>
-                      [{art.codigo}] {art.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
+      {/* Modales de Operación */}
+      {deposito && (
+        <>
+          <AsociarProductoModal
+            idDeposito={deposito.id_deposito}
+            rubrosPermitidos={deposito.rubros_permitidos || ""}
+            productosActuales={inventario}
+            isOpen={isModalAsociarOpen}
+            onClose={() => setIsModalAsociarOpen(false)}
+            onProductoAsociado={() => fetchInventario(deposito.id_deposito)}
+          />
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                  <label style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>Stock Inicial</label>
-                  <input 
-                    type="number" 
-                    min="0" 
-                    value={selectedItem?.stock_actual ?? 0} 
-                    onChange={(e) => setSelectedItem({ ...selectedItem, stock_actual: e.target.value })} 
-                    style={{ padding: "0.625rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", width: "100%", boxSizing: "border-box", fontSize: "0.875rem" }} 
-                  />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                  <label style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>Stock Mínimo</label>
-                  <input 
-                    type="number" 
-                    min="0" 
-                    value={selectedItem?.stock_minimo ?? 10} 
-                    onChange={(e) => setSelectedItem({ ...selectedItem, stock_minimo: e.target.value })} 
-                    style={{ padding: "0.625rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", width: "100%", boxSizing: "border-box", fontSize: "0.875rem" }} 
-                  />
-                </div>
-              </div>
+          <AjusteStockModal
+            idDeposito={deposito.id_deposito}
+            productosAsociados={inventario}
+            isOpen={isModalAjusteOpen}
+            onClose={() => setIsModalAjusteOpen(false)}
+            onAjusteGuardado={() => fetchInventario(deposito.id_deposito)}
+          />
 
-              {/* Condición dinámica: solo se muestra si el stock es mayor a 0 */}
-              {Number(selectedItem?.stock_actual) > 0 && (
-                <div style={{ padding: "1rem", backgroundColor: "#f8fafc", borderRadius: "0.5rem", border: "1px solid #e2e8f0", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                  <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>Datos del Lote Inicial</span>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                      <label style={{ fontSize: "0.8rem", fontWeight: "600", color: "#374151" }}>N° de Lote</label>
-                      <input 
-                        type="text" 
-                        placeholder="Ej. LOT-2026-01" 
-                        value={selectedItem?.numero_lote || ""} 
-                        onChange={(e) => setSelectedItem({ ...selectedItem, numero_lote: e.target.value })} 
-                        style={{ padding: "0.5rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", width: "100%", boxSizing: "border-box", fontSize: "0.85rem" }} 
-                        required
-                      />
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                      <label style={{ fontSize: "0.8rem", fontWeight: "600", color: "#374151" }}>Vencimiento</label>
-                      <input 
-                        type="date" 
-                        value={selectedItem?.fecha_vencimiento || ""} 
-                        onChange={(e) => setSelectedItem({ ...selectedItem, fecha_vencimiento: e.target.value })} 
-                        style={{ padding: "0.5rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", width: "100%", boxSizing: "border-box", fontSize: "0.85rem" }} 
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+          {/* Historial Individual del Artículo Seleccionado (Intacto) */}
+          <HistorialMovimientosModal
+            isOpen={!!articuloSeleccionadoHistorial}
+            onClose={() => setArticuloSeleccionadoHistorial(null)}
+            articuloDeposito={articuloSeleccionadoHistorial}
+            nombreDeposito={deposito.codigo}
+          />
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
-                <button 
-                  type="button" 
-                  onClick={() => setIsModalOpen(false)} 
-                  style={{ padding: "0.5rem 1rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", backgroundColor: "#ffffff", color: "#374151", fontWeight: "600", cursor: "pointer" }}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  style={{ padding: "0.5rem 1rem", borderRadius: "0.375rem", border: "none", backgroundColor: "#4E6B4F", color: "#ffffff", fontWeight: "600", cursor: "pointer" }}
-                >
-                  Agregar Producto
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          {/* Historial Global de Todo el Depósito */}
+          <HistorialDepositoModal
+            isOpen={isModalHistorialDepOpen}
+            onClose={() => setIsModalHistorialDepOpen(false)}
+            idDeposito={deposito.id_deposito}
+            nombreDeposito={deposito.codigo}
+          />
+        </>
       )}
     </div>
   );

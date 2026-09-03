@@ -5,10 +5,10 @@ import Proveedores from "./pages/Proveedores.jsx";
 import RegistarPagoProveedor from "./pages/RegistrarPagoProveedor.jsx";
 import RegistarNotaCreditoDebito from "./pages/RegistrarNotaCreditoDebito.jsx";
 import Sucursales from "./pages/Sucursales.jsx";
-  
 import Depositos from "./pages/Depositos.jsx";
 //import OrdenesCompra from "./pages/OrdenesCompra.jsx";
 import OrdenesCompra from "./pages/OrdenesCompraProv.jsx";
+import InventarioDeposito from "./pages/InventarioDeposito.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -37,6 +37,9 @@ export default function App() {
           <Route path="/notas-credito-debito" element={<RegistarNotaCreditoDebito titulo="Notas Crédito/Débito" />} />
           <Route path="/sucursales" element={<Sucursales />} />
           <Route path="/depositos" element={<Depositos />} />
+          {/* Soportamos ambos formatos para que nunca falle la ruta */}
+          <Route path="/depositos/:id/inventario" element={<InventarioDeposito />} />
+          <Route path="/inventario-deposito" element={<InventarioDeposito />} />
           <Route path="/ventas" element={<PaginaEnConstruccion titulo="Ventas" />} />
           <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
           <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />

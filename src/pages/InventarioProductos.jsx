@@ -9,63 +9,45 @@ import { showAlert } from "../lib/alerts.js";
 import { createArticulo, updateArticulo } from '../services/articulos.js';
 import { getRubros, getUnidadesMedida } from '../services/catalogos.js';
 
-// --------------------- Componentes UI ------------------------
+const PREFIJOS_OPCIONES = [
+  { value: "MED", label: "MED – Medicamentos" },
+  { value: "PER", label: "PER – Perfumería" },
+  { value: "ACC", label: "ACC – Accesorios" },
+  { value: "DER", label: "DER – Dermocosmética" },
+  { value: "HIG", label: "HIG – Higiene personal" },
+  { value: "INF", label: "INF – Infantil" },
+  { value: "NUT", label: "NUT – Nutrición" },
+  { value: "ORT", label: "ORT – Ortopedia" },
+  { value: "BUC", label: "BUC – Cuidado bucal" },
+  { value: "SOL", label: "SOL – Protección solar" },
+  { value: "MAQ", label: "MAQ – Maquillaje" },
+  { value: "OPT", label: "OPT – Óptica" },
+  { value: "DIET", label: "DIET – Dietética" },
+  { value: "PA", label: "PA – Primeros auxilios" }
+];
+
 function Badge({ children, variant = "default" }) {
   const styles = {
     default: { backgroundColor: "#f3f4f6", color: "#374151" },
     success: { backgroundColor: "#dcfce7", color: "#166534" },
-    warning: { backgroundColor: "#fef3c7", color: "#92400e" },
-    danger: { backgroundColor: "#fee2e2", color: "#991b1b" },
-    info: { backgroundColor: "#e0f2fe", color: "#075985" },
+    danger: { backgroundColor: "#fee2e2", color: "#991b1b" }
   };
-
   return (
-    <span
-      style={{
-        padding: "0.25rem 0.625rem",
-        borderRadius: "9999px",
-        fontSize: "0.75rem",
-        fontWeight: "600",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "0.25rem",
-        ...styles[variant],
-      }}
-    >
+    <span style={{ padding: "0.25rem 0.625rem", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: "600", display: "inline-flex", alignItems: "center", ...styles[variant] }}>
       {children}
     </span>
   );
 }
 
-function StatCard({ title, value, subtitle, alert }) {
+function StatCard({ title, value, subtitle }) {
   return (
-    <div
-      style={{
-        backgroundColor: "#ffffff",
-        borderRadius: "0.75rem",
-        padding: "1.25rem",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-        border: "1px solid #f3f4f6",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-      }}
-    >
-      <div>
-        <div style={{ fontSize: "0.75rem", fontWeight: "600", color: "#6b7280", textTransform: "uppercase" }}>
-          {title}
-        </div>
-        <div style={{ fontSize: "1.875rem", fontWeight: "700", color: alert ? "#dc2626" : "#111827", margin: "0.25rem 0" }}>
-          {value}
-        </div>
-      </div>
-      <div style={{ fontSize: "0.875rem", color: alert ? "#dc2626" : "#6b7280" }}>
-        {subtitle}
-      </div>
+    <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "1.25rem", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", border: "1px solid #f3f4f6", display: "flex", flexDirection: "column" }}>
+      <div style={{ fontSize: "0.75rem", fontWeight: "600", color: "#6b7280" }}>{title}</div>
+      <div style={{ fontSize: "1.875rem", fontWeight: "700", color: "#111827", margin: "0.25rem 0" }}>{value}</div>
+      {subtitle && <div style={{ fontSize: "0.875rem", color: "#6b7280" }}>{subtitle}</div>}
     </div>
   );
 }
-// ------------------- Fin Componentes UI ------------------------
 
 export default function InventarioProductos() {
   const [products, setProducts] = useState([]);
@@ -82,78 +64,101 @@ export default function InventarioProductos() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
-
+  const [initialFormData, setInitialFormData] = useState(null);
   const [rubros, setRubros] = useState([]);
   const [unidades, setUnidades] = useState([]);
 
-  // Carga de datos inicial
   useEffect(() => {
     fetchProducts();
     cargarCatalogos();
   }, []);
 
   const fetchProducts = async () => {
-    const { data, error } = await supabase.from('articulo').select('*');
-    if (error) {
-      console.error("Error al traer datos:", error);
-    } else {
-      setProducts(data || []);
-    }
+    const { data } = await supabase
+      .from('articulo')
+      .select('id_articulo, codigo, codigo_barras, nombre, descripcion, id_rubro, id_unidad, precio_costo, precio_venta, estado')
+      .order('id_articulo', { ascending: false });
+    if (data) setProducts(data);
   };
 
   const cargarCatalogos = async () => {
-    const { data: dataRubros } = await getRubros();
-    const { data: dataUnidades } = await getUnidadesMedida();
-
-    setRubros(dataRubros || []);
-    setUnidades(dataUnidades || []);
+    const { data: dRubros } = await getRubros();
+    const { data: dUnidades } = await getUnidadesMedida();
+    setRubros(dRubros || []);
+    setUnidades(dUnidades || []);
   };
 
-  // CAMPOS DE MODAL
-  const editFields = useMemo(() => [
-    { key: "codigo", label: "Código Interno" },
-    { key: "codigo_barras", label: "Código de Barras" },
-    { key: "nombre", label: "Nombre del Producto" },
-    { key: "descripcion", label: "Descripción" },
-    { 
-      key: "id_rubro", 
-      label: "Categoría / Rubro", 
-      type: "select",
-      options: rubros.map(r => ({ value: r.id_rubro, label: r.nombre })) 
-    },
-    { 
-      key: "id_unidad", 
-      label: "Unidad de Medida", 
-      type: "select", 
-      options: unidades.map(u => ({ value: u.id_unidad, label: u.nombre })) 
-    },
-    { key: "precio_costo", label: "Costo ($)", type: "number" },
-    { key: "precio_venta", label: "Precio de Venta ($)", type: "number" },
-    { 
-      key: "estado", 
-      label: "Estado", 
-      type: "select", 
-      options: [
-        { value: true, label: "Activo" },
-        { value: false, label: "Inactivo" }
-      ] 
+  const getSiguienteCodigo = async (pref) => {
+    const { data } = await supabase.from('articulo').select('codigo').ilike('codigo', `${pref}-%`);
+    if (!data || data.length === 0) return `${pref}-001`;
+    let maxNum = 0;
+    data.forEach(item => {
+      const parts = item.codigo?.split("-");
+      if (parts && parts.length >= 2) {
+        const num = parseInt(parts[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+    return `${pref}-${String(maxNum + 1).padStart(3, "0")}`;
+  };
+
+  const editFields = useMemo(() => {
+    if (selectedProduct) {
+      return [
+        { key: "codigo", label: "Código Interno (Bloqueado)", readOnly: true },
+        { key: "codigo_barras", label: "Código de Barras (Bloqueado)", readOnly: true },
+        { key: "nombre", label: "Nombre del Producto *" },
+        { key: "descripcion", label: "Descripción" },
+        { key: "id_rubro", label: "Categoría", type: "select", options: rubros.map(r => ({ value: r.id_rubro, label: r.nombre })) },
+        { key: "id_unidad", label: "Unidad", type: "select", options: unidades.map(u => ({ value: u.id_unidad, label: u.nombre })) },
+        { key: "precio_costo", label: "Costo ($)", type: "number" },
+        { key: "precio_venta", label: "Precio de Venta ($)", type: "number" },
+        { key: "estado", label: "Estado", type: "select", options: [{ value: true, label: "Activo" }, { value: false, label: "Inactivo" }] }
+      ];
     }
-  ], [rubros, unidades]);
 
-  const handleOpenCreate = () => {
+    return [
+      {
+        key: "prefijo", label: "Prefijo de Rubro *", type: "select", options: PREFIJOS_OPCIONES,
+        onChangeCustom: async (nuevoPref, setForm) => {
+          const nuevoCodigo = await getSiguienteCodigo(nuevoPref);
+          setForm(prev => ({ ...prev, prefijo: nuevoPref, codigo: nuevoCodigo }));
+        }
+      },
+      { key: "codigo", label: "Código Interno (Auto)", readOnly: true },
+      { key: "codigo_barras", label: "Código de Barras (Opcional)", placeholder: "Ej: 7791234567890" },
+      { key: "nombre", label: "Nombre del Producto *" },
+      { key: "descripcion", label: "Descripción" },
+      { key: "id_rubro", label: "Categoría", type: "select", options: rubros.map(r => ({ value: r.id_rubro, label: r.nombre })) },
+      { key: "id_unidad", label: "Unidad", type: "select", options: unidades.map(u => ({ value: u.id_unidad, label: u.nombre })) },
+      { key: "precio_costo", label: "Costo ($)", type: "number" },
+      { key: "precio_venta", label: "Precio de Venta ($)", type: "number" }
+    ];
+  }, [rubros, unidades, selectedProduct]);
+
+  const handleOpenCreate = async () => {
+    const cod = await getSiguienteCodigo("MED");
     setSelectedProduct(null);
-    setIsModalOpen(true);
-  };
-
-  const handleOpenEdit = (product) => {
-    setSelectedProduct({
-      ...product,
-      estado: Boolean(product.estado)
+    setInitialFormData({
+      prefijo: "MED",
+      codigo: cod,
+      codigo_barras: "",
+      nombre: "",
+      descripcion: "",
+      id_rubro: rubros[0]?.id_rubro || 1,
+      id_unidad: unidades[0]?.id_unidad || 1,
+      precio_costo: 0,
+      precio_venta: 0
     });
     setIsModalOpen(true);
   };
 
-  // GUARDADO DE DATOS CON VALIDACIONES Y ESTADO BOOLEANO ESTRICTO
+  const handleOpenEdit = (product) => {
+    setSelectedProduct(product);
+    setInitialFormData(product);
+    setIsModalOpen(true);
+  };
+
   const handleSaveProduct = async (formData) => {
     if (!formData.codigo || formData.codigo.trim() === "") {
       showAlert.errorSave("El código interno es obligatorio.");
@@ -178,17 +183,18 @@ export default function InventarioProductos() {
         estadoBoolean = false;
       }
     }
+    if (!formData.nombre?.trim()) return alert("El nombre del producto es obligatorio.");
 
     const payload = {
-      id_rubro: Number(formData.id_rubro),
-      id_unidad: Number(formData.id_unidad),
+      id_rubro: Number(formData.id_rubro) || (rubros[0]?.id_rubro ?? 1),
+      id_unidad: Number(formData.id_unidad) || (unidades[0]?.id_unidad ?? 1),
       codigo: formData.codigo.trim(),
-      codigo_barras: formData.codigo_barras ? formData.codigo_barras.trim() : null,
-      nombre: formData.nombre,
-      descripcion: formData.descripcion,
-      precio_costo: Number(formData.precio_costo),
-      precio_venta: Number(formData.precio_venta),
-      estado: Boolean(selectedProduct ? estadoBoolean : true) // Forzamos booleano estricto aquí
+      codigo_barras: formData.codigo_barras ? String(formData.codigo_barras).trim() : null,
+      nombre: formData.nombre.trim(),
+      descripcion: formData.descripcion ? formData.descripcion.trim() : null,
+      precio_costo: Number(formData.precio_costo) || 0,
+      precio_venta: Number(formData.precio_venta) || 0,
+      estado: selectedProduct ? (String(formData.estado) === "true") : true
     };
 
     if (selectedProduct) {
@@ -216,79 +222,52 @@ export default function InventarioProductos() {
     }
   };
 
-  const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      const matchesSearch =
-        p.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.codigo_barras?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCategory =
-        selectedCategory === "Todas" || String(p.id_rubro) === selectedCategory;
-      return matchesSearch && matchesCategory;
-    });
-  }, [products, searchTerm, selectedCategory]);
-
-  const stats = useMemo(() => {
-    const total = products.length;
-    const activos = products.filter(p => p.estado === true || p.estado === "Activo" || p.estado === 1).length;
-    const valorTotal = products.reduce((acc, p) => acc + (Number(p.precio_costo) || 0), 0);
-    return { total, activos, valorTotal };
-  }, [products]);
+  const filteredProducts = products.filter(p =>
+    (p.nombre + (p.codigo || "") + (p.codigo_barras || "")).toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const columns = [
     { header: "CÓDIGO", accessor: "codigo" },
     { header: "C. BARRAS", accessor: "codigo_barras" },
-    { header: "NOMBRE", render: (p) => <span style={{ fontWeight: "600" }}>{p.nombre}</span> },
-    { header: "COSTO", render: (p) => <span>${p.precio_costo}</span> },
-    { header: "PRECIO VENTA", render: (p) => <span style={{ fontWeight: "600", color: "#166534" }}>${p.precio_venta}</span> },
-    {
-      header: "ESTADO",
-      render: (p) => {
-        const isActivo = p.estado === true || p.estado === "Activo" || p.estado === 1;
-        return (
-          <Badge variant={isActivo ? "success" : "default"}>
-            {isActivo ? "ACTIVO" : "INACTIVO"}
-          </Badge>
-        );
-      },
-    },
+    { header: "NOMBRE", render: (p) => <b>{p.nombre}</b> },
+    { header: "COSTO", render: (p) => `$${p.precio_costo}` },
+    { header: "PRECIO VENTA", render: (p) => <b style={{ color: "#166534" }}>${p.precio_venta}</b> },
+    { header: "ESTADO", render: (p) => <Badge variant={p.estado ? "success" : "danger"}>{p.estado ? "ACTIVO" : "INACTIVO"}</Badge> },
   ];
 
   return (
-    <div>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+    <div style={{ padding: "2rem" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", marginBottom: "2rem" }}>
         <div>
-          <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Productos</h1>
-          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>{stats.total} productos registrados</p>
+          <h1 style={{ margin: 0 }}>Productos</h1>
+          <p style={{ color: "#6b7280", margin: "0.25rem 0 0" }}>{products.length} productos registrados</p>
         </div>
-        <button onClick={handleOpenCreate} style={{ backgroundColor: "#65482b", color: "#ffffff", border: "none", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-          <Plus size={18} /> Nuevo producto
+        <button onClick={handleOpenCreate} style={{ backgroundColor: "#65482b", color: "#fff", padding: "0.6rem 1.2rem", borderRadius: "0.5rem", border: "none", cursor: "pointer", fontWeight: "bold" }}>
+          + Nuevo producto
         </button>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
-        <StatCard title="PRODUCTOS REGISTRADOS" value={stats.total} subtitle="Total histórico" />
-        <StatCard title="PRODUCTOS ACTIVOS" value={stats.activos} subtitle="Disponibles" />
-        <StatCard title="VALOR COSTO INVENTARIO" value={`$${stats.valorTotal.toLocaleString()}`} subtitle="Inversión total" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "2rem" }}>
+        <StatCard title="REGISTRADOS" value={products.length} subtitle="Total histórico" />
+        <StatCard title="ACTIVOS" value={products.filter(p => p.estado).length} subtitle="Disponibles" />
+        <StatCard title="VALOR INVENTARIO" value={`$${products.reduce((a, p) => a + Number(p.precio_costo), 0).toLocaleString()}`} subtitle="Inversión total" />
       </div>
 
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
-        <div style={{ position: "relative", flex: 1 }}>
-          <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
-          <input type="text" placeholder="Buscar por nombre o código..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" }} />
-        </div>
+      <div style={{ marginBottom: "1.5rem", position: "relative" }}>
+        <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+        <input type="text" placeholder="Buscar por nombre o código..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: "100%", padding: "0.6rem 0.6rem 0.6rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", boxSizing: "border-box" }} />
       </div>
 
       <DataTable columns={columns} data={filteredProducts} onEdit={handleOpenEdit} />
 
       <EditModal
-        key={selectedProduct ? selectedProduct.codigo : "nuevo-producto"}
+        key={selectedProduct ? selectedProduct.codigo : "modal-nuevo"}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveProduct}
         title={selectedProduct ? "Editar Producto" : "Nuevo Producto"}
-        fields={selectedProduct ? editFields : editFields.filter(f => f.key !== "estado")}
-        initialData={selectedProduct}
+        fields={editFields}
+        initialData={initialFormData}
       />
     </div>
   );
