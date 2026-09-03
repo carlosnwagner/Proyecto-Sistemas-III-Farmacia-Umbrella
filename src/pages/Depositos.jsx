@@ -4,8 +4,7 @@ import { supabase } from "../lib/supabase.js";
 import EditModal from "../components/EditModal.jsx";
 import InventarioDeposito from "./InventarioDeposito.jsx"; 
 import { Plus, Search, Building2, FileText, CalendarDays, PackagePlus, Eye, Edit3, Warehouse, MapPin, Tag, ArrowRight } from "lucide-react";
-//import toast, { Toaster } from "react-hot-toast"; // <--- NOTIFICACIONES MODERNAS
-import { showAlert } from "../lib/alerts.js";
+import { showAlert } from "../lib/alerts.js"; // <--- Tu importación de alertas
 
 const RUBROS_CATALOGO = [
   { codigo: "MED", label: "MED – Medicamentos" },
@@ -31,6 +30,14 @@ export default function Depositos() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [depositoEditando, setDepositoEditando] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [vistaActual, setVistaActual] = useState("tarjetas");
+  const [depositoSeleccionadoInventario, setDepositoSeleccionadoInventario] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Modal para asociar (Mocks de estado, ya que usabas funciones de esto sin declarar los estados arriba)
+  const [isAsociarModalOpen, setIsAsociarModalOpen] = useState(false);
+  const [depositoAAsociar, setDepositoAAsociar] = useState(null);
+  const [formDataAsociar, setFormDataAsociar] = useState({ id_articulo: "", stock_inicial: 0, stock_minimo: 0, numero_lote: "", fecha_vencimiento: "" });
 
   // Formulario
   const [codigoAuto, setCodigoAuto] = useState("");
@@ -58,7 +65,6 @@ export default function Depositos() {
     if (!error && data) setDepositos(data);
   }
 
-  // Generador inteligente del siguiente DEP-XXX
   async function calcularSiguienteCodigoDeposito() {
     const { data } = await supabase.from("deposito").select("codigo");
     if (!data || data.length === 0) {
@@ -69,7 +75,6 @@ export default function Depositos() {
     let maxNum = 0;
     data.forEach(item => {
       if (item.codigo) {
-        // Quitar espacios por si hay registros viejos mal cargados como "DEP - 002"
         const limpio = item.codigo.replace(/\s+/g, "").toUpperCase();
         const parts = limpio.split("-");
         if (parts.length >= 2) {
@@ -122,7 +127,7 @@ export default function Depositos() {
     e.preventDefault();
 
     if (!descripcion.trim() || !idSucursal) {
-      alert("Por favor completa la descripción y selecciona la sucursal.");
+      showAlert.errorSave("Por favor completa la descripción y selecciona la sucursal."); // <-- REEMPLAZO DE ALERT
       return;
     }
 
@@ -132,7 +137,6 @@ export default function Depositos() {
       const rubrosFinales = aceptaTodos ? "" : rubrosSeleccionados.join(",");
 
       if (depositoEditando) {
-        // Modo Edición: solo actualiza descripción, sucursal y rubros (código inmutable)
         const { error } = await supabase
           .from("deposito")
           .update({
@@ -143,9 +147,8 @@ export default function Depositos() {
           .eq("id_deposito", depositoEditando.id_deposito);
 
         if (error) throw new Error(error.message);
-        alert("¡Depósito actualizado con éxito!");
+        showAlert.successAction("Depósito", true); // <-- REEMPLAZO DE ALERT
       } else {
-        // Modo Creación: verificar unicidad absoluta ignorando espacios
         const { data: todos } = await supabase.from("deposito").select("codigo");
         const yaExiste = todos?.some(
           d => d.codigo && d.codigo.replace(/\s+/g, "").toUpperCase() === codigoAuto
@@ -165,13 +168,13 @@ export default function Depositos() {
         ]);
 
         if (error) throw new Error(error.message);
-        alert(`¡Depósito ${codigoAuto} registrado exitosamente!`);
+        showAlert.successAction("Depósito", false); // <-- REEMPLAZO DE ALERT
       }
 
       setIsModalOpen(false);
       fetchDepositos();
     } catch (err) {
-      alert(err.message);
+      showAlert.errorSave(err.message); // <-- REEMPLAZO DE ALERT
       if (!depositoEditando) {
         calcularSiguienteCodigoDeposito();
       }
@@ -188,7 +191,7 @@ export default function Depositos() {
   const handleGuardarAsociacion = async (e) => {
     e.preventDefault();
     if (!formDataAsociar.id_articulo) {
-      toast.error("Debes seleccionar un producto.");
+      showAlert.errorSave("Debes seleccionar un producto."); // <-- REEMPLAZO DEL TOAST VIEJO
       return;
     }
 
@@ -197,11 +200,11 @@ export default function Depositos() {
 
     if (stockInicial > 0) {
       if (!formDataAsociar.numero_lote.trim()) {
-        alert("Debe ingresar el número de lote para el stock inicial.");
+        showAlert.errorSave("Debe ingresar el número de lote para el stock inicial.");
         return;
       }
       if (!formDataAsociar.fecha_vencimiento) {
-        alert("Debe seleccionar la fecha de vencimiento del lote.");
+        showAlert.errorSave("Debe seleccionar la fecha de vencimiento del lote.");
         return;
       }
     }
@@ -214,7 +217,7 @@ export default function Depositos() {
       .maybeSingle();
 
     if (existente) {
-      toast.error("Este artículo ya está asociado a este depósito.");
+      showAlert.errorSave("Este artículo ya está asociado a este depósito."); // <-- REEMPLAZO DEL TOAST VIEJO
       return;
     }
 
@@ -234,7 +237,7 @@ export default function Depositos() {
       .single();
 
     if (errInsert) {
-      alert("Error al asociar el producto: " + errInsert.message);
+      showAlert.errorSave("Error al asociar el producto: " + errInsert.message);
       return;
     }
 
@@ -256,7 +259,7 @@ export default function Depositos() {
         .single();
 
       if (errLote) {
-        alert("Producto asociado, pero ocurrió un error al registrar el lote: " + errLote.message);
+        showAlert.errorSave("Producto asociado, pero ocurrió un error al registrar el lote: " + errLote.message);
       }
 
       await supabase.from("movimiento_stock").insert([
@@ -270,7 +273,7 @@ export default function Depositos() {
       ]);
     }
 
-    alert("¡Producto y stock vinculados exitosamente!");
+    showAlert.successSave("¡Producto y stock vinculados exitosamente!");
     setIsAsociarModalOpen(false);
   };
 
@@ -290,10 +293,8 @@ export default function Depositos() {
 
   return (
     <div style={{ padding: "1rem" }}>
-      {/* Componente para renderizar los mensajes Flotantes (Toasts) */}
-      <Toaster position="top-right" reverseOrder={false} />
+      {/* ❌ SE ELIMINÓ EL <Toaster /> QUE ROMPÍA LA VISTA */}
 
-      {/* Header */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: "1.9rem", fontWeight: "700", color: "#111827" }}>Depósitos</h1>
