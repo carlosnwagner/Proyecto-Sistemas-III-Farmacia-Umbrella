@@ -156,12 +156,12 @@ export default function InventarioProductos() {
   // GUARDADO DE DATOS CON VALIDACIONES Y ESTADO BOOLEANO ESTRICTO
   const handleSaveProduct = async (formData) => {
     if (!formData.codigo || formData.codigo.trim() === "") {
-      alert("El código interno es obligatorio.");
+      showAlert.errorSave("El código interno es obligatorio.");
       return;
     }
 
     if (formData.codigo_barras && !/^\d+$/.test(formData.codigo_barras)) {
-      alert("El código de barras debe contener únicamente números.");
+      showAlert.errorSave("El código de barras debe contener únicamente números.");
       return;
     }
 
@@ -190,27 +190,26 @@ export default function InventarioProductos() {
       precio_venta: Number(formData.precio_venta),
       estado: Boolean(selectedProduct ? estadoBoolean : true) // Forzamos booleano estricto aquí
     };
-     if (selectedProduct) {
-  // --- MODO EDICIÓN ---
-  const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
 
     if (selectedProduct) {
+      // --- MODO EDICIÓN ---
       const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
 
       if (error) {
-        alert(`Error: ${error.message}`);
+        showAlert.errorSave(`Error: ${error.message}`);
       } else {
-        alert("¡Producto actualizado con éxito!");
+        showAlert.successAction("Producto", true);
         fetchProducts();
         setIsModalOpen(false);
       }
     } else {
+      // --- MODO CREACIÓN ---
       const { error } = await createArticulo(payload);
 
       if (error) {
-        alert(`Error: ${error.message}`);
+        showAlert.errorSave(`Error: ${error.message}`);
       } else {
-        alert("¡Producto registrado con éxito!");
+        showAlert.successAction("Producto", false);
         fetchProducts(); 
         setIsModalOpen(false); 
       }

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import DataTable from "../components/DataTable.jsx";
 import { Plus, Search, Trash2, ArrowLeft, Save, CheckCircle, FileText } from "lucide-react";
 import { supabase } from '../lib/supabase.js';
+import { showAlert } from "../lib/alerts.js";
 
 import { getCondicionesPago, getMediosPago } from '../services/catalogos.js';
 import { 
@@ -59,7 +60,7 @@ export default function OrdenesCompra() {
   const handleVerOrden = async (orden) => {
     const { data, error } = await getOrdenCompraPorId(orden.id_orden_compra); 
     if (error) {
-      alert("Error al cargar detalle: " + error.message);
+      showAlert.errorSave("Error al cargar detalle: " + error.message);
       return;
     }
     
@@ -91,9 +92,9 @@ export default function OrdenesCompra() {
     const { error } = await registrarRecepcion(ordenSeleccionada.id_orden_compra, payloadRecepcion);
     
     if (error) {
-      alert(`Error en ${error.field || 'recepción'}: ${error.message}`); 
+      showAlert.errorSave(`Error en ${error.field || 'recepción'}: ${error.message}`); 
     } else {
-      alert("Cantidades recibidas registradas con éxito.");
+      showAlert.successSave("Cantidades recibidas registradas con éxito.");
       cargarDatosBase();
       setVistaActual("listado");
     }
@@ -135,9 +136,9 @@ export default function OrdenesCompra() {
     const { data, error } = await createOrdenCompra(payload); 
 
     if (error) {
-      alert(`Error en el campo ${error.field || 'general'}: ${error.message}`); 
+      showAlert.errorSave(`Error en el campo ${error.field || 'general'}: ${error.message}`); 
     } else {
-      alert("¡Orden registrada con éxito!");
+      showAlert.successAction("¡Orden registrada con éxito!");
       cargarDatosBase();
       setVistaActual("listado");
     }

@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabase.js";
 import EditModal from "../components/EditModal.jsx";
 import InventarioDeposito from "./InventarioDeposito.jsx"; 
 import { Plus, Search, Building2, FileText, CalendarDays, PackagePlus, Eye, Edit3 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast"; // <--- NOTIFICACIONES MODERNAS
+//import toast, { Toaster } from "react-hot-toast"; // <--- NOTIFICACIONES MODERNAS
 import { showAlert } from "../lib/alerts.js";
 
 export default function Depositos() {
