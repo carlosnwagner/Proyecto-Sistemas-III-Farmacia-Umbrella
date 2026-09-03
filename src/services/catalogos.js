@@ -30,3 +30,35 @@ export async function getUnidadesMedida() {
 
   return { data: data ?? [], error };
 }
+
+/**
+ * Catálogos usados por el formulario de Orden de Compra (HU27): condición de
+ * pago (ej. "30 días", "Contado") y medio de pago (ej. "Transferencia").
+ * Solo se traen las activas (estado = true) para no ofrecer opciones dadas de baja.
+ */
+
+/**
+ * @returns {Promise<{ data: Array<{id_condicion_pago: number, nombre: string}>, error: import('@supabase/supabase-js').PostgrestError | null }>}
+ */
+export async function getCondicionesPago() {
+  const { data, error } = await supabase
+    .from('condicion_pago')
+    .select('id_condicion_pago, nombre')
+    .eq('estado', true)
+    .order('nombre', { ascending: true });
+
+  return { data: data ?? [], error };
+}
+
+/**
+ * @returns {Promise<{ data: Array<{id_medio_pago: number, nombre: string}>, error: import('@supabase/supabase-js').PostgrestError | null }>}
+ */
+export async function getMediosPago() {
+  const { data, error } = await supabase
+    .from('medio_pago')
+    .select('id_medio_pago, nombre')
+    .eq('estado', true)
+    .order('nombre', { ascending: true });
+
+  return { data: data ?? [], error };
+}
