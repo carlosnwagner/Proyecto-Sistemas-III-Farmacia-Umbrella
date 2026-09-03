@@ -1,7 +1,8 @@
--- HU30/HU27: ampliar facturas y relacionar sus renglones con la orden de compra.
--- Esta migracion se ejecuta sobre la tabla factura_proveedor existente.
+-- HU30: ampliar factura_proveedor sin modificar tablas de ordenes de compra.
+-- Ejecutar sobre la tabla factura_proveedor existente.
 
 alter table public.factura_proveedor
+  add column if not exists id_orden_compra integer,
   add column if not exists punto_venta integer not null default 1,
   add column if not exists subtotal numeric(14, 2) not null default 0,
   add column if not exists iva numeric(14, 2) not null default 0,
@@ -9,7 +10,27 @@ alter table public.factura_proveedor
   add column if not exists conceptos_no_gravados numeric(14, 2) not null default 0,
   add column if not exists fecha_registro timestamptz not null default now();
 
--- Las facturas existentes no tenian desglose fiscal: se conserva su total como subtotal.
+-- La FK sale de factura_proveedor y apunta a orden_compra. No agrega columnas a OC.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint c
+    join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any(c.conkey)
+    where c.conrelid = 'public.factura_proveedor'::regclass
+      and c.confrelid = 'public.orden_compra'::regclass
+      and c.contype = 'f'
+      and a.attname = 'id_orden_compra'
+  ) then
+    alter table public.factura_proveedor
+      add constraint factura_proveedor_orden_compra_fk
+      foreign key (id_orden_compra)
+      references public.orden_compra(id_orden_compra);
+  end if;
+end;
+$$;
+
+-- Las facturas existentes conservan su total como subtotal si no tenian desglose.
 update public.factura_proveedor
 set subtotal = importe_total
 where subtotal = 0
@@ -18,19 +39,30 @@ where subtotal = 0
   and coalesce(conceptos_exentos, 0) = 0
   and coalesce(conceptos_no_gravados, 0) = 0;
 
-alter table public.factura_proveedor
-  add constraint factura_proveedor_punto_venta_check
-    check (punto_venta between 1 and 99999),
-  add constraint factura_proveedor_subtotal_check
-    check (subtotal >= 0),
-  add constraint factura_proveedor_iva_check
-    check (iva >= 0),
-  add constraint factura_proveedor_exentos_check
-    check (conceptos_exentos >= 0),
-  add constraint factura_proveedor_no_gravados_check
-    check (conceptos_no_gravados >= 0),
-  add constraint factura_proveedor_importes_consistentes_check
-    check (abs(importe_total - (subtotal + iva + conceptos_exentos + conceptos_no_gravados)) <= 0.01);
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'factura_proveedor_punto_venta_check') then
+    alter table public.factura_proveedor add constraint factura_proveedor_punto_venta_check
+      check (punto_venta between 1 and 99999);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'factura_proveedor_subtotal_check') then
+    alter table public.factura_proveedor add constraint factura_proveedor_subtotal_check check (subtotal >= 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'factura_proveedor_iva_check') then
+    alter table public.factura_proveedor add constraint factura_proveedor_iva_check check (iva >= 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'factura_proveedor_exentos_check') then
+    alter table public.factura_proveedor add constraint factura_proveedor_exentos_check check (conceptos_exentos >= 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'factura_proveedor_no_gravados_check') then
+    alter table public.factura_proveedor add constraint factura_proveedor_no_gravados_check check (conceptos_no_gravados >= 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'factura_proveedor_importes_consistentes_check') then
+    alter table public.factura_proveedor add constraint factura_proveedor_importes_consistentes_check
+      check (abs(importe_total - (subtotal + iva + conceptos_exentos + conceptos_no_gravados)) <= 0.01);
+  end if;
+end;
+$$;
 
 create unique index if not exists factura_proveedor_comprobante_unique_idx
   on public.factura_proveedor (id_proveedor, tipo_comprobante, punto_venta, numero_comprobante);
@@ -48,6 +80,7 @@ create table if not exists public.detalle_factura_proveedor (
     references public.articulo(id_articulo) on delete restrict,
   cantidad numeric(14, 3) not null check (cantidad > 0),
   precio_unitario numeric(14, 2) not null check (precio_unitario >= 0),
+  tasa_iva numeric(5, 2) not null default 0 check (tasa_iva in (0, 10.5, 21, 27)),
   importe numeric(14, 2) generated always as (round(cantidad * precio_unitario, 2)) stored,
   unique (id_factura_proveedor, id_detalle_orden_compra)
 );

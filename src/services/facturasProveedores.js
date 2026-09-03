@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 
 export const TIPOS_COMPROBANTE = ['Factura A', 'Factura B', 'Factura C'];
 export const ESTADOS_FACTURA = ['Pendiente', 'Pagada Parcial', 'Pagada', 'Anulada'];
+export const ALICUOTAS_IVA = [0, 10.5, 21, 27];
 
 export function formatNumeroComprobante(puntoVenta, numeroComprobante) {
   const punto = String(puntoVenta || '').padStart(5, '0');
@@ -15,6 +16,8 @@ export function validateFacturaPayload(payload) {
   const iva = Number(payload?.iva);
   const exentos = Number(payload?.conceptos_exentos || 0);
   const noGravados = Number(payload?.conceptos_no_gravados || 0);
+  const percepcionIva = Number(payload?.percepcion_iva || 0);
+  const percepcionIibb = Number(payload?.percepcion_iibb || 0);
   const total = Number(payload?.importe_total);
 
   if (!payload?.id_proveedor) errors.id_proveedor = 'Debe seleccionar un proveedor.';
@@ -34,11 +37,17 @@ export function validateFacturaPayload(payload) {
     errors.fecha = 'La fecha ingresada no es válida.';
   }
 
+  if (payload?.detalle?.some((detalle) => !ALICUOTAS_IVA.includes(Number(detalle.tasa_iva)))) {
+    errors.detalle = 'Cada producto debe tener una alícuota de IVA válida.';
+  }
+
   for (const [field, value] of [
     ['subtotal', subtotal],
     ['iva', iva],
     ['conceptos_exentos', exentos],
     ['conceptos_no_gravados', noGravados],
+    ['percepcion_iva', percepcionIva],
+    ['percepcion_iibb', percepcionIibb],
     ['importe_total', total],
   ]) {
     if (!Number.isFinite(value) || value < 0) errors[field] = 'El importe debe ser un número mayor o igual a 0.';
@@ -46,7 +55,8 @@ export function validateFacturaPayload(payload) {
 
   if (Number.isFinite(total) && Number.isFinite(subtotal) && Number.isFinite(iva)
     && Number.isFinite(exentos) && Number.isFinite(noGravados)
-    && Math.abs(subtotal + iva + exentos + noGravados - total) > 0.01) {
+    && Number.isFinite(percepcionIva) && Number.isFinite(percepcionIibb)
+    && Math.abs(subtotal + iva + exentos + noGravados + percepcionIva + percepcionIibb - total) > 0.01) {
     errors.importe_total = 'El total debe coincidir con la suma de los conceptos.';
   }
 
@@ -125,6 +135,8 @@ export async function createFacturaProveedor(payload) {
     iva: Number(payload.iva),
     conceptos_exentos: Number(payload.conceptos_exentos || 0),
     conceptos_no_gravados: Number(payload.conceptos_no_gravados || 0),
+    percepcion_iva: Number(payload.percepcion_iva || 0),
+    percepcion_iibb: Number(payload.percepcion_iibb || 0),
     importe_total: Number(payload.importe_total),
   };
 
@@ -134,5 +146,21 @@ export async function createFacturaProveedor(payload) {
     .select()
     .single();
 
-  return error ? { data: null, error: parseSupabaseError(error) } : { data, error: null };
+  if (error) return { data: null, error: parseSupabaseError(error) };
+
+  if (payload.id_orden_compra && payload.detalle?.length) {
+    const { error: detalleError } = await supabase.from('detalle_factura_proveedor').insert(
+      payload.detalle.map((detalle) => ({
+        id_factura_proveedor: data.id_factura_proveedor,
+        id_detalle_orden_compra: Number(detalle.id_detalle_orden),
+        id_articulo: Number(detalle.id_articulo),
+        cantidad: Number(detalle.cantidad),
+        precio_unitario: Number(detalle.precio_unitario),
+        tasa_iva: Number(detalle.tasa_iva || 0),
+      })),
+    );
+    if (detalleError) return { data: null, error: parseSupabaseError(detalleError) };
+  }
+
+  return { data, error: null };
 }
