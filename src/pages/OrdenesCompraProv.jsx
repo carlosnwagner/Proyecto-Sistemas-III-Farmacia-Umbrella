@@ -16,38 +16,38 @@ export default function OrdenesCompra() {
   const [searchTerm, setSearchTerm] = useState("");
   const [vistaActual, setVistaActual] = useState("listado"); 
   
-  // Catálogos para los selects
+  // SELECTS
   const [proveedores, setProveedores] = useState([]);
   const [articulos, setArticulos] = useState([]);
   const [condiciones, setCondiciones] = useState([]);
   const [mediosPago, setMediosPago] = useState([]);
 
   // Estados CREACIÓN
-  const [nuevaOrden, setNuevaOrden] = useState({ id_proveedor: "", id_condicion_pago: "", plazo_dias: "" }); //[cite: 11]
+  const [nuevaOrden, setNuevaOrden] = useState({ id_proveedor: "", id_condicion_pago: "", plazo_dias: "" });
   const [detalles, setDetalles] = useState([]);
 
   // Estados SEGUIMIENTO
   const [ordenSeleccionada, setOrdenSeleccionada] = useState(null);
   const [detallesSeguimiento, setDetallesSeguimiento] = useState([]);
 
-  // --- 1. CARGA INICIAL ---
+  // --- CARGA INICIAL DE DATOS ---
   useEffect(() => {
     cargarDatosBase();
   }, []);
 
   const cargarDatosBase = async () => {
-    // Traemos las órdenes[cite: 11]
+    // Ordenes
     const { data: dataOrdenes } = await getOrdenesCompra();
     setOrdenes(dataOrdenes || []);
 
-    // Traemos los catálogos activos[cite: 10]
+    // catálogos activos
     const { data: dataCond } = await getCondicionesPago();
     setCondiciones(dataCond || []);
 
     const { data: dataMedios } = await getMediosPago();
     setMediosPago(dataMedios || []);
 
-    // Traemos proveedores y artículos (asumo que los tenés en Supabase)
+    // Proveedores y artículos
     const { data: provs } = await supabase.from('proveedor').select('id_proveedor, razon_social').eq('estado', true);
     setProveedores(provs || []);
 
@@ -55,9 +55,8 @@ export default function OrdenesCompra() {
     setArticulos(arts || []);
   };
 
-  // --- 2. LÓGICA DE LISTADO Y SEGUIMIENTO ---
+  // --- LÓGICA DE LISTADO Y SEGUIMIENTO ---
   const handleVerOrden = async (orden) => {
-    // Usamos el endpoint que trae la orden con sus renglones[cite: 11]
     const { data, error } = await getOrdenCompraPorId(orden.id_orden_compra); 
     if (error) {
       alert("Error al cargar detalle: " + error.message);
@@ -66,10 +65,9 @@ export default function OrdenesCompra() {
     
     setOrdenSeleccionada(data);
     
-    // Mapeamos los detalles para manejar el input de "cantidad a recibir" en la UI
     const detallesFormateados = (data.detalle || []).map(d => ({
       ...d,
-      input_recepcion: d.cantidad_solicitada - d.cantidad_recibida // Sugerimos recibir lo que falta
+      input_recepcion: d.cantidad_solicitada - d.cantidad_recibida // sugerencia de recepción
     }));
     setDetallesSeguimiento(detallesFormateados);
     setVistaActual("seguimiento");
@@ -81,8 +79,8 @@ export default function OrdenesCompra() {
     setDetallesSeguimiento(nuevos);
   };
 
+  // REGISTRAR RECEPCIÓN
   const handleConfirmarRecepcion = async () => {
-    // Preparamos el array exacto que pide el backend[cite: 11]
     const payloadRecepcion = detallesSeguimiento
       .filter(d => d.input_recepcion > 0)
       .map(d => ({
@@ -90,10 +88,10 @@ export default function OrdenesCompra() {
         cantidad: d.input_recepcion
       }));
 
-    const { error } = await registrarRecepcion(ordenSeleccionada.id_orden_compra, payloadRecepcion); //[cite: 11]
+    const { error } = await registrarRecepcion(ordenSeleccionada.id_orden_compra, payloadRecepcion);
     
     if (error) {
-      alert(`Error en ${error.field || 'recepción'}: ${error.message}`); //[cite: 11]
+      alert(`Error en ${error.field || 'recepción'}: ${error.message}`); 
     } else {
       alert("Cantidades recibidas registradas con éxito.");
       cargarDatosBase();
@@ -102,11 +100,11 @@ export default function OrdenesCompra() {
   };
 
   const handleVincularFacturaMock = () => {
-    alert("La vinculación de facturas requiere el servicio de la HU30 (Facturas). Por ahora el backend pide un id_factura_proveedor ya existente."); //[cite: 11]
+    alert("La vinculación de facturas requiere el servicio de la HU30 (Facturas). Por ahora el backend pide un id_factura_proveedor ya existente."); 
   };
 
-  // --- 3. LÓGICA DE CREACIÓN ---
-  const agregarFila = () => setDetalles([...detalles, { id_articulo: "", cantidad_solicitada: 1, precio_unitario: 0 }]); //[cite: 11]
+  // --- LÓGICA DE CREACIÓN ---
+  const agregarFila = () => setDetalles([...detalles, { id_articulo: "", cantidad_solicitada: 1, precio_unitario: 0 }]); 
   
   const actualizarFila = (index, campo, valor) => {
     const nuevos = [...detalles];
@@ -134,10 +132,10 @@ export default function OrdenesCompra() {
       }))
     };
 
-    const { data, error } = await createOrdenCompra(payload); //[cite: 11]
+    const { data, error } = await createOrdenCompra(payload); 
 
     if (error) {
-      alert(`Error en el campo ${error.field || 'general'}: ${error.message}`); //[cite: 11]
+      alert(`Error en el campo ${error.field || 'general'}: ${error.message}`); 
     } else {
       alert("¡Orden registrada con éxito!");
       cargarDatosBase();
@@ -268,11 +266,16 @@ export default function OrdenesCompra() {
                     
                     <td style={{ padding: "0.5rem", backgroundColor: "#f0f9ff", textAlign: "center" }}>
                       <input 
-                        type="number" min="0" max={det.cantidad_solicitada - det.cantidad_recibida}
+                        type="number" 
+                        min="0" 
+                        max={det.cantidad_solicitada - det.cantidad_recibida}
                         value={det.input_recepcion} 
                         onChange={(e) => actualizarInputRecepcion(idx, e.target.value)}
-                        disabled={ordenSeleccionada.estado !== "Emitida" && ordenSeleccionada.estado !== "Recibida"}
-                        style={{ ...commonInputStyle, width: "80px", textAlign: "center" }}
+                        disabled={ordenSeleccionada.estado !== "Emitida"}
+                        style={{ ...commonInputStyle, 
+                            width: "80px", 
+                            textAlign: "center",
+                            backgroundColor: ordenSeleccionada.estado !== "Emitida" ? "transparent" : "#ffffff" }}
                       />
                     </td>
                   </tr>
@@ -280,13 +283,16 @@ export default function OrdenesCompra() {
               </tbody>
             </table>
             
-            {(ordenSeleccionada.estado === "Emitida" || ordenSeleccionada.estado === "Recibida") && (
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
-                <button onClick={handleConfirmarRecepcion} style={{ backgroundColor: "#0284c7", color: "#ffffff", border: "none", padding: "0.75rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer" }}>
-                  <CheckCircle size={18} style={{ marginRight: '8px' }} /> Confirmar Recepción
-                </button>
-              </div>
-            )}
+            {ordenSeleccionada.estado === "Emitida" && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
+                    <button 
+                    onClick={handleConfirmarRecepcion} 
+                    style={{ backgroundColor: "#0284c7", color: "#ffffff", border: "none", padding: "0.75rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer" }}
+                    >
+                    <CheckCircle size={18} style={{ marginRight: '8px' }} /> Confirmar Recepción
+                    </button>
+                </div>
+                )}
           </div>
 
           {(ordenSeleccionada.estado === "Recibida" || ordenSeleccionada.estado === "Facturada") && (
