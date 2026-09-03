@@ -2,8 +2,12 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import MainLayout from "./components/MainLayout.jsx";
 import Inventario from "./pages/InventarioProductos.jsx";
 import Proveedores from "./pages/Proveedores.jsx";
+import RegistarPagoProveedor from "./pages/RegistrarPagoProveedor.jsx";
+import RegistarNotaCreditoDebito from "./pages/RegistrarNotaCreditoDebito.jsx";
 import Sucursales from "./pages/Sucursales.jsx";
+  
 import Depositos from "./pages/Depositos.jsx";
+import OrdenesCompra from "./pages/OrdenesCompra.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -26,8 +30,10 @@ export default function App() {
           <Route path="/" element={<Navigate to="/inventario" replace />} />
           <Route path="/inicio" element={<PaginaEnConstruccion titulo="Inicio" />} />
           <Route path="/inventario" element={<Inventario />} />
-          <Route path="/pedidos" element={<PaginaEnConstruccion titulo="Pedidos" />} />
+          <Route path="/ordenes-compra" element={<OrdenesCompra />} />
           <Route path="/proveedores" element={<Proveedores />} />
+          <Route path="/pagos-proveedores" element={<RegistarPagoProveedor titulo="Pago Proveedor" />} />
+          <Route path="/notas-credito-debito" element={<RegistarNotaCreditoDebito titulo="Notas Crédito/Débito" />} />
           <Route path="/sucursales" element={<Sucursales />} />
           <Route path="/depositos" element={<Depositos />} />
           <Route path="/ventas" element={<PaginaEnConstruccion titulo="Ventas" />} />

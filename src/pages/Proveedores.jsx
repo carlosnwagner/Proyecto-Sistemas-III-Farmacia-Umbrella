@@ -36,17 +36,16 @@ export default function Proveedores() {
     else setProveedores(data || []);
   };
 
-  // Configuración de Campos de Modal
+  // Configuración de Campos de Modal (CUIT editable, se quitó el readOnly)
   const editFields = useMemo(() => [
     { key: "razon_social", label: "Razón Social" },
     { 
       key: "identificacion_fiscal", 
-      label: "Identificación Fiscal (CUIT)", 
-      readOnly: !!selectedProveedor 
+      label: "Identificación Fiscal (CUIT)"
     },
     { key: "datos_comerciales", label: "Condiciones Comerciales" },
     { key: "datos_contacto", label: "Datos de Contacto (Teléfono/Email)" },
-  ], [selectedProveedor]);
+  ], []);
 
   const handleOpenCreate = () => {
     setSelectedProveedor(null);
@@ -58,8 +57,38 @@ export default function Proveedores() {
     setIsModalOpen(true);
   };
 
-  // GUARDADO DE DATOS
+  // Validación estricta de CUIT de Argentina (Algoritmo Módulo 11)
+  const validarCuitCuil = (cuit) => {
+    if (!cuit) return false;
+    const limpio = cuit.toString().replace(/[^0-9]/g, "");
+    if (limpio.length !== 11) return false;
+
+    const tipo = limpio.substr(0, 2);
+    if (tipo !== "20" && tipo !== "23" && tipo !== "24" && tipo !== "27" && tipo !== "30" && tipo !== "33" && tipo !== "34") {
+      return false;
+    }
+
+    const mult = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+    let suma = 0;
+    for (let i = 0; i < 10; i++) {
+      suma += parseInt(limpio[i]) * mult[i];
+    }
+
+    let mod = 11 - (suma % 11);
+    let digitoVerificador = mod === 11 ? 0 : mod === 10 ? 9 : mod;
+
+    return digitoVerificador === parseInt(limpio[10]);
+  };
+
+  // GUARDADO DE DATOS CON VALIDACIÓN DE CUIT
   const handleSaveProveedor = async (formData) => {
+    // Validar formato del CUIT antes de enviar al backend
+    if (!validarCuitCuil(formData.identificacion_fiscal)) {
+      alert("El CUIT ingresado no es válido. Debe contener 11 dígitos numéricos y cumplir con el formato oficial de Argentina.");
+      return;
+    }
+
+    // payload
     const payload = {
       razon_social: formData.razon_social,
       identificacion_fiscal: formData.identificacion_fiscal,
@@ -114,7 +143,7 @@ export default function Proveedores() {
     { header: "CONTACTO", accessor: "datos_contacto" },
     { 
       header: "FECHA REGISTRO", 
-      render: (p) => <span>{p.fecha_registro ? new Date(p.fecha_registro).toLocaleDateString() : "-"}</span> 
+      render: (p) => <span>{p.fecha_registro ? new Date(p.fecha_registro).toLocaleDateString() : '-'}</span> 
     },
   ];
 

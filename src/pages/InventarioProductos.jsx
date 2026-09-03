@@ -10,43 +10,6 @@ import { createArticulo, updateArticulo } from '../services/articulos.js';
 import { getRubros, getUnidadesMedida } from '../services/catalogos.js';
 
 // --------------------- Componentes UI ------------------------
-function VialGauge({ current, total, status }) {
-  const percentage = Math.min(100, Math.max(0, (current / total) * 100));
-
-  let fillColor = "#22c55e";
-  if (status === "crítico") fillColor = "#ef4444";
-  else if (status === "bajo") fillColor = "#f59e0b";
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-      <div
-        style={{
-          width: "48px",
-          height: "12px",
-          backgroundColor: "#e5e7eb",
-          borderRadius: "9999px",
-          overflow: "hidden",
-          position: "relative",
-          border: "1px solid #d1d5db",
-        }}
-      >
-        <div
-          style={{
-            width: `${percentage}%`,
-            height: "100%",
-            backgroundColor: fillColor,
-            borderRadius: "9999px",
-            transition: "width 0.3s ease",
-          }}
-        />
-      </div>
-      <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>
-        {current ? current.toLocaleString() : 0}
-      </span>
-    </div>
-  );
-}
-
 function Badge({ children, variant = "default" }) {
   const styles = {
     default: { backgroundColor: "#f3f4f6", color: "#374151" },
@@ -148,8 +111,8 @@ export default function InventarioProductos() {
 
   // CAMPOS DE MODAL
   const editFields = useMemo(() => [
-    { key: "codigo", label: "Código Interno", readOnly: !!selectedProduct },
-    { key: "codigo_barras", label: "Código de Barras", readOnly: !!selectedProduct },
+    { key: "codigo", label: "Código Interno" },
+    { key: "codigo_barras", label: "Código de Barras" },
     { key: "nombre", label: "Nombre del Producto" },
     { key: "descripcion", label: "Descripción" },
     { 
@@ -164,9 +127,18 @@ export default function InventarioProductos() {
       type: "select", 
       options: unidades.map(u => ({ value: u.id_unidad, label: u.nombre })) 
     },
-    { key: "precio_costo", label: "Costo", type: "number" },
-    { key: "precio_venta", label: "Precio de Venta", type: "number" },
-  ], [rubros, unidades, selectedProduct]);
+    { key: "precio_costo", label: "Costo ($)", type: "number" },
+    { key: "precio_venta", label: "Precio de Venta ($)", type: "number" },
+    { 
+      key: "estado", 
+      label: "Estado", 
+      type: "select", 
+      options: [
+        { value: true, label: "Activo" },
+        { value: false, label: "Inactivo" }
+      ] 
+    }
+  ], [rubros, unidades]);
 
   const handleOpenCreate = () => {
     setSelectedProduct(null);
@@ -174,57 +146,76 @@ export default function InventarioProductos() {
   };
 
   const handleOpenEdit = (product) => {
-    setSelectedProduct(product);
+    setSelectedProduct({
+      ...product,
+      estado: Boolean(product.estado)
+    });
     setIsModalOpen(true);
   };
 
-  // GUARDADO DE DATOS
+  // GUARDADO DE DATOS CON VALIDACIONES Y ESTADO BOOLEANO ESTRICTO
   const handleSaveProduct = async (formData) => {
+    if (!formData.codigo || formData.codigo.trim() === "") {
+      alert("El código interno es obligatorio.");
+      return;
+    }
+
+    if (formData.codigo_barras && !/^\d+$/.test(formData.codigo_barras)) {
+      alert("El código de barras debe contener únicamente números.");
+      return;
+    }
+
+    // Evaluación limpia y robusta del estado proveniente del modal
+    let estadoBoolean = true;
+    if (selectedProduct) {
+      if (
+        formData.estado === false || 
+        formData.estado === "false" || 
+        formData.estado === "Inactivo" || 
+        formData.estado === 0 || 
+        formData.estado === "0"
+      ) {
+        estadoBoolean = false;
+      }
+    }
 
     const payload = {
       id_rubro: Number(formData.id_rubro),
       id_unidad: Number(formData.id_unidad),
-      codigo: formData.codigo,
-      codigo_barras: formData.codigo_barras,
+      codigo: formData.codigo.trim(),
+      codigo_barras: formData.codigo_barras ? formData.codigo_barras.trim() : null,
       nombre: formData.nombre,
       descripcion: formData.descripcion,
-      precio_costo: formData.precio_costo,
-      precio_venta: formData.precio_venta
+      precio_costo: Number(formData.precio_costo),
+      precio_venta: Number(formData.precio_venta),
+      estado: Boolean(selectedProduct ? estadoBoolean : true) // Forzamos booleano estricto aquí
     };
      if (selectedProduct) {
   // --- MODO EDICIÓN ---
   const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
 
-  if (error) {
-    showAlert.errorSave(`Error: ${error.message}`);
-  } else {
-    showAlert.successSave("¡Producto actualizado con éxito!");
-    fetchProducts();
-    setIsModalOpen(false);
-  }
-  
-} else {
-  // --- MODO CREACIÓN ---
-  const { error } = await createArticulo(payload);
+    if (selectedProduct) {
+      const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
 
-  if (error) {
-    showAlert.errorSave(`Error en el campo ${error.field}: ${error.message}`);
-  } else {
-    showAlert.successSave("¡Producto registrado con éxito!");
-    fetchProducts(); 
-    setIsModalOpen(false); 
-  }
-}
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        alert("¡Producto actualizado con éxito!");
+        fetchProducts();
+        setIsModalOpen(false);
+      }
+    } else {
+      const { error } = await createArticulo(payload);
 
-    
-
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        alert("¡Producto registrado con éxito!");
+        fetchProducts(); 
+        setIsModalOpen(false); 
+      }
+    }
   };
-
-  // Adaptación de Filtros
-  const categories = useMemo(() => {
-    const cats = new Set(products.map((p) => p.id_rubro).filter(Boolean));
-    return ["Todas", ...Array.from(cats)];
-  }, [products]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
@@ -240,53 +231,32 @@ export default function InventarioProductos() {
 
   const stats = useMemo(() => {
     const total = products.length;
-    const activos = products.filter(p => p.estado).length;
-    const valorTotal = products.reduce((acc, p) => acc + (p.precio_costo || 0), 0);
-    return { total, activos, stockBajo: 0, proximosVencer: 0, valorTotal };
+    const activos = products.filter(p => p.estado === true || p.estado === "Activo" || p.estado === 1).length;
+    const valorTotal = products.reduce((acc, p) => acc + (Number(p.precio_costo) || 0), 0);
+    return { total, activos, valorTotal };
   }, [products]);
 
   const columns = [
     { header: "CÓDIGO", accessor: "codigo" },
     { header: "C. BARRAS", accessor: "codigo_barras" },
     { header: "NOMBRE", render: (p) => <span style={{ fontWeight: "600" }}>{p.nombre}</span> },
-    { header: "ID RUBRO", accessor: "id_rubro" },
     { header: "COSTO", render: (p) => <span>${p.precio_costo}</span> },
     { header: "PRECIO VENTA", render: (p) => <span style={{ fontWeight: "600", color: "#166534" }}>${p.precio_venta}</span> },
     {
       header: "ESTADO",
-      render: (p) => (
-        <Badge variant={p.estado === "Activo" || p.estado === true ? "success" : "default"}>
-          {p.estado === true || p.estado === "Activo" ? "Activo" : "Inactivo"}
-        </Badge>
-      ),
+      render: (p) => {
+        const isActivo = p.estado === true || p.estado === "Activo" || p.estado === 1;
+        return (
+          <Badge variant={isActivo ? "success" : "default"}>
+            {isActivo ? "ACTIVO" : "INACTIVO"}
+          </Badge>
+        );
+      },
     },
   ];
 
   return (
-    <div style={{ padding: "1rem" }}>
-      {/* Toast Flotante Custom */}
-      {toast.show && (
-        <div 
-          style={{
-            position: "fixed",
-            top: "20px",
-            right: "20px",
-            zIndex: 9999,
-            padding: "0.75rem 1.25rem",
-            borderRadius: "0.5rem",
-            color: "#ffffff",
-            backgroundColor: toast.type === "error" ? "#ef4444" : "#10b981",
-            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-            fontWeight: "600",
-            fontSize: "0.875rem",
-            transition: "all 0.3s ease"
-          }}
-        >
-          {toast.message}
-        </div>
-      )}
-
-      {/* Encabezado */}
+    <div>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
           <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Productos</h1>
@@ -297,14 +267,12 @@ export default function InventarioProductos() {
         </button>
       </header>
 
-      {/* Tarjetas */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         <StatCard title="PRODUCTOS REGISTRADOS" value={stats.total} subtitle="Total histórico" />
         <StatCard title="PRODUCTOS ACTIVOS" value={stats.activos} subtitle="Disponibles" />
         <StatCard title="VALOR COSTO INVENTARIO" value={`$${stats.valorTotal.toLocaleString()}`} subtitle="Inversión total" />
       </div>
 
-      {/* Filtros */}
       <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
         <div style={{ position: "relative", flex: 1 }}>
           <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
@@ -312,17 +280,15 @@ export default function InventarioProductos() {
         </div>
       </div>
 
-      {/* Tabla Modularizada */}
       <DataTable columns={columns} data={filteredProducts} onEdit={handleOpenEdit} />
 
-      {/* Render del EditModal */}
       <EditModal
         key={selectedProduct ? selectedProduct.codigo : "nuevo-producto"}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveProduct}
         title={selectedProduct ? "Editar Producto" : "Nuevo Producto"}
-        fields={editFields}
+        fields={selectedProduct ? editFields : editFields.filter(f => f.key !== "estado")}
         initialData={selectedProduct}
       />
     </div>
