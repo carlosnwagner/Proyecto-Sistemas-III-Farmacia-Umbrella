@@ -110,7 +110,7 @@ function StatCard({ title, value, subtitle, alert }) {
     }
 
     setLoading(false);
-  }, [depositoId]);
+  }
 
   useEffect(() => {
     fetchInventory();
