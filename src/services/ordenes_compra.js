@@ -8,14 +8,9 @@ import { supabase } from '../lib/supabase';
  * Criterios de aceptación cubiertos en este archivo:
  *  - Debe crear la orden con proveedor, artículos, cantidades y precios.
  *  - Debe permitir registrar las cantidades recibidas.
- *  - Debe diferenciar cantidades solicitadas, recibidas y facturadas.
+ *  - Debe diferenciar cantidades solicitadas y recibidas.
  *  - Debe permitir vincular la factura asociada.
  *  - Debe manejar los estados emitida, recibida, facturada y cerrada.
- *
- * ⚠️ Este archivo depende de sql/004_alter_orden_compra_hu27.sql, que agrega
- * lo que el schema actual no tenía: el estado 'Facturada' y la columna
- * detalle_orden_compra.cantidad_facturada. Sin correr esa migración en
- * Supabase, las funciones de este servicio van a fallar.
  *
  * Decisión de diseño - por qué todo pasa por funciones SQL (RPC) y no por
  * insert/update directos, igual que en pagos.js:
@@ -175,8 +170,8 @@ export async function getOrdenesCompra() {
 }
 
 /**
- * Trae una orden de compra puntual con su detalle completo (solicitado,
- * recibido y facturado por artículo), para la pantalla de detalle/seguimiento.
+ * Trae una orden de compra puntual con su detalle completo (solicitado y
+ * recibido por artículo), para la pantalla de detalle/seguimiento.
  *
  * @param {number} idOrdenCompra
  * @returns {Promise<{ data: object|null, error: import('@supabase/supabase-js').PostgrestError | null }>}
@@ -195,7 +190,7 @@ export async function getOrdenCompraPorId(idOrdenCompra) {
   const { data: detalle, error: detalleError } = await supabase
     .from('detalle_orden_compra')
     .select(
-      'id_detalle_orden, id_articulo, cantidad_solicitada, cantidad_recibida, cantidad_facturada, precio_unitario, articulo(codigo, nombre)'
+      'id_detalle_orden, id_articulo, cantidad_solicitada, cantidad_recibida, precio_unitario, articulo(codigo, nombre)'
     )
     .eq('id_orden_compra', idOrdenCompra)
     .order('id_detalle_orden', { ascending: true });
