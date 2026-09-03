@@ -3,13 +3,12 @@ import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
 import { Search, ArrowLeft, PackageMinus } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
+import { showAlert } from "../lib/alerts.js";
 
 // Componente para la barra de capacidad/stock
 function VialGauge({ current, minimum, maxCapacity = 1000 }) {
-  // Calculamos el porcentaje basado en una capacidad máxima estimada
   const percentage = Math.min(100, Math.max(0, (current / maxCapacity) * 100));
 
-  // Lógica de colores según el stock mínimo
   let fillColor = "#22c55e"; // Verde (Normal)
   if (current === 0) fillColor = "#ef4444"; // Rojo (Sin stock)
   else if (current <= minimum) fillColor = "#f59e0b"; // Naranja (Stock Bajo)
@@ -82,7 +81,7 @@ function StatCard({ title, value, subtitle, alert }) {
         border: "1px solid #f3f4f6",
         display: "flex",
         flexDirection: "column",
-        justifyContent: "space-between",
+        justifyIn: "space-between",
       }}
     >
       <div>
@@ -101,8 +100,7 @@ function StatCard({ title, value, subtitle, alert }) {
 }
 
 // COMPONENTE PRINCIPAL
-// Recibe "onBack" por props para simular la navegación hacia atrás
-export default function InventarioDeposito({ deposito, onBack = () => alert("Volver a depósitos") }) {
+export default function InventarioDeposito({ deposito, onBack }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todas");
   const [inventory, setInventory] = useState([]);
@@ -110,7 +108,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Estados del Modal de Edición (Generalmente aquí solo se edita el stock mínimo o estado)
+  // Estados del Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const depositoId = deposito?.id_deposito;
@@ -150,8 +148,6 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
   }, [depositoId]);
 
   useEffect(() => {
-    // La consulta sincroniza el estado local con Supabase al cambiar el depósito.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchInventory();
   }, [fetchInventory]);
 
@@ -163,7 +159,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       .order("nombre", { ascending: true });
 
     if (articlesError) {
-      alert("No se pudieron cargar los productos: " + articlesError.message);
+      showAlert.errorSave("No se pudieron cargar los productos: " + articlesError.message);
       return;
     }
 
@@ -192,7 +188,10 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
   };
 
   const handleSaveItem = async (formData) => {
-    if (!formData.id_articulo_deposito) {
+    const isEditing = Boolean(formData.id_articulo_deposito);
+
+    if (!isEditing) {
+      // Lógica de Creación / Ajuste inicial
       const stockInicial = Number(formData.stock_actual) || 0;
       const { data: association, error: insertError } = await supabase
         .from("articulopordeposito")
@@ -208,7 +207,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
         .single();
 
       if (insertError) {
-        alert("No se pudo ajustar el stock: " + insertError.message);
+        showAlert.errorSave("Error al registrar el ajuste");
         return false;
       }
 
@@ -222,10 +221,13 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
         });
       }
 
+      // Alerta modal centrada con SweetAlert2 para creación
+      showAlert.successSave("¡Ajuste de stock registrado con éxito!");
       await fetchInventory();
       return true;
     }
 
+    // Lógica de Edición
     const { error: updateError } = await supabase
       .from("articulopordeposito")
       .update({
@@ -235,13 +237,21 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       .eq("id_articulo_deposito", formData.id_articulo_deposito);
 
     if (updateError) {
-      alert("No se pudieron guardar los parámetros: " + updateError.message);
+      showAlert.errorSave("Error al actualizar el registro");
       return false;
     }
 
+    // Alerta modal centrada con SweetAlert2 para edición
+    showAlert.successSave("¡Parámetros de stock actualizados con éxito!");
+    
     setInventory((prev) =>
-      prev.map((item) => (item.id_articulo_deposito === formData.id_articulo_deposito ? { ...item, ...formData, stock_minimo: Number(formData.stock_minimo) } : item))
+      prev.map((item) =>
+        item.id_articulo_deposito === formData.id_articulo_deposito
+          ? { ...item, ...formData, stock_minimo: Number(formData.stock_minimo) }
+          : item
+      )
     );
+    return true;
   };
 
   // Lógica de Filtros y Estadísticas
@@ -297,7 +307,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
 
   return (
     <div style={{ padding: "1rem", backgroundColor: "#F7F4EE", minHeight: "100vh" }}>
-      
+
       {/* Botón de regreso */}
       <button 
         onClick={onBack}
@@ -317,7 +327,6 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
           </p>
         </div>
         
-        {/* Aquí podrías agregar un botón para movimientos rápidos o auditorías si lo necesitas */}
         <button onClick={openStockAdjustment} style={{ backgroundColor: "#ffffff", color: "#65482b", border: "1px solid #d1d5db", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
           <PackageMinus size={18} /> Ajuste de Stock
         </button>

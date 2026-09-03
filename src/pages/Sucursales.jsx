@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
 import { supabase } from "../lib/supabase.js";
+import { showAlert } from "../lib/alerts.js"; 
 import { Plus, Search } from "lucide-react";
 
 export default function Sucursales() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSucursal, setSelectedSucursal] = useState(null);
-  const [error, setError] = useState("");
 
   const [sucursales, setSucursales] = useState([]);
 
@@ -20,7 +20,7 @@ export default function Sucursales() {
         .order("id_sucursal", { ascending: true });
 
       if (loadError) {
-        setError(`No se pudieron cargar las sucursales: ${loadError.message}`);
+        showAlert.errorSave(`No se pudieron cargar las sucursales: ${loadError.message}`);
         return;
       }
 
@@ -40,14 +40,12 @@ export default function Sucursales() {
   // Abrir modal para Crear
   const handleOpenCreate = () => {
     setSelectedSucursal(null);
-    setError("");
     setIsModalOpen(true);
   };
 
   // Abrir modal para Editar
   const handleOpenEdit = (sucursal) => {
     setSelectedSucursal(sucursal);
-    setError("");
     setIsModalOpen(true);
   };
 
@@ -59,7 +57,7 @@ export default function Sucursales() {
     };
 
     if (!values.codigo || !values.descripcion) {
-      setError("El código y la descripción son obligatorios.");
+      showAlert.errorSave("El código y la descripción son obligatorios.");
       return false;
     }
 
@@ -76,16 +74,17 @@ export default function Sucursales() {
     const { data: duplicate, error: duplicateError } = await duplicateQuery.maybeSingle();
 
     if (duplicateError) {
-      setError(`No se pudo validar el código: ${duplicateError.message}`);
+      showAlert.errorSave(`No se pudo validar el código: ${duplicateError.message}`);
       return false;
     }
 
     if (duplicate) {
-      setError("Ya existe una sucursal con ese código.");
+      showAlert.errorSave("Ya existe una sucursal con ese código.");
       return false;
     }
 
     if (selectedSucursal) {
+      // --- MODO EDICIÓN ---
       const { data, error: updateError } = await supabase
         .from("sucursal")
         .update(values)
@@ -94,14 +93,17 @@ export default function Sucursales() {
         .single();
 
       if (updateError) {
-        setError(`No se pudo actualizar la sucursal: ${updateError.message}`);
+        showAlert.errorSave(`No se pudo actualizar la sucursal: ${updateError.message}`);
         return false;
       }
 
       setSucursales((prev) =>
         prev.map((item) => (item.id_sucursal === data.id_sucursal ? data : item))
       );
+      
+      showAlert.successSave("¡Sucursal actualizada con éxito!");
     } else {
+      // --- MODO CREACIÓN ---
       const { data, error: insertError } = await supabase
         .from("sucursal")
         .insert(values)
@@ -109,11 +111,13 @@ export default function Sucursales() {
         .single();
 
       if (insertError) {
-        setError(`No se pudo crear la sucursal: ${insertError.message}`);
+        showAlert.errorSave(`No se pudo crear la sucursal: ${insertError.message}`);
         return false;
       }
 
       setSucursales((prev) => [...prev, data]);
+      
+      showAlert.successSave("¡Sucursal registrada con éxito!");
     }
 
     return true;
@@ -163,12 +167,6 @@ export default function Sucursales() {
         </button>
       </header>
 
-      {error && (
-        <p style={{ color: "#b91c1c", marginBottom: "1rem" }} role="alert">
-          {error}
-        </p>
-      )}
-
       <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
         <div style={{ position: "relative", flex: 1 }}>
           <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
@@ -185,7 +183,7 @@ export default function Sucursales() {
       <DataTable columns={columns} data={filteredSucursales} onEdit={handleOpenEdit} />
 
       <EditModal
-          key={selectedSucursal ? selectedSucursal.id_sucursal : "nueva-sucursal"}
+        key={selectedSucursal ? selectedSucursal.id_sucursal : "nueva-sucursal"}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveSucursal}

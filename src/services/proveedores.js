@@ -151,6 +151,42 @@ export async function createProveedor(payload) {
 }
 
 /**
+ * Modifica un proveedor existente en la base de datos.
+ *
+ * @param {number} idProveedor - El ID único del proveedor a editar.
+ * @param {ProveedorInput} payload - Los datos del formulario.
+ */
+export async function updateProveedor(idProveedor, payload) {
+  const { valid, errors } = validateProveedorPayload(payload);
+  if (!valid) {
+    return {
+      data: null,
+      error: { field: null, message: 'Revisá los campos marcados.', fieldErrors: errors },
+    };
+  }
+
+  const updatePayload = {
+    razon_social: payload.razon_social.trim(),
+    identificacion_fiscal: payload.identificacion_fiscal.trim(),
+    datos_comerciales: payload.datos_comerciales.trim(),
+    datos_contacto: payload.datos_contacto?.trim() || null,
+  };
+
+  const { data, error } = await supabase
+    .from('proveedor')
+    .update(updatePayload)
+    .eq('id_proveedor', idProveedor)
+    .select()
+    .single();
+
+  if (error) {
+    return { data: null, error: parseSupabaseError(error) };
+  }
+
+  return { data, error: null };
+}
+
+/**
  * Trae los proveedores activos, útil para combos en Compras y Pagos (fuera de alcance
  * directo de HU23, pero se deja listo ya que el criterio dice "disponible para
  * compras y pagos").
