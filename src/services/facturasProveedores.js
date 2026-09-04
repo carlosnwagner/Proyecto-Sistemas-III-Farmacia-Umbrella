@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase';
 
 export const TIPOS_COMPROBANTE = ['Factura A', 'Factura B', 'Factura C'];
 export const ESTADOS_FACTURA = ['Pendiente', 'Pagada Parcial', 'Pagada', 'Anulada'];
-export const ALICUOTAS_IVA = [0, 10.5, 21, 27];
+export const ALICUOTAS_IVA = [0, 10.5, 21];
 
 export function formatNumeroComprobante(puntoVenta, numeroComprobante) {
   const punto = String(puntoVenta || '').padStart(5, '0');
@@ -15,7 +15,6 @@ export function validateFacturaPayload(payload) {
   const subtotal = Number(payload?.subtotal);
   const iva = Number(payload?.iva);
   const exentos = Number(payload?.conceptos_exentos || 0);
-  const noGravados = Number(payload?.conceptos_no_gravados || 0);
   const percepcionIva = Number(payload?.percepcion_iva || 0);
   const percepcionIibb = Number(payload?.percepcion_iibb || 0);
   const total = Number(payload?.importe_total);
@@ -45,7 +44,6 @@ export function validateFacturaPayload(payload) {
     ['subtotal', subtotal],
     ['iva', iva],
     ['conceptos_exentos', exentos],
-    ['conceptos_no_gravados', noGravados],
     ['percepcion_iva', percepcionIva],
     ['percepcion_iibb', percepcionIibb],
     ['importe_total', total],
@@ -54,9 +52,8 @@ export function validateFacturaPayload(payload) {
   }
 
   if (Number.isFinite(total) && Number.isFinite(subtotal) && Number.isFinite(iva)
-    && Number.isFinite(exentos) && Number.isFinite(noGravados)
-    && Number.isFinite(percepcionIva) && Number.isFinite(percepcionIibb)
-    && Math.abs(subtotal + iva + exentos + noGravados + percepcionIva + percepcionIibb - total) > 0.01) {
+    && Number.isFinite(exentos) && Number.isFinite(percepcionIva) && Number.isFinite(percepcionIibb)
+    && Math.abs(subtotal + iva + exentos + percepcionIva + percepcionIibb - total) > 0.01) {
     errors.importe_total = 'El total debe coincidir con la suma de los conceptos.';
   }
 
@@ -85,7 +82,7 @@ export async function getFacturasProveedores() {
     .select(`
       id_factura_proveedor, id_proveedor, id_orden_compra, tipo_comprobante,
       punto_venta, numero_comprobante, fecha, subtotal, iva, conceptos_exentos,
-      conceptos_no_gravados, importe_total, estado,
+      importe_total, estado,
       proveedor:id_proveedor(razon_social),
       orden_compra:id_orden_compra(numero_orden)
     `)
@@ -134,7 +131,6 @@ export async function createFacturaProveedor(payload) {
     subtotal: Number(payload.subtotal),
     iva: Number(payload.iva),
     conceptos_exentos: Number(payload.conceptos_exentos || 0),
-    conceptos_no_gravados: Number(payload.conceptos_no_gravados || 0),
     percepcion_iva: Number(payload.percepcion_iva || 0),
     percepcion_iibb: Number(payload.percepcion_iibb || 0),
     importe_total: Number(payload.importe_total),
