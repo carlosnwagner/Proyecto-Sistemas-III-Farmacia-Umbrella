@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabase.js";
 import EditModal from "../components/EditModal.jsx";
 import InventarioDeposito from "./InventarioDeposito.jsx"; 
 import { Plus, Search, Building2, FileText, CalendarDays, PackagePlus, Eye, Edit3 } from "lucide-react";
-import toast, { Toaster } from "react-hot-toast"; // <--- NOTIFICACIONES MODERNAS
+import toast, { Toaster } from "react-hot-toast"; 
 import { showAlert } from "../lib/alerts.js";
 
 export default function Depositos() {
@@ -129,7 +129,6 @@ export default function Depositos() {
       ? parseInt(valorSucursal) 
       : null;
 
-    // Si es nuevo, estado por defecto es true (Activo). Si edita, toma el valor seleccionado.
     const estadoBoolean = selectedDeposito && selectedDeposito.id_deposito 
       ? (formData.estado === "Activo" || formData.estado === true)
       : true;
@@ -146,7 +145,7 @@ export default function Depositos() {
         .eq("id_deposito", selectedDeposito.id_deposito);
 
       if (error) {
-        alert("Error al actualizar depósito: " + error.message);
+        await showAlert.error("Error al actualizar depósito: " + error.message);
       } else {
         setIsModalOpen(false);
         fetchDatos();
@@ -159,13 +158,13 @@ export default function Depositos() {
             codigo: formData.codigo,
             id_sucursal: idSucursalFinal,
             descripcion: formData.descripcion,
-            estado: true, // Forzar activo al registrar nuevo
+            estado: true,
             fecha_registro: new Date().toISOString()
           }
         ]);
 
       if (error) {
-        alert("Error al crear el depósito: " + error.message);
+        await showAlert.error("Error al crear el depósito: " + error.message);
       } else {
         setIsModalOpen(false);
         fetchDatos();
@@ -176,7 +175,7 @@ export default function Depositos() {
   // 4. ABRIR MODAL DE ASOCIACIÓN HU 3
   const abrirModalAsociar = async (deposito) => {
     if (!deposito.estado) {
-      alert("No se pueden asociar productos a un depósito inactivo.");
+      await showAlert.warning("No se pueden asociar productos a un depósito inactivo.");
       return;
     }
 
@@ -196,7 +195,7 @@ export default function Depositos() {
       .order("nombre", { ascending: true });
 
     if (errArt) {
-      alert("Error al cargar artículos: " + errArt.message);
+      await showAlert.error("Error al cargar artículos: " + errArt.message);
       return;
     }
 
@@ -231,11 +230,11 @@ export default function Depositos() {
 
     if (stockInicial > 0) {
       if (!formDataAsociar.numero_lote.trim()) {
-        alert("Debe ingresar el número de lote para el stock inicial.");
+        await showAlert.warning("Debe ingresar el número de lote para el stock inicial.");
         return;
       }
       if (!formDataAsociar.fecha_vencimiento) {
-        alert("Debe seleccionar la fecha de vencimiento del lote.");
+        await showAlert.warning("Debe seleccionar la fecha de vencimiento del lote.");
         return;
       }
     }
@@ -268,7 +267,7 @@ export default function Depositos() {
       .single();
 
     if (errInsert) {
-      alert("Error al asociar el producto: " + errInsert.message);
+      await showAlert.error("Error al asociar el producto: " + errInsert.message);
       return;
     }
 
@@ -290,7 +289,7 @@ export default function Depositos() {
         .single();
 
       if (errLote) {
-        alert("Producto asociado, pero ocurrió un error al registrar el lote: " + errLote.message);
+        await showAlert.error("Producto asociado, pero ocurrió un error al registrar el lote: " + errLote.message);
       }
 
       await supabase.from("movimiento_stock").insert([
@@ -304,7 +303,7 @@ export default function Depositos() {
       ]);
     }
 
-    alert("¡Producto y stock vinculados exitosamente!");
+    await showAlert.successSave("¡Producto y stock vinculados exitosamente!");
     setIsAsociarModalOpen(false);
   };
 
@@ -324,7 +323,6 @@ export default function Depositos() {
 
   return (
     <div style={{ padding: "1rem" }}>
-      {/* Componente para renderizar los mensajes Flotantes (Toasts) */}
       <Toaster position="top-right" reverseOrder={false} />
 
       {/* Header */}

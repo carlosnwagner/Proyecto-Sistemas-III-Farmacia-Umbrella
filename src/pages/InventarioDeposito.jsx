@@ -101,7 +101,7 @@ function StatCard({ title, value, subtitle, alert }) {
 
 export default function InventarioDeposito({ deposito, onBack = () => alert("Volver a depósitos") }) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchAjuste, setSearchAjuste] = useState(""); // <-- Estado fundamental para el buscador de ajuste
+  const [searchAjuste, setSearchAjuste] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todas");
   const [inventory, setInventory] = useState([]);
   const [availableArticles, setAvailableArticles] = useState([]);
@@ -189,21 +189,22 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
 
   // 3. MODAL: AJUSTE DE STOCK
   const openStockAdjustment = () => {
-      if (inventory.length === 0) {
-        alert("No hay productos en este depósito para ajustar.");
-        return;
-      }
-      const primerProd = inventory[0];
-      setSearchAjuste("");
-      setDropdownOpen(false);
-      setModalMode("ajuste");
-      setSelectedItem({
-        id_articulo_deposito:"",
-        tipo_movimiento: "AJUSTE_AUDITORIA",
-        nuevo_stock: primerProd ? primerProd.stock_actual : 0,
-      });
-      setIsModalOpen(true);
-    };
+    if (inventory.length === 0) {
+      showAlert.errorSave("No hay productos en este depósito para ajustar.");
+      return;
+    }
+    const primerProd = inventory[0];
+    setSearchAjuste("");
+    setDropdownOpen(false);
+    setModalMode("ajuste");
+    setSelectedItem({
+      id_articulo_deposito: "",
+      tipo_movimiento: "AJUSTE_AUDITORIA",
+      nuevo_stock: primerProd ? primerProd.stock_actual : 0,
+    });
+    setIsModalOpen(true);
+  };
+
   // 4. MODAL: EDITAR PARÁMETROS
   const handleOpenEdit = (item) => {
     setModalMode("editar");
@@ -241,7 +242,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
     // --- MODO 1: ASOCIAR / AGREGAR PRODUCTO ---
     if (modalMode === "asociar") {
       if (!formData.id_articulo) {
-        alert("Debes seleccionar un producto.");
+        showAlert.errorSave("Debes seleccionar un producto.");
         return;
       }
 
@@ -249,7 +250,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       const stockMinimo = parseInt(formData.stock_minimo) || 0;
 
       if (stockInicial > 0 && (!formData.numero_lote?.trim() || !formData.fecha_vencimiento)) {
-        alert("Si ingresa stock inicial, debe indicar el N° de Lote y Fecha de Vencimiento.");
+        showAlert.errorSave("Si ingresa stock inicial, debe indicar el N° de Lote y Fecha de Vencimiento.");
         return;
       }
 
@@ -269,7 +270,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
         .single();
 
       if (insertError) {
-        alert("Error al asociar: " + insertError.message);
+        showAlert.errorSave("Error al asociar: " + insertError.message);
         return;
       }
 
@@ -292,7 +293,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
 
         if (loteError) {
           console.error("Error al registrar el lote:", loteError);
-          alert("Error al registrar el lote en la base de datos: " + loteError.message);
+          showAlert.errorSave("Error al registrar el lote en la base de datos: " + loteError.message);
           return;
         }
 
@@ -311,12 +312,12 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
 
         if (movError) {
           console.error("Error al registrar movimiento_stock:", movError);
-          alert("El lote se creó pero falló el movimiento: " + movError.message);
+          showAlert.errorSave("El lote se creó pero falló el movimiento: " + movError.message);
           return;
         }
       }
 
-      alert("¡Producto agregado al depósito con éxito!");
+      await showAlert.successSave("¡Producto agregado al depósito con éxito!");
       setIsModalOpen(false);
       await fetchInventory();
       return;
@@ -328,7 +329,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       const nuevoStock = parseInt(formData.nuevo_stock);
 
       if (!idRelacion || isNaN(nuevoStock) || nuevoStock < 0) {
-        alert("Seleccione un producto e ingrese un stock válido.");
+        showAlert.errorSave("Seleccione un producto e ingrese un stock válido.");
         return;
       }
 
@@ -342,7 +343,7 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
         .eq("id_articulo_deposito", idRelacion);
 
       if (updateStockErr) {
-        alert("Error al actualizar el stock: " + updateStockErr.message);
+        showAlert.errorSave("Error al actualizar el stock: " + updateStockErr.message);
         return;
       }
 
@@ -361,11 +362,11 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
 
       if (movErr) {
         console.error("Error en movimiento_stock:", movErr);
-        alert("Stock actualizado, pero falló el registro de auditoría: " + movErr.message);
+        showAlert.errorSave("Stock actualizado, pero falló el registro de auditoría: " + movErr.message);
         return;
       }
 
-      alert("¡Ajuste de stock y movimiento guardados correctamente!");
+      await showAlert.successSave("¡Ajuste de stock y movimiento guardados correctamente!");
       setIsModalOpen(false);
       await fetchInventory();
       return;
@@ -382,11 +383,11 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
         .eq("id_articulo_deposito", formData.id_articulo_deposito);
 
       if (updateError) {
-        alert("Error al actualizar: " + updateError.message);
+        showAlert.errorSave("Error al actualizar: " + updateError.message);
         return;
       }
 
-      alert("¡Parámetros actualizados!");
+      await showAlert.successSave("¡Parámetros actualizados con éxito!");
       setIsModalOpen(false);
       await fetchInventory();
     }
@@ -527,7 +528,6 @@ export default function InventarioDeposito({ deposito, onBack = () => alert("Vol
       )}
 
       {/* 2. Modal Nativo para Ajuste de Stock con Buscador Integrado */}
-{/* Modal Nativo para Ajuste de Stock con Buscador Tipo Tienda */}
       {isModalOpen && modalMode === "ajuste" && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" }}>
           <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", width: "100%", maxWidth: "520px", maxHeight: "90vh", overflowY: "visible", padding: "1.5rem", boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}>

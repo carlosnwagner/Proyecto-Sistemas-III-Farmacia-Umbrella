@@ -3,7 +3,7 @@ import EditModal from "../components/EditModal.jsx";
 import { Plus, Search, Edit2 } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
 import { showAlert } from "../lib/alerts.js"; 
-import { Plus, Search } from "lucide-react";
+
 
 export default function Sucursales() {
   const [searchTerm, setSearchTerm] = useState("");
