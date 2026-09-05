@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 
-export const TIPOS_COMPROBANTE = ['Factura A', 'Factura B', 'Factura C'];
+export const TIPOS_COMPROBANTE = ['Factura'];
+export const TIPOS_FACTURA = ['A', 'B'];
 export const ESTADOS_FACTURA = ['Pendiente', 'Pagada Parcial', 'Pagada', 'Anulada'];
 export const ALICUOTAS_IVA = [0, 10.5, 21];
 
@@ -23,6 +24,9 @@ export function validateFacturaPayload(payload) {
   if (!TIPOS_COMPROBANTE.includes(payload?.tipo_comprobante)) {
     errors.tipo_comprobante = 'Debe seleccionar un tipo de comprobante válido.';
   }
+  if (!TIPOS_FACTURA.includes(payload?.tipo_factura)) {
+    errors.tipo_factura = 'Debe seleccionar una letra de factura válida.';
+  }
   if (!payload?.numero_comprobante?.trim()) {
     errors.numero_comprobante = 'El número de comprobante es obligatorio.';
   } else if (!/^\d{1,8}$/.test(payload.numero_comprobante.trim())) {
@@ -39,6 +43,9 @@ export function validateFacturaPayload(payload) {
   if (payload?.detalle?.some((detalle) => !ALICUOTAS_IVA.includes(Number(detalle.tasa_iva)))) {
     errors.detalle = 'Cada producto debe tener una alícuota de IVA válida.';
   }
+  if (payload?.detalle?.some((detalle) => !detalle.id_articulo && !detalle.descripcion?.trim())) {
+    errors.detalle = 'Cada ítem manual debe tener una descripción.';
+  }
 
   for (const [field, value] of [
     ['subtotal', subtotal],
@@ -53,7 +60,13 @@ export function validateFacturaPayload(payload) {
 
   if (Number.isFinite(total) && Number.isFinite(subtotal) && Number.isFinite(iva)
     && Number.isFinite(exentos) && Number.isFinite(percepcionIva) && Number.isFinite(percepcionIibb)
-    && Math.abs(subtotal + iva + exentos + percepcionIva + percepcionIibb - total) > 0.01) {
+    && exentos > subtotal + 0.01) {
+    errors.conceptos_exentos = 'Los exentos no pueden superar el subtotal.';
+  }
+
+  if (Number.isFinite(total) && Number.isFinite(subtotal) && Number.isFinite(iva)
+    && Number.isFinite(percepcionIva) && Number.isFinite(percepcionIibb)
+    && Math.abs(subtotal + iva + percepcionIva + percepcionIibb - total) > 0.01) {
     errors.importe_total = 'El total debe coincidir con la suma de los conceptos.';
   }
 
@@ -81,7 +94,7 @@ export async function getFacturasProveedores() {
     .from('factura_proveedor')
     .select(`
       id_factura_proveedor, id_proveedor, id_orden_compra, tipo_comprobante,
-      punto_venta, numero_comprobante, fecha, subtotal, iva, conceptos_exentos,
+      tipo_factura, punto_venta, numero_comprobante, fecha, subtotal, iva, conceptos_exentos,
       importe_total, estado,
       proveedor:id_proveedor(razon_social),
       orden_compra:id_orden_compra(numero_orden)
@@ -125,6 +138,7 @@ export async function createFacturaProveedor(payload) {
     id_proveedor: Number(payload.id_proveedor),
     id_orden_compra: payload.id_orden_compra ? Number(payload.id_orden_compra) : null,
     tipo_comprobante: payload.tipo_comprobante,
+    tipo_factura: payload.tipo_factura,
     punto_venta: Number(payload.punto_venta),
     numero_comprobante: payload.numero_comprobante.trim().padStart(8, '0'),
     fecha: payload.fecha,
@@ -144,12 +158,13 @@ export async function createFacturaProveedor(payload) {
 
   if (error) return { data: null, error: parseSupabaseError(error) };
 
-  if (payload.id_orden_compra && payload.detalle?.length) {
+  if (payload.detalle?.length) {
     const { error: detalleError } = await supabase.from('detalle_factura_proveedor').insert(
       payload.detalle.map((detalle) => ({
         id_factura_proveedor: data.id_factura_proveedor,
-        id_detalle_orden_compra: Number(detalle.id_detalle_orden),
-        id_articulo: Number(detalle.id_articulo),
+        id_detalle_orden_compra: detalle.id_detalle_orden ? Number(detalle.id_detalle_orden) : null,
+        id_articulo: detalle.id_articulo ? Number(detalle.id_articulo) : null,
+        descripcion: detalle.descripcion || detalle.articulo?.nombre || null,
         cantidad: Number(detalle.cantidad),
         precio_unitario: Number(detalle.precio_unitario),
         tasa_iva: Number(detalle.tasa_iva || 0),

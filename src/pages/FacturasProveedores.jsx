@@ -8,12 +8,14 @@ import {
   formatNumeroComprobante,
   getFacturasProveedores,
   TIPOS_COMPROBANTE,
+  TIPOS_FACTURA,
 } from '../services/facturasProveedores.js';
 
 const initialForm = {
+  tipo_comprobante: 'Factura',
+  tipo_factura: '',
   id_proveedor: '',
   id_orden_compra: '',
-  tipo_comprobante: '',
   punto_venta: '',
   numero_comprobante: '',
   fecha: new Date().toISOString().split('T')[0],
@@ -34,6 +36,7 @@ export default function FacturasProveedores() {
   const [searchTerm, setSearchTerm] = useState('');
   const [estadoFiltro, setEstadoFiltro] = useState('Todos');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
@@ -64,6 +67,15 @@ export default function FacturasProveedores() {
     Promise.resolve().then(loadData);
   }, []);
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   const updateField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
   const subtotalDetalle = detallesOrden.reduce((sum, detalle) => sum + Number(detalle.cantidad || 0) * Number(detalle.precio_unitario || 0), 0);
   const ivaCalculado = detallesOrden.reduce((sum, detalle) => sum + (Number(detalle.cantidad || 0) * Number(detalle.precio_unitario || 0) * Number(detalle.tasa_iva || 0) / 100), 0);
@@ -71,11 +83,13 @@ export default function FacturasProveedores() {
     const importeLinea = Number(detalle.cantidad || 0) * Number(detalle.precio_unitario || 0);
     return Number(detalle.tasa_iva || 0) === 0 ? sum + importeLinea : sum;
   }, 0);
-  const exentosFinal = form.id_orden_compra ? exentosCalculado : Number(form.conceptos_exentos || 0);
-  const total = ['subtotal', 'iva', 'conceptos_exentos', 'percepcion_iva', 'percepcion_iibb']
+  const tieneDetalles = detallesOrden.length > 0;
+  const exentosFinal = tieneDetalles ? exentosCalculado : Number(form.conceptos_exentos || 0);
+  const total = ['subtotal', 'iva', 'percepcion_iva', 'percepcion_iibb']
     .reduce((sum, field) => sum + Number(form[field] || 0), 0);
-  const ivaFinal = form.id_orden_compra ? ivaCalculado : Number(form.iva || 0);
-  const totalCalculado = Number((Number(form.subtotal || subtotalDetalle) + ivaFinal + exentosFinal + Number(form.percepcion_iva || 0) + Number(form.percepcion_iibb || 0)).toFixed(2));
+  const ivaFinal = tieneDetalles ? ivaCalculado : Number(form.iva || 0);
+  const subtotalFinal = tieneDetalles ? subtotalDetalle : Number(form.subtotal || 0);
+  const totalCalculado = Number((subtotalFinal + ivaFinal + Number(form.percepcion_iva || 0) + Number(form.percepcion_iibb || 0)).toFixed(2));
 
   const ordenesDisponibles = form.id_proveedor
     ? ordenes.filter((orden) => String(orden.id_proveedor) === String(form.id_proveedor))
@@ -98,6 +112,21 @@ export default function FacturasProveedores() {
     }
     setLoadingDetalle(false);
   }
+
+  const agregarDetalleManual = () => {
+    setDetallesOrden((current) => [...current, {
+      id_detalle_orden: null,
+      id_articulo: null,
+      descripcion: '',
+      cantidad: 1,
+      precio_unitario: 0,
+      tasa_iva: 21,
+    }]);
+  };
+
+  const eliminarDetalle = (index) => {
+    setDetallesOrden((current) => current.filter((_, detalleIndex) => detalleIndex !== index));
+  };
 
   const updateDetalle = (index, field, value) => {
     const detalles = [...detallesOrden];
@@ -128,6 +157,8 @@ export default function FacturasProveedores() {
     } else {
       setSuccess('Factura registrada correctamente.');
       setForm({ ...initialForm, fecha: new Date().toISOString().split('T')[0] });
+      setDetallesOrden([]);
+      setLoadingDetalle(false);
       await loadData();
     }
     setSaving(false);
@@ -155,8 +186,8 @@ export default function FacturasProveedores() {
           <h1 style={{ fontSize: '1.9rem', fontWeight: '700', color: '#111827', margin: 0 }}>Facturas de proveedores</h1>
           <p style={{ color: '#6b7280', margin: '0.25rem 0 0' }}>Registrar comprobantes y consultar saldos pendientes</p>
         </div>
-        <button type="button" onClick={loadData} title="Actualizar facturas" style={{ ...inputStyle, width: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#fff', cursor: 'pointer' }}>
-          <RefreshCw size={16} /> Actualizar
+        <button type="button" onClick={handleRefresh} disabled={refreshing} title="Actualizar facturas" style={{ ...inputStyle, width: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#fff', cursor: refreshing ? 'wait' : 'pointer' }}>
+          <RefreshCw size={16} /> {refreshing ? 'Actualizando...' : 'Actualizar'}
         </button>
       </header>
 
@@ -167,19 +198,18 @@ export default function FacturasProveedores() {
         <h2 style={{ color: '#111827', fontSize: '1.15rem', margin: '0 0 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Plus size={18} color="#65482b" /> Registrar factura</h2>
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-            <div><label style={labelStyle}>Proveedor *</label><select value={form.id_proveedor} onChange={(e) => { updateField('id_proveedor', e.target.value); updateField('id_orden_compra', ''); }} style={inputStyle} required><option value="">Seleccionar proveedor</option>{proveedores.map((p) => <option key={p.id_proveedor} value={p.id_proveedor}>{p.razon_social}</option>)}</select>{fieldErrors.id_proveedor && <small style={{ color: '#b91c1c' }}>{fieldErrors.id_proveedor}</small>}</div>
+            <div><label style={labelStyle}>Punto de venta *</label><input type="number" min="1" max="99999" step="1" value={form.punto_venta} onChange={(e) => updateField('punto_venta', e.target.value)} placeholder="00001" style={inputStyle} required />{fieldErrors.punto_venta && <small style={{ color: '#b91c1c' }}>{fieldErrors.punto_venta}</small>}</div>
+            <div><label style={labelStyle}>Número *</label><input inputMode="numeric" pattern="[0-9]{1,8}" value={form.numero_comprobante} onChange={(e) => updateField('numero_comprobante', e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="00001234" style={inputStyle} required />{fieldErrors.numero_comprobante && <small style={{ color: '#b91c1c' }}>{fieldErrors.numero_comprobante}</small>}<small style={{ display: 'block', color: '#6b7280', marginTop: '0.25rem' }}>Comprobante: {formatNumeroComprobante(form.punto_venta, form.numero_comprobante)}</small></div>
+            <div><label style={labelStyle}>Tipo de comprobante *</label><select value={form.tipo_comprobante} onChange={(e) => updateField('tipo_comprobante', e.target.value)} style={inputStyle} required>{TIPOS_COMPROBANTE.map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}</select>{fieldErrors.tipo_comprobante && <small style={{ color: '#b91c1c' }}>{fieldErrors.tipo_comprobante}</small>}</div>
+            <div><label style={labelStyle}>Tipo de factura *</label><select value={form.tipo_factura} onChange={(e) => updateField('tipo_factura', e.target.value)} style={inputStyle} required><option value="">Seleccionar letra</option>{TIPOS_FACTURA.map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}</select>{fieldErrors.tipo_factura && <small style={{ color: '#b91c1c' }}>{fieldErrors.tipo_factura}</small>}</div>
+            <div><label style={labelStyle}>Proveedor *</label><select value={form.id_proveedor} onChange={(e) => { updateField('id_proveedor', e.target.value); updateField('id_orden_compra', ''); setDetallesOrden([]); }} style={inputStyle} required><option value="">Seleccionar proveedor</option>{proveedores.map((p) => <option key={p.id_proveedor} value={p.id_proveedor}>{p.razon_social}</option>)}</select>{fieldErrors.id_proveedor && <small style={{ color: '#b91c1c' }}>{fieldErrors.id_proveedor}</small>}</div>
             <div><label style={labelStyle}>Orden de compra</label><select value={form.id_orden_compra} onChange={(e) => handleOrdenChange(e.target.value)} style={inputStyle} disabled={!form.id_proveedor || loadingDetalle}><option value="">Sin asociación</option>{ordenesDisponibles.map((orden) => <option key={orden.id_orden_compra} value={orden.id_orden_compra}>{orden.numero_orden}</option>)}</select></div>
             <div><label style={labelStyle}>Fecha *</label><input type="date" value={form.fecha} onChange={(e) => updateField('fecha', e.target.value)} style={inputStyle} required />{fieldErrors.fecha && <small style={{ color: '#b91c1c' }}>{fieldErrors.fecha}</small>}</div>
           </div>
-          {form.id_orden_compra && <div style={{ border: '1px solid #e5e7eb', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', overflowX: 'auto' }}><strong style={{ color: '#374151' }}>Productos de la orden</strong><p style={{ color: '#6b7280', fontSize: '0.85rem', margin: '0.35rem 0' }}>Ingresá la cantidad de cada producto para calcular el importe. Elegí la alícuota que figura en cada renglón.</p>{loadingDetalle ? <p style={{ color: '#6b7280' }}>Cargando productos...</p> : <table style={{ width: '100%', marginTop: '0.6rem', borderCollapse: 'collapse', minWidth: '700px' }}><thead><tr style={{ textAlign: 'left', color: '#6b7280', fontSize: '0.78rem' }}><th>Producto</th><th>Solicitada</th><th>Cantidad</th><th>Precio unitario</th><th>IVA</th><th>Importe</th></tr></thead><tbody>{detallesOrden.map((detalle, index) => <tr key={detalle.id_detalle_orden}><td style={{ padding: '0.5rem 0' }}>{detalle.articulo?.nombre || 'Artículo'}</td><td>{detalle.cantidad_solicitada}</td><td><input type="number" min="0" step="0.001" value={detalle.cantidad} onChange={(e) => updateDetalle(index, 'cantidad', e.target.value)} style={{ ...inputStyle, width: '115px' }} /></td><td><input type="number" min="0" step="0.01" value={detalle.precio_unitario} onChange={(e) => updateDetalle(index, 'precio_unitario', e.target.value)} style={{ ...inputStyle, width: '115px' }} /></td><td><select value={detalle.tasa_iva} onChange={(e) => updateDetalle(index, 'tasa_iva', e.target.value)} style={{ ...inputStyle, width: '100px' }}>{ALICUOTAS_IVA.map((tasa) => <option key={tasa} value={tasa}>{tasa === 0 ? 'Exento' : `${tasa}%`}</option>)}</select></td><td>{currency(Number(detalle.cantidad || 0) * Number(detalle.precio_unitario || 0))}</td></tr>)}</tbody></table>}</div>}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: '1rem', marginBottom: '1rem' }}>
-            <div><label style={labelStyle}>Tipo de comprobante *</label><select value={form.tipo_comprobante} onChange={(e) => updateField('tipo_comprobante', e.target.value)} style={inputStyle} required><option value="">Seleccionar tipo</option>{TIPOS_COMPROBANTE.map((tipo) => <option key={tipo} value={tipo}>{tipo}</option>)}</select>{fieldErrors.tipo_comprobante && <small style={{ color: '#b91c1c' }}>{fieldErrors.tipo_comprobante}</small>}</div>
-            <div><label style={labelStyle}>Punto de venta *</label><input type="number" min="1" max="99999" step="1" value={form.punto_venta} onChange={(e) => updateField('punto_venta', e.target.value)} placeholder="00001" style={inputStyle} required />{fieldErrors.punto_venta && <small style={{ color: '#b91c1c' }}>{fieldErrors.punto_venta}</small>}</div>
-            <div><label style={labelStyle}>Número *</label><input inputMode="numeric" pattern="[0-9]{1,8}" value={form.numero_comprobante} onChange={(e) => updateField('numero_comprobante', e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="00001234" style={inputStyle} required />{fieldErrors.numero_comprobante && <small style={{ color: '#b91c1c' }}>{fieldErrors.numero_comprobante}</small>}<small style={{ display: 'block', color: '#6b7280', marginTop: '0.25rem' }}>Comprobante: {formatNumeroComprobante(form.punto_venta, form.numero_comprobante)}</small></div>
-          </div>
+          {form.id_orden_compra ? <div style={{ border: '1px solid #e5e7eb', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', overflowX: 'auto' }}><strong style={{ color: '#374151' }}>Productos de la orden</strong><p style={{ color: '#6b7280', fontSize: '0.85rem', margin: '0.35rem 0' }}>Ingresá la cantidad de cada producto para calcular el importe. Elegí la alícuota que figura en cada renglón.</p>{loadingDetalle ? <p style={{ color: '#6b7280' }}>Cargando productos...</p> : <table style={{ width: '100%', marginTop: '0.6rem', borderCollapse: 'collapse', minWidth: '700px' }}><thead><tr style={{ textAlign: 'left', color: '#6b7280', fontSize: '0.78rem' }}><th>Producto</th><th>Solicitada</th><th>Cantidad</th><th>Precio unitario</th><th>IVA</th><th>Importe</th></tr></thead><tbody>{detallesOrden.map((detalle, index) => <tr key={detalle.id_detalle_orden}><td style={{ padding: '0.5rem 0' }}>{detalle.articulo?.nombre || 'Artículo'}</td><td>{detalle.cantidad_solicitada}</td><td><input type="number" min="0" step="0.001" value={detalle.cantidad} onChange={(e) => updateDetalle(index, 'cantidad', e.target.value)} style={{ ...inputStyle, width: '115px' }} /></td><td><input type="number" min="0" step="0.01" value={detalle.precio_unitario} onChange={(e) => updateDetalle(index, 'precio_unitario', e.target.value)} style={{ ...inputStyle, width: '115px' }} /></td><td><select value={detalle.tasa_iva} onChange={(e) => updateDetalle(index, 'tasa_iva', e.target.value)} style={{ ...inputStyle, width: '100px' }}>{ALICUOTAS_IVA.map((tasa) => <option key={tasa} value={tasa}>{tasa === 0 ? 'Exento' : `${tasa}%`}</option>)}</select></td><td>{currency(Number(detalle.cantidad || 0) * Number(detalle.precio_unitario || 0))}</td></tr>)}</tbody></table>}</div> : <div style={{ border: '1px solid #e5e7eb', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', overflowX: 'auto' }}><strong style={{ color: '#374151' }}>Ítems de la factura</strong><p style={{ color: '#6b7280', fontSize: '0.85rem', margin: '0.35rem 0' }}>Agregá servicios o gastos que no tienen orden de compra.</p>{detallesOrden.map((detalle, index) => <div key={`manual-${index}`} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '0.75rem', alignItems: 'end', marginTop: '0.75rem' }}><div><label style={labelStyle}>Descripción</label><input value={detalle.descripcion} onChange={(e) => updateDetalle(index, 'descripcion', e.target.value)} style={inputStyle} placeholder="Luz, gas, internet..." required /></div><div><label style={labelStyle}>Cantidad</label><input type="number" min="0.001" step="0.001" value={detalle.cantidad} onChange={(e) => updateDetalle(index, 'cantidad', e.target.value)} style={inputStyle} required /></div><div><label style={labelStyle}>Precio unitario</label><input type="number" min="0" step="0.01" value={detalle.precio_unitario} onChange={(e) => updateDetalle(index, 'precio_unitario', e.target.value)} style={inputStyle} required /></div><div><label style={labelStyle}>IVA</label><select value={detalle.tasa_iva} onChange={(e) => updateDetalle(index, 'tasa_iva', e.target.value)} style={inputStyle}>{ALICUOTAS_IVA.map((tasa) => <option key={tasa} value={tasa}>{tasa === 0 ? 'Exento' : `${tasa}%`}</option>)}</select></div><button type="button" onClick={() => eliminarDetalle(index)} style={{ ...inputStyle, width: 'auto', cursor: 'pointer' }}>Quitar</button></div>)}<button type="button" onClick={agregarDetalleManual} style={{ marginTop: '0.75rem', padding: '0.6rem 1rem', border: '1px solid #65482b', background: '#fff', color: '#65482b', borderRadius: '0.5rem', cursor: 'pointer' }}><Plus size={16} /> Agregar ítem</button></div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '1rem', alignItems: 'end' }}>
-            {['subtotal', 'iva', 'conceptos_exentos', 'percepcion_iva', 'percepcion_iibb'].map((field) => <div key={field}><label style={labelStyle}>{field === 'conceptos_exentos' ? 'Exentos' : field === 'percepcion_iva' ? 'Percepción IVA (opcional)' : field === 'percepcion_iibb' ? 'Percepción IIBB (opcional)' : field.toUpperCase()} {field === 'subtotal' || field === 'iva' ? '*' : ''}</label><input type="number" min="0" step="0.01" value={field === 'iva' && form.id_orden_compra ? ivaCalculado.toFixed(2) : field === 'conceptos_exentos' && form.id_orden_compra ? exentosCalculado.toFixed(2) : form[field]} onChange={(e) => updateField(field, e.target.value)} style={inputStyle} required={field === 'subtotal' || field === 'iva'} readOnly={Boolean(form.id_orden_compra) && (field === 'subtotal' || field === 'iva' || field === 'conceptos_exentos')} /></div>)}
-            <div style={{ background: '#f7f3ef', borderRadius: '0.5rem', padding: '0.625rem 0.75rem', minHeight: '42px', boxSizing: 'border-box' }}><span style={{ ...labelStyle, marginBottom: '0.15rem' }}>Total</span><strong style={{ color: '#65482b', fontSize: '1.1rem' }}>{currency(form.id_orden_compra ? totalCalculado : total)}</strong></div>
+            {['subtotal', 'iva', 'conceptos_exentos', 'percepcion_iva', 'percepcion_iibb'].map((field) => <div key={field}><label style={labelStyle}>{field === 'conceptos_exentos' ? 'Exentos' : field === 'percepcion_iva' ? 'Percepción IVA (opcional)' : field === 'percepcion_iibb' ? 'Percepción IIBB (opcional)' : field.toUpperCase()} {field === 'subtotal' || field === 'iva' ? '*' : ''}</label><input type="number" min="0" step="0.01" value={field === 'subtotal' && tieneDetalles ? subtotalDetalle.toFixed(2) : field === 'iva' && tieneDetalles ? ivaCalculado.toFixed(2) : field === 'conceptos_exentos' && tieneDetalles ? exentosCalculado.toFixed(2) : form[field]} onChange={(e) => updateField(field, e.target.value)} style={inputStyle} required={field === 'subtotal' || field === 'iva'} readOnly={tieneDetalles && (field === 'subtotal' || field === 'iva' || field === 'conceptos_exentos')} /></div>)}
+            <div style={{ background: '#f7f3ef', borderRadius: '0.5rem', padding: '0.625rem 0.75rem', minHeight: '42px', boxSizing: 'border-box' }}><span style={{ ...labelStyle, marginBottom: '0.15rem' }}>Total</span><strong style={{ color: '#65482b', fontSize: '1.1rem' }}>{currency(tieneDetalles ? totalCalculado : total)}</strong></div>
           </div>
           {fieldErrors.importe_total && <small style={{ color: '#b91c1c', display: 'block', marginTop: '0.5rem' }}>{fieldErrors.importe_total}</small>}
           <button type="submit" disabled={saving} style={{ marginTop: '1rem', background: '#65482b', color: '#fff', border: 0, borderRadius: '0.5rem', padding: '0.7rem 1.25rem', fontWeight: '700', cursor: saving ? 'wait' : 'pointer' }}>{saving ? 'Guardando...' : 'Registrar factura'}</button>
