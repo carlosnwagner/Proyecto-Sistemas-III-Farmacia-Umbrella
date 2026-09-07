@@ -8,7 +8,7 @@ export default function MainLayout() {
   const getActiveKey = (path) => {
     if (path.startsWith("/inicio")) return "Inicio";
     if (path.startsWith("/inventario")) return "Inventario";
-    if (path.startsWith("/pedidos")) return "Depósitos";
+    if (path.startsWith("/ordenes-compra")) return "OrdenesCompra";
     if (path.startsWith("/proveedores")) return "Proveedores";
     if (path.startsWith("/pagos-proveedores")) return "Pagos";
     if (path.startsWith("/notas-credito-debito")) return "Notas";

@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
  * @property {string} [descripcion]   - descripción ampliada, opcional
  * @property {number|string} precio_costo - precio de costo, debe ser > 0
  * @property {number|string} precio_venta - precio de venta, debe ser > 0
+ * @property {boolean} [estado]       - estado del artículo (activo/inactivo)
  */
 
 /**
@@ -63,24 +64,20 @@ export function validateArticuloPayload(payload) {
   return { valid: Object.keys(errors).length === 0, errors };
 }
 
-// Nombres de las constraints UNIQUE definidas en el schema SQL (ver schema_farmacia_umbrella_sprint1.sql).
-// Postgres los genera automáticamente como "<tabla>_<columna>_key".
+// Nombres de las constraints UNIQUE definidas en el schema SQL.
 const DUPLICATE_FIELD_BY_CONSTRAINT = {
   articulo_codigo_key: 'codigo',
   articulo_codigo_barras_key: 'codigo_barras',
 };
 
 /**
- * Traduce un error de Postgres/Supabase a un mensaje entendible en español,
- * e identifica a qué campo del formulario corresponde (para marcarlo en rojo).
- *
+ * Traduce un error de Postgres/Supabase a un mensaje entendible en español.
  * @param {import('@supabase/supabase-js').PostgrestError} error
  * @returns {{ field: string|null, message: string }}
  */
 function parseSupabaseError(error) {
   if (!error) return { field: null, message: 'Ocurrió un error inesperado.' };
 
-  // 23505 = unique_violation
   if (error.code === '23505') {
     const constraint = Object.keys(DUPLICATE_FIELD_BY_CONSTRAINT).find((c) =>
       error.message?.includes(c)
@@ -96,7 +93,6 @@ function parseSupabaseError(error) {
     return { field: null, message: 'El artículo ya existe (dato duplicado).' };
   }
 
-  // 23514 = check_violation (por ejemplo precio_costo <= 0, ver CHECK en la tabla)
   if (error.code === '23514') {
     return {
       field: null,
@@ -108,9 +104,7 @@ function parseSupabaseError(error) {
 }
 
 /**
- * Verifica si un código ya está en uso (para validación en vivo, ej. al perder foco el input).
- * Opcional: mejora la UX pero no reemplaza la validación de la base de datos.
- *
+ * Verifica si un código ya está en uso.
  * @param {string} codigo
  * @returns {Promise<boolean>} true si el código YA existe
  */
@@ -122,13 +116,12 @@ export async function existeCodigo(codigo) {
     .eq('codigo', codigo.trim())
     .maybeSingle();
 
-  if (error) return false; // ante un error de red no bloqueamos al usuario, lo valida igual el insert
+  if (error) return false;
   return Boolean(data);
 }
 
 /**
- * Verifica si un código de barras ya está en uso (para validación en vivo).
- *
+ * Verifica si un código de barras ya está en uso.
  * @param {string} codigoBarras
  * @returns {Promise<boolean>} true si el código de barras YA existe
  */
@@ -146,14 +139,7 @@ export async function existeCodigoBarras(codigoBarras) {
 
 /**
  * Da de alta un nuevo artículo en el catálogo (HU03).
- * No es necesario enviar "estado": la base lo asigna en 'Activo' por DEFAULT,
- * cumpliendo el criterio "Al confirmar queda Activo y disponible".
- *
  * @param {ArticuloInput} payload
- * @returns {Promise<{
- *   data: object|null,
- *   error: { field: string|null, message: string, fieldErrors?: Object<string,string> } | null
- * }>}
  */
 export async function createArticulo(payload) {
   const { valid, errors } = validateArticuloPayload(payload);
@@ -188,15 +174,12 @@ export async function createArticulo(payload) {
   return { data, error: null };
 }
 
-
 /**
  * Modifica un artículo existente en la base de datos.
- *
  * @param {number} idArticulo - El ID único (primary key) del artículo a editar.
  * @param {ArticuloInput} payload - Los datos del formulario.
  */
 export async function updateArticulo(idArticulo, payload) {
-  // Reutilizacion de las validaciones
   const { valid, errors } = validateArticuloPayload(payload);
   if (!valid) {
     return {
@@ -205,6 +188,7 @@ export async function updateArticulo(idArticulo, payload) {
     };
   }
 
+  // Se incluye explícitamente el estado para que se guarde en Supabase
   const updatePayload = {
     id_rubro: payload.id_rubro,
     id_unidad: payload.id_unidad,
@@ -214,6 +198,7 @@ export async function updateArticulo(idArticulo, payload) {
     descripcion: payload.descripcion?.trim() || null,
     precio_costo: Number(payload.precio_costo),
     precio_venta: Number(payload.precio_venta),
+    estado: payload.estado !== undefined ? Boolean(payload.estado) : true,
   };
 
   // UPDATE en Supabase 
