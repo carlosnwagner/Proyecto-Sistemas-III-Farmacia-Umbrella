@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../lib/supabase.js";
 import { showAlert } from "../lib/alerts.js";
-import { FileText, Search, CreditCard, CheckCircle2 } from "lucide-react";
+import { FileText, Search } from "lucide-react";
 import "../App.css";
 
 // Componentes reutilizables con el diseño del proyecto
@@ -61,10 +61,10 @@ export default function RegistrarPagoProveedor() {
   const [mediosPago, setMediosPago] = useState([]);
   const [selectedProveedorId, setSelectedProveedorId] = useState("");
 
-  // Cabecera del pago (HU 33)
-  const [fechaPago, setFechaPago] = useState(() => new Date().toISOString().split("T")[0]);
+  // Control del modal de pago y parámetros de la orden
+  const [isModalPagoOpen, setIsModalPagoOpen] = useState(false);
+  const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
   const [idMedioPago, setIdMedioPago] = useState("");
-  const [tipoCancelacion, setTipoCancelacion] = useState("Parcial");
 
   // Facturas y saldos (HU 34)
   const [facturas, setFacturas] = useState([]);
@@ -76,14 +76,28 @@ export default function RegistrarPagoProveedor() {
 
   // Imputaciones: { [id_factura_proveedor]: { seleccionado: boolean, montoAplicado: number | string } }
   const [aplicaciones, setAplicaciones] = useState({});
-  
-  
+
   const formatearFecha = (fechaStr) => {
-  if (!fechaStr) return "-";
-  const [anio, mes, dia] = fechaStr.split("-");
-  if (!dia || !mes || !anio) return fechaStr;
-  return `${dia}/${mes}/${anio}`;
-};
+    if (!fechaStr) return "-";
+    const [anio, mes, dia] = fechaStr.split("-");
+    if (!dia || !mes || !anio) return fechaStr;
+    return `${dia}/${mes}/${anio}`;
+  };
+
+  // Cálculo automático del tipo de cancelación según las facturas afectadas
+  const tipoCancelacion = useMemo(() => {
+    const facturasSeleccionadas = facturas.filter(
+      (f) => (aplicaciones[f.id_factura_proveedor]?.montoAplicado || 0) > 0
+    );
+    if (facturasSeleccionadas.length === 0) return "Parcial";
+
+    const todasCompletas = facturasSeleccionadas.every((f) => {
+      const aplicado = Number(aplicaciones[f.id_factura_proveedor]?.montoAplicado) || 0;
+      return aplicado >= f.saldoPendiente;
+    });
+
+    return todasCompletas ? "Total" : "Parcial";
+  }, [facturas, aplicaciones]);
 
   useEffect(() => {
     async function loadCatalogos() {
@@ -100,9 +114,9 @@ export default function RegistrarPagoProveedor() {
       ]);
 
       if (provRes.data) setProveedores(provRes.data);
-      if (mediosRes.data) {
+      if (mediosRes.data && mediosRes.data.length > 0) {
         setMediosPago(mediosRes.data);
-        if (mediosRes.data.length > 0) setIdMedioPago(mediosRes.data[0].id_medio_pago);
+        setIdMedioPago(String(mediosRes.data[0].id_medio_pago));
       }
     }
     loadCatalogos();
@@ -145,6 +159,7 @@ export default function RegistrarPagoProveedor() {
         `)
         .eq("id_proveedor", selectedProveedorId)
         .order("fecha", { ascending: false });
+
       if (error) {
         showAlert.errorSave("Error al cargar comprobantes: " + error.message);
         setFacturas([]);
@@ -160,7 +175,9 @@ export default function RegistrarPagoProveedor() {
           let impactoNotas = 0;
           (f.nota_credito_debito_proveedor || []).forEach((n) => {
             const imp = Number(n.importe) || 0;
-            const esNC = n.tipo_nota?.toUpperCase().includes("NC") || n.tipo_nota?.toLowerCase().includes("crédito");
+            const esNC =
+              n.tipo_nota?.toUpperCase().includes("NC") ||
+              n.tipo_nota?.toLowerCase().includes("crédito");
             impactoNotas += esNC ? -imp : imp;
           });
 
@@ -290,7 +307,7 @@ export default function RegistrarPagoProveedor() {
 
     setSubmitting(true);
     try {
-      // 1. Insertar cabecera pago_proveedor
+      // 1. Insertar cabecera pago_proveedor (respetando 'Total' o 'Parcial')
       const { data: pagoData, error: pagoErr } = await supabase
         .from("pago_proveedor")
         .insert([
@@ -299,7 +316,7 @@ export default function RegistrarPagoProveedor() {
             fecha_pago: fechaPago,
             importe_total: totalPagoCalculado,
             id_medio_pago: Number(idMedioPago),
-            tipo_cancelacion: itemsAImputar.length > 1 ? "Multiple" : tipoCancelacion,
+            tipo_cancelacion: tipoCancelacion, // 'Total' o 'Parcial'
           },
         ])
         .select("id_pago")
@@ -307,20 +324,25 @@ export default function RegistrarPagoProveedor() {
 
       if (pagoErr) throw pagoErr;
 
-      // 2. Insertar detalles 1 a N y actualizar estado en factura_proveedor
+      // 2. Insertar todos los detalles de pago en una sola operación masiva
+      const detallesAInsertar = itemsAImputar.map((item) => ({
+        id_pago: pagoData.id_pago,
+        id_factura_proveedor: item.id_factura_proveedor,
+        importe_aplicado: item.monto,
+      }));
+
+      const { error: detErr } = await supabase
+        .from("detalle_pago")
+        .insert(detallesAInsertar);
+
+      if (detErr) throw detErr;
+
+      // 3. Actualizar el estado de cada factura según su saldo individual restante
       for (const item of itemsAImputar) {
-        const { error: detErr } = await supabase.from("detalle_pago").insert([
-          {
-            id_pago: pagoData.id_pago,
-            id_factura_proveedor: item.id_factura_proveedor,
-            importe_aplicado: item.monto,
-          },
-        ]);
-
-        if (detErr) throw detErr;
-
-        const factActual = facturas.find((f) => f.id_factura_proveedor === item.id_factura_proveedor);
-        const nuevoSaldo = Math.max(0, factActual.saldoPendiente - item.monto);
+        const factActual = facturas.find(
+          (f) => Number(f.id_factura_proveedor) === item.id_factura_proveedor
+        );
+        const nuevoSaldo = Math.max(0, (factActual?.saldoPendiente || 0) - item.monto);
         const nuevoEstado = nuevoSaldo === 0 ? "Pagada Total" : "Pagada Parcial";
 
         const { error: updErr } = await supabase
@@ -331,12 +353,20 @@ export default function RegistrarPagoProveedor() {
         if (updErr) throw updErr;
       }
 
+      // 4. Cierre ordenado y refresco de vista
       showAlert.successSave("¡Pago registrado e imputado exitosamente!");
+      setIsModalPagoOpen(false);
 
+      // Limpia selección de montos e inputs
+      setAplicaciones({});
+
+      // Recarga los comprobantes del proveedor para reflejar los nuevos saldos y badges
       const provActual = selectedProveedorId;
       setSelectedProveedorId("");
       setTimeout(() => setSelectedProveedorId(provActual), 100);
+
     } catch (err) {
+      console.error("Error al registrar pago:", err);
       showAlert.errorSave(err.message || "Error al registrar el pago.");
     } finally {
       setSubmitting(false);
@@ -344,8 +374,8 @@ export default function RegistrarPagoProveedor() {
   };
 
   return (
-    <div className="pagos-pagina" style={{ maxWidth: "1300px", margin: "0 auto", width: "100%" }}>
-      {/* Encabezado estándar */}
+    <div className="pagos-pagina" style={{ maxWidth: "1280px", margin: "0 auto", width: "100%" }}>
+      {/* Encabezado */}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
           <h1 className="titulo-pagina" style={{ margin: 0, fontSize: "1.9rem" }}>
@@ -357,61 +387,25 @@ export default function RegistrarPagoProveedor() {
         </div>
       </header>
 
-      {/* Formulario de Cabecera */}
-      <div className="tarjeta-formulario" style={{ marginBottom: "1.5rem" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-          <div className="grupo-campo">
-            <label>Proveedor *</label>
-            <select
-              className="campo-entrada"
-              value={selectedProveedorId}
-              onChange={(e) => setSelectedProveedorId(e.target.value)}
-            >
-              <option value="">-- Seleccionar proveedor --</option>
-              {proveedores.map((p) => (
-                <option key={p.id_proveedor} value={p.id_proveedor}>
-                  {p.razon_social} {p.identificacion_fiscal ? `(${p.identificacion_fiscal})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grupo-campo">
-            <label>Fecha de Pago *</label>
-            <input
-              type="date"
-              className="campo-entrada"
-              value={fechaPago}
-              onChange={(e) => setFechaPago(e.target.value)}
-            />
-          </div>
-
-          <div className="grupo-campo">
-            <label>Medio de Pago *</label>
-            <select
-              className="campo-entrada"
-              value={idMedioPago}
-              onChange={(e) => setIdMedioPago(e.target.value)}
-            >
-              {mediosPago.map((m) => (
-                <option key={m.id_medio_pago} value={m.id_medio_pago}>
-                  {m.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grupo-campo">
-            <label>Tipo de Cancelación</label>
-            <select
-              className="campo-entrada"
-              value={tipoCancelacion}
-              onChange={(e) => setTipoCancelacion(e.target.value)}
-            >
-              <option value="Parcial">Parcial</option>
-              <option value="Total">Total</option>
-            </select>
-          </div>
+      {/* Selector de Proveedor */}
+      <div className="card-formulario" style={{ marginBottom: "1.5rem", padding: "1.25rem", backgroundColor: "#fff", borderRadius: "0.75rem", border: "1px solid #e5e7eb" }}>
+        <div style={{ maxWidth: "420px" }}>
+          <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#374151", marginBottom: "0.4rem" }}>
+            Proveedor *
+          </label>
+          <select
+            value={selectedProveedorId}
+            onChange={(e) => setSelectedProveedorId(e.target.value)}
+            className="select-proveedor"
+            style={{ width: "100%", padding: "0.6rem 0.75rem", borderRadius: "0.5rem", border: "1px solid #d1d5db" }}
+          >
+            <option value="">Seleccione un proveedor...</option>
+            {proveedores.map((p) => (
+              <option key={p.id_proveedor} value={p.id_proveedor}>
+                {p.razon_social} ({p.identificacion_fiscal || "Sin CUIT"})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -495,81 +489,85 @@ export default function RegistrarPagoProveedor() {
             No se encontraron comprobantes para el filtro seleccionado.
           </div>
         ) : (
-          <div className="tabla-contenedor">
-            <table className="tabla-facturas">
+          <div className="tabla-contenedor" style={{ width: "100%", overflowX: "auto" }}>
+            <table className="tabla-facturas" style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={{ width: "40px", textAlign: "center" }}>Pagar</th>
-                  <th>Comprobante</th>
-                  <th>Emisión</th>
-                  {/* Presentación contable exigida para HU 34 */}
-                  <th>Haber (Comprobante)</th>
-                  <th>Debe (Pagado / NC)</th>
-                  <th>Saldo Pendiente</th>
-                  <th>Estado</th>
-                  <th style={{ minWidth: "140px", textAlign: "right" }}>Importe a Aplicar ($)</th>
+                  <th style={{ width: "5%", textAlign: "center" }}>PAGAR</th>
+                  <th style={{ width: "24%", textAlign: "left" }}>COMPROBANTE</th>
+                  <th style={{ width: "11%", textAlign: "center" }}>EMISIÓN</th>
+                  <th style={{ width: "14%", textAlign: "right" }}>HABER (FACTURA)</th>
+                  <th style={{ width: "14%", textAlign: "right" }}>DEBE (PAGOS/NC)</th>
+                  <th style={{ width: "12%", textAlign: "right" }}>SALDO PENDIENTE</th>
+                  <th style={{ width: "10%", textAlign: "center" }}>ESTADO</th>
+                  <th style={{ width: "10%", textAlign: "right" }}>IMPORTE ($)</th>
                 </tr>
               </thead>
               <tbody>
                 {facturasFiltradas.map((f) => {
                   const isChecked = aplicaciones[f.id_factura_proveedor]?.seleccionado || false;
                   const monto = aplicaciones[f.id_factura_proveedor]?.montoAplicado || "";
-                  
-                  // Haber: Lo facturado originalmente (+ ND si hubiera)
+
                   const haber = f.totalOriginal + (f.impactoNotas > 0 ? f.impactoNotas : 0);
-                  
-                  // Debe: Pagos acumulados + Notas de Crédito
                   const debe = f.totalPagado + (f.impactoNotas < 0 ? Math.abs(f.impactoNotas) : 0);
 
                   return (
                     <tr key={f.id_factura_proveedor} style={{ backgroundColor: isChecked ? "#faf8f5" : "transparent" }}>
-                      <td style={{ textAlign: "center" }}>
+                      <td style={{ textAlign: "center", verticalAlign: "middle" }}>
                         <input
                           type="checkbox"
                           disabled={f.saldoPendiente <= 0}
                           checked={isChecked}
                           onChange={() => handleToggleSelect(f)}
-                          style={{ cursor: f.saldoPendiente > 0 ? "pointer" : "not-allowed", width: "16px", height: "16px" }}
+                          style={{
+                            cursor: f.saldoPendiente > 0 ? "pointer" : "not-allowed",
+                            width: "16px",
+                            height: "16px",
+                            margin: "0 auto",
+                            display: "block"
+                          }}
                         />
                       </td>
-                      <td>
+                      <td style={{ textAlign: "left", verticalAlign: "middle" }}>
                         <button
                           type="button"
                           onClick={() => setComprobanteDetalle(f)}
-                          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--marron-principal)" }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                            color: "var(--marron-principal)",
+                            maxWidth: "100%"
+                          }}
                         >
-                          <FileText size={16} />
-                          <span style={{ fontWeight: "600", textDecoration: "underline" }}>
-                            {f.tipo_comprobante || "Factura"} {f.tipo_factura || ""} {f.numero_comprobante || `#${f.id_factura_proveedor}`}
+                          <FileText size={16} style={{ flexShrink: 0 }} />
+                          <span style={{ fontWeight: "600", textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {f.tipo_comprobante || "Factura"} {f.tipo_factura || ""} {String(f.numero_comprobante || f.id_factura_proveedor).padStart(8, "0")}
                           </span>
                         </button>
                       </td>
-                      <td style={{ color: "var(--texto-secundario)" }}>
+                      <td style={{ textAlign: "center", verticalAlign: "middle", color: "var(--texto-secundario)" }}>
                         {formatearFecha(f.fecha)}
                       </td>
-
-                      {/* HABER: Importe deudor generado */}
-                      <td style={{ fontWeight: "500" }}>
+                      <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "500" }}>
                         ${haber.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
                       </td>
-
-                      {/* DEBE: Reducciones por pago o NC */}
-                      <td style={{ color: debe > 0 ? "#166534" : "var(--texto-secundario)", fontWeight: "500" }}>
+                      <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "500", color: debe > 0 ? "#166534" : "var(--texto-secundario)" }}>
                         ${debe.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
                       </td>
-
-                      {/* SALDO PENDIENTE */}
-                      <td className="saldo-pendiente">
+                      <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "700", color: f.saldoPendiente > 0 ? "#dc2626" : "#166534" }}>
                         ${f.saldoPendiente.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
                       </td>
-
-                      <td>
+                      <td style={{ textAlign: "center", verticalAlign: "middle" }}>
                         <Badge variant={f.estadoCalculado === "Pagada Total" ? "success" : f.estadoCalculado === "Pagada Parcial" ? "warning" : "danger"}>
                           {f.estadoCalculado}
                         </Badge>
                       </td>
-
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "right", verticalAlign: "middle" }}>
                         <input
                           type="number"
                           placeholder="0.00"
@@ -577,6 +575,12 @@ export default function RegistrarPagoProveedor() {
                           disabled={f.saldoPendiente <= 0}
                           value={monto}
                           onChange={(e) => handleMontoChange(f.id_factura_proveedor, f.saldoPendiente, e.target.value)}
+                          style={{
+                            width: "100%",
+                            maxWidth: "100px",
+                            textAlign: "right",
+                            boxSizing: "border-box"
+                          }}
                         />
                       </td>
                     </tr>
@@ -587,7 +591,7 @@ export default function RegistrarPagoProveedor() {
           </div>
         )}
 
-        {/* Tarjeta de Totalización y Botón de Pago */}
+        {/* Tarjeta de Totalización y Botón para Abrir Modal de Pago */}
         <div className="tarjeta-total" style={{ marginTop: "1.5rem" }}>
           <div>
             <span className="etiqueta-total">Total a Pagar:</span>
@@ -600,25 +604,208 @@ export default function RegistrarPagoProveedor() {
             type="button"
             className="boton-principal"
             disabled={submitting || totalPagoCalculado <= 0}
-            onClick={handleRegistrarPago}
+            onClick={() => setIsModalPagoOpen(true)}
           >
-            {submitting ? "Procesando..." : "Confirmar y Registrar Pago"}
+            Continuar al Pago
           </button>
         </div>
       </div>
-   {comprobanteDetalle && (
+
+      {/* Modal: Detalle de Comprobante (HU 34) */}
+      {comprobanteDetalle && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1100,
+            padding: "1rem",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "0.75rem",
+              width: "100%",
+              maxWidth: "560px",
+              padding: "1.5rem",
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                marginBottom: "1.25rem",
+                borderBottom: "1px solid #e5e7eb",
+                paddingBottom: "0.85rem",
+              }}
+            >
+              <div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    fontWeight: "700",
+                    color: "#6b7280",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  {comprobanteDetalle.tipo_comprobante || "Factura"} Proveedor
+                </span>
+                <h3
+                  style={{
+                    margin: "0.2rem 0 0",
+                    fontSize: "1.4rem",
+                    fontWeight: "700",
+                    color: "#111827",
+                  }}
+                >
+                  {comprobanteDetalle.tipo_factura ? `${comprobanteDetalle.tipo_factura} ` : ""}
+                  {String(comprobanteDetalle.punto_venta || 1).padStart(4, "0")}-
+                  {String(comprobanteDetalle.numero_comprobante || comprobanteDetalle.id_factura_proveedor).padStart(8, "0")}
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setComprobanteDetalle(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "1.25rem",
+                  color: "#6b7280",
+                  padding: "0.25rem",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "0.85rem",
+                fontSize: "0.875rem",
+                marginBottom: "1.25rem",
+              }}
+            >
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Punto de Venta</span>
+                <b style={{ color: "#111827" }}>{String(comprobanteDetalle.punto_venta || 1).padStart(4, "0")}</b>
+              </div>
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Tipo Comprobante</span>
+                <b style={{ color: "#111827" }}>Factura {comprobanteDetalle.tipo_factura || "A"}</b>
+              </div>
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Subtotal Gravado</span>
+                <b style={{ color: "#111827" }}>
+                  ${Number(comprobanteDetalle.subtotal || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                </b>
+              </div>
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>IVA Liquidado</span>
+                <b style={{ color: "#111827" }}>
+                  ${Number(comprobanteDetalle.iva || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                </b>
+              </div>
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Exentos / No gravados</span>
+                <b style={{ color: "#111827" }}>
+                  ${Number(comprobanteDetalle.conceptos_exentos || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                </b>
+              </div>
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Total Factura</span>
+                <b style={{ color: "#111827" }}>
+                  ${Number(comprobanteDetalle.importe_total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                </b>
+              </div>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: "#f9fafb",
+                padding: "1rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #e5e7eb",
+                fontSize: "0.85rem",
+                marginBottom: "1.25rem",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                <span style={{ color: "#4b5563" }}>Ajuste NC/ND aplicadas:</span>
+                <b
+                  style={{
+                    color:
+                      (comprobanteDetalle.impactoNotas || 0) < 0
+                        ? "#2563eb"
+                        : (comprobanteDetalle.impactoNotas || 0) > 0
+                        ? "#d97706"
+                        : "#374151",
+                  }}
+                >
+                  {(comprobanteDetalle.impactoNotas || 0) < 0 ? "-" : ""}
+                  ${Math.abs(comprobanteDetalle.impactoNotas || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                </b>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                <span style={{ color: "#4b5563" }}>Total Pagado previamente:</span>
+                <b style={{ color: "#166534" }}>
+                  ${Number(comprobanteDetalle.totalPagado || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                </b>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  borderTop: "1px solid #e5e7eb",
+                  paddingTop: "0.5rem",
+                  fontWeight: "700",
+                }}
+              >
+                <span style={{ color: "#111827" }}>Saldo Pendiente Actual:</span>
+                <span style={{ color: "#dc2626", fontSize: "1rem" }}>
+                  ${Number(comprobanteDetalle.saldoPendiente || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setComprobanteDetalle(null)}
+                className="boton-principal"
+                style={{ padding: "0.5rem 1.5rem" }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+{/* Modal: Confirmación de Pago (HU 33) */}
+{isModalPagoOpen && (
   <div
     style={{
       position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
+      inset: 0,
       backgroundColor: "rgba(0, 0, 0, 0.5)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      zIndex: 1100,
+      zIndex: 1200,
       padding: "1rem",
     }}
   >
@@ -627,173 +814,160 @@ export default function RegistrarPagoProveedor() {
         backgroundColor: "#ffffff",
         borderRadius: "0.75rem",
         width: "100%",
-        maxWidth: "560px",
+        maxWidth: "520px",
         padding: "1.5rem",
         border: "1px solid #e5e7eb",
         boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
       }}
     >
-      {/* Cabecera con Punto de Venta y Número de Comprobante arriba */}
+      {/* Cabecera */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "1.25rem",
+          alignItems: "center",
           borderBottom: "1px solid #e5e7eb",
-          paddingBottom: "0.85rem",
+          paddingBottom: "0.75rem",
+          marginBottom: "1.25rem",
         }}
       >
-        <div>
-          <span
-            style={{
-              fontSize: "0.75rem",
-              fontWeight: "700",
-              color: "#6b7280",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-            }}
-          >
-            {comprobanteDetalle.tipo_comprobante || "Factura"} Proveedor
-          </span>
-          <h3
-            style={{
-              margin: "0.2rem 0 0",
-              fontSize: "1.4rem",
-              fontWeight: "700",
-              color: "#111827",
-            }}
-          >
-            {comprobanteDetalle.tipo_factura ? `${comprobanteDetalle.tipo_factura} ` : ""}
-            {String(comprobanteDetalle.punto_venta || 1).padStart(4, "0")}-
-            {String(comprobanteDetalle.numero_comprobante || comprobanteDetalle.id_factura_proveedor).padStart(8, "0")}
-          </h3>
-        </div>
-
+        <h3 style={{ margin: 0, fontSize: "1.25rem", color: "#111827", fontWeight: "700" }}>
+          Confirmar Orden de Pago
+        </h3>
         <button
           type="button"
-          onClick={() => setComprobanteDetalle(null)}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            fontSize: "1.25rem",
-            color: "#6b7280",
-            padding: "0.25rem",
-          }}
+          onClick={() => setIsModalPagoOpen(false)}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.25rem", color: "#6b7280" }}
         >
           ✕
         </button>
       </div>
 
-      {/* Desglose Impositivo y Fiscal */}
+      {/* Resumen del Monto a Pagar */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "0.85rem",
-          fontSize: "0.875rem",
+          backgroundColor: "#faf8f5",
+          border: "1px solid #ebd8c8",
+          borderRadius: "0.5rem",
+          padding: "1rem",
+          textAlign: "center",
           marginBottom: "1.25rem",
         }}
       >
-        <div>
-          <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Punto de Venta</span>
-          <b style={{ color: "#111827" }}>{String(comprobanteDetalle.punto_venta || 1).padStart(4, "0")}</b>
-        </div>
-        <div>
-          <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Tipo Comprobante</span>
-          <b style={{ color: "#111827" }}>Factura {comprobanteDetalle.tipo_factura || "A"}</b>
-        </div>
-        <div>
-          <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Subtotal Gravado</span>
-          <b style={{ color: "#111827" }}>
-            ${Number(comprobanteDetalle.subtotal || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-          </b>
-        </div>
-        <div>
-          <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>IVA Liquidado</span>
-          <b style={{ color: "#111827" }}>
-            ${Number(comprobanteDetalle.iva || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-          </b>
-        </div>
-        <div>
-          <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Exentos / No gravados</span>
-          <b style={{ color: "#111827" }}>
-            ${Number(comprobanteDetalle.conceptos_exentos || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-          </b>
-        </div>
-        <div>
-          <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Total Factura</span>
-          <b style={{ color: "#111827" }}>
-            ${Number(comprobanteDetalle.importe_total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-          </b>
+        <span style={{ fontSize: "0.8rem", color: "#785b46", fontWeight: "600", textTransform: "uppercase" }}>
+          Total a Desembolsar
+        </span>
+        <div style={{ fontSize: "2rem", fontWeight: "800", color: "var(--marron-principal)" }}>
+          ${totalPagoCalculado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
         </div>
       </div>
 
-      {/* Historial de Cancelación y Saldo Vivo */}
-      <div
-        style={{
-          backgroundColor: "#f9fafb",
-          padding: "1rem",
-          borderRadius: "0.5rem",
-          border: "1px solid #e5e7eb",
-          fontSize: "0.85rem",
-          marginBottom: "1.25rem",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-          <span style={{ color: "#4b5563" }}>Ajuste NC/ND aplicadas:</span>
-          <b
+      {/* Campos de la Transacción */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1.5rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          {/* Fecha */}
+          <div>
+            <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.35rem" }}>
+              Fecha de Pago *
+            </label>
+            <input
+              type="date"
+              value={fechaPago}
+              onChange={(e) => setFechaPago(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "0.55rem",
+                borderRadius: "0.375rem",
+                border: "1px solid #d1d5db",
+                fontSize: "0.875rem",
+                boxSizing: "border-box",
+              }}
+              required
+            />
+          </div>
+
+          {/* Tipo de Cancelación: Selector editable con sugerencia automática */}
+          <div>
+            <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.35rem" }}>
+              Tipo Cancelación *
+            </label>
+            <select
+              value={tipoCancelacion}
+              disabled
+              style={{
+                width: "100%",
+                padding: "0.55rem",
+                borderRadius: "0.375rem",
+                border: "1px solid #d1d5db",
+                fontSize: "0.875rem",
+                boxSizing: "border-box",
+                backgroundColor: "#f3f4f6",
+                fontWeight: "600",
+                color: tipoCancelacion === "Total" ? "#166534" : "#92400e",
+              }}
+            >
+              <option value="Total">Cancelación Total</option>
+              <option value="Parcial">Cancelación Parcial</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Medio de Pago */}
+        <div>
+          <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.35rem" }}>
+            Medio de Pago *
+          </label>
+          <select
+            value={idMedioPago}
+            onChange={(e) => setIdMedioPago(e.target.value)}
             style={{
-              color:
-                (comprobanteDetalle.impactoNotas || 0) < 0
-                  ? "#2563eb"
-                  : (comprobanteDetalle.impactoNotas || 0) > 0
-                  ? "#d97706"
-                  : "#374151",
+              width: "100%",
+              padding: "0.55rem",
+              borderRadius: "0.375rem",
+              border: "1px solid #d1d5db",
+              fontSize: "0.875rem",
+              boxSizing: "border-box",
             }}
           >
-            {(comprobanteDetalle.impactoNotas || 0) < 0 ? "-" : ""}
-            ${Math.abs(comprobanteDetalle.impactoNotas || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-          </b>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-          <span style={{ color: "#4b5563" }}>Total Pagado previamente:</span>
-          <b style={{ color: "#166534" }}>
-            ${Number(comprobanteDetalle.totalPagado || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-          </b>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            borderTop: "1px solid #e5e7eb",
-            paddingTop: "0.5rem",
-            fontWeight: "700",
-          }}
-        >
-          <span style={{ color: "#111827" }}>Saldo Pendiente Actual:</span>
-          <span style={{ color: "#dc2626", fontSize: "1rem" }}>
-            ${Number(comprobanteDetalle.saldoPendiente || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-          </span>
+            {mediosPago.map((m) => (
+              <option key={m.id_medio_pago} value={m.id_medio_pago}>
+                {m.nombre}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Botón de Cierre */}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      {/* Botones de acción */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
         <button
           type="button"
-          onClick={() => setComprobanteDetalle(null)}
-          className="boton-principal"
-          style={{ padding: "0.5rem 1.5rem" }}
+          onClick={() => setIsModalPagoOpen(false)}
+          style={{
+            padding: "0.55rem 1.25rem",
+            borderRadius: "0.375rem",
+            border: "1px solid #d1d5db",
+            backgroundColor: "#ffffff",
+            color: "#374151",
+            fontWeight: "600",
+            cursor: "pointer",
+          }}
         >
-          Cerrar
+          Cancelar
+        </button>
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={handleRegistrarPago}
+          className="boton-principal"
+          style={{ padding: "0.55rem 1.5rem", fontWeight: "600" }}
+        >
+          {submitting ? "Registrando Pago..." : "Confirmar y Pagar"}
         </button>
       </div>
     </div>
   </div>
 )}
-      </div>
-    
+    </div>
   );
 }
