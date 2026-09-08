@@ -1,148 +1,137 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-/**
- * Genera un PDF estandarizado para Farmacia Umbrella
- * @param {Object} config
- * @param {string} config.title - Título del documento (ej: "ORDEN DE COMPRA")
- * @param {string} [config.subtitle] - Subtítulo opcional o ID de transacción
- * @param {Array<Object>} config.infoData - Datos clave en par clave/valor para el encabezado
- * @param {Array<string>} config.columns - Encabezados de las columnas de la tabla
- * @param {Array<Array>} config.rows - Filas de datos para la tabla
- * @param {string} [config.fileName] - Nombre con el que se descargará el archivo
- */
-export const generateStandardPDF = ({
-  title,
+// Función auxiliar para convertir el SVG de la carpeta public a Base64
+const cargarSVGComoImagen = (url) => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = url;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width || 100;
+      canvas.height = img.height || 100;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(null);
+  });
+};
+
+export const generateStandardPDF = async ({
+  title = "DOCUMENTO",
   subtitle = "",
   infoData = [],
   columns = [],
   rows = [],
-  fileName = "documento.pdf",
+  fileName = "documento.pdf"
 }) => {
   const doc = new jsPDF();
 
-  // --- PALETA DE COLORES DE LA MARCA ---
-  const PRIMARY_COLOR = [45, 36, 30];   // #2d241e (Café oscuro)
-  const ACCENT_COLOR = [132, 204, 22];  // #84cc16 (Verde Lima)
-  const TEXT_DARK = [55, 65, 81];       // #374151
-  const LIGHT_BG = [250, 250, 250];     // #fafafa
+  // 1. Barra superior decorativa (Verde claro original: #86C610 / RGB: 134, 198, 16)
+  doc.setFillColor(134, 198, 16);
+  doc.rect(0, 0, 210, 8, "F");
 
-  // --- MEMBRETE / ENCABEZADO ---
-  // Barra de acento superior
-  doc.setFillColor(...ACCENT_COLOR);
-  doc.rect(0, 0, 210, 4, "F");
+  // 2. Cargar e insertar el Logo SVG desde /public
+  const logoBase64 = await cargarSVGComoImagen("/Umbrellafarmacia.svg");
+  
+  let textStartX = 14;
+  let startY = 22;
 
-  // Marca
-  doc.setFont("helvetica", "bold");
+  if (logoBase64) {
+    doc.addImage(logoBase64, "PNG", 14, 13, 18, 18);
+    textStartX = 36;
+  }
+
+  // Encabezado principal
   doc.setFontSize(18);
-  doc.setTextColor(...PRIMARY_COLOR);
-  doc.text("FARMACIA UMBRELLA", 14, 18);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(30, 30, 30);
+  doc.text("FARMACIA UMBRELLA", textStartX, startY);
 
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(107, 114, 128);
-  doc.text("Sistema de Gestión Integrado", 14, 23);
+  doc.setTextColor(120, 120, 120);
+  doc.text("Sistema de Gestión Integrado", textStartX, startY + 5);
 
-  // Título del Documento
-  doc.setFontSize(14);
+  // Título y Subtítulo a la derecha
+  doc.setFontSize(15);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(...PRIMARY_COLOR);
-  doc.text(title.toUpperCase(), 196, 18, { align: "right" });
+  doc.setTextColor(30, 30, 30);
+  doc.text(title, 196, startY, { align: "right" });
 
   if (subtitle) {
-    doc.setFontSize(9);
+    doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(107, 114, 128);
-    doc.text(subtitle, 196, 23, { align: "right" });
+    doc.setTextColor(100, 100, 100);
+    doc.text(subtitle, 196, startY + 5, { align: "right" });
   }
 
-  // Línea divisoria de encabezado
-  doc.setDrawColor(229, 231, 235);
-  doc.setLineWidth(0.5);
-  doc.line(14, 28, 196, 28);
+  // Línea divisora superior
+  doc.setDrawColor(220, 220, 220);
+  doc.line(14, startY + 12, 196, startY + 12);
 
-  let currentY = 35;
+  // 3. Tarjeta de Datos de la Orden
+  let infoY = startY + 20;
+  if (infoData.length > 0) {
+    const cardHeight = Math.ceil(infoData.length / 2) * 8 + 8;
 
-  // --- BLOQUE DE INFORMACIÓN ADICIONAL (SI EXISTE) ---
-  if (infoData && infoData.length > 0) {
-    doc.setFillColor(...LIGHT_BG);
-    const boxHeight = Math.ceil(infoData.length / 2) * 7 + 6;
-    doc.roundedRect(14, currentY, 182, boxHeight, 2, 2, "F");
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(14, infoY, 182, cardHeight, 3, 3, "F");
 
-    let col = 0;
-    let rowY = currentY + 6;
-
+    doc.setFontSize(9);
     infoData.forEach((item, index) => {
-      const posX = col === 0 ? 18 : 108;
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const x = col === 0 ? 20 : 105;
+      const y = infoY + 8 + row * 8;
+
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(...PRIMARY_COLOR);
-      doc.text(`${item.label}:`, posX, rowY);
+      doc.setTextColor(40, 40, 40);
+      doc.text(`${item.label}:`, x, y);
 
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(...TEXT_DARK);
-      doc.text(`${item.value}`, posX + doc.getTextWidth(`${item.label}: `) + 2, rowY);
-
-      if (col === 1) {
-        col = 0;
-        rowY += 6;
-      } else {
-        col = 1;
-      }
+      doc.setTextColor(80, 80, 80);
+      doc.text(String(item.value), x + doc.getTextWidth(`${item.label}: `) + 1, y);
     });
 
-    currentY += boxHeight + 8;
+    infoY += cardHeight + 10;
   }
 
-  // --- TABLA PRINCIPAL ---
+  // 4. Tabla de Artículos
   autoTable(doc, {
-    startY: currentY,
+    startY: infoY,
     head: [columns],
     body: rows,
     theme: "grid",
     headStyles: {
-      fillColor: PRIMARY_COLOR,
+      fillColor: [40, 35, 30],
       textColor: [255, 255, 255],
-      fontSize: 9,
       fontStyle: "bold",
-      halign: "left",
+      fontSize: 9
     },
     bodyStyles: {
       fontSize: 8.5,
-      textColor: TEXT_DARK,
+      textColor: [50, 50, 50]
     },
     alternateRowStyles: {
-      fillColor: [249, 250, 251],
+      fillColor: [250, 250, 250]
     },
     styles: {
-      cellPadding: 3,
-      lineColor: [229, 231, 235],
-      lineWidth: 0.2,
+      cellPadding: 4
     },
-    margin: { left: 14, right: 14 },
-    didDrawPage: (data) => {
-      // --- PIE DE PÁGINA REUTILIZABLE ---
-      const pageHeight = doc.internal.pageSize.height;
-      const pageCount = doc.internal.getNumberOfPages();
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(156, 163, 175);
-
-      // Fecha y Hora de emisión
-      const fechaEmision = new Date().toLocaleString("es-AR");
-      doc.text(`Generado el: ${fechaEmision}`, 14, pageHeight - 10);
-
-      // Paginación
-      doc.text(
-        `Página ${data.pageNumber} de ${pageCount}`,
-        196,
-        pageHeight - 10,
-        { align: "right" }
-      );
-    },
+    didParseCell: function (data) {
+      if (data.row.index === rows.length - 1) {
+        data.cell.styles.fontWeight = "bold";
+      }
+    }
   });
 
-  // Guardar/Descargar
+  // 5. Franja decorativa inferior (Marrón: #65482b / RGB: 101, 72, 43)
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setFillColor(101, 72, 43);
+  doc.rect(0, pageHeight - 8, 210, 8, "F");
+
+  // Guardar/Descargar el PDF
   doc.save(fileName);
 };
