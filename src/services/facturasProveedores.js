@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { jsPDF } from 'jspdf';
 
 export const TIPOS_COMPROBANTE = ['Factura'];
 export const TIPOS_FACTURA = ['A', 'B'];
@@ -175,3 +176,78 @@ export async function createFacturaProveedor(payload) {
 
   return { data, error: null };
 }
+
+export function downloadFacturaPdf(factura, detalles) {
+  const pdf = new jsPDF();
+  const numero = formatNumeroComprobante(factura.punto_venta, factura.numero_comprobante);
+  let y = 20;
+
+  pdf.setFontSize(18);
+  pdf.text('Factura de proveedor', 20, y);
+  y += 12;
+  pdf.setFontSize(11);
+  pdf.text(`Comprobante: ${factura.tipo_comprobante || 'Factura'} ${factura.tipo_factura || ''} - ${numero}`, 20, y);
+  y += 7;
+  pdf.text(`Proveedor: ${factura.proveedor?.razon_social || '-'}`, 20, y);
+  y += 7;
+  pdf.text(`Fecha: ${factura.fecha || '-'}`, 20, y);
+  y += 12;
+  pdf.line(20, y, 190, y);
+  y += 9;
+
+  pdf.setFontSize(10);
+  pdf.text('Detalle', 20, y);
+  pdf.text('Cantidad', 115, y);
+  pdf.text('Precio', 140, y);
+  pdf.text('Importe', 170, y);
+  y += 7;
+
+  for (const detalle of detalles || []) {
+    const descripcion = detalle.descripcion || detalle.articulo?.nombre || 'Artículo';
+    pdf.text(String(descripcion).slice(0, 45), 20, y);
+    pdf.text(String(detalle.cantidad ?? ''), 115, y);
+    pdf.text(currencyPdf(detalle.precio_unitario), 140, y);
+    pdf.text(currencyPdf(detalle.importe), 170, y);
+    y += 7;
+    if (y > 275) {
+      pdf.addPage();
+      y = 20;
+    }
+  }
+
+  y += 5;
+  pdf.line(20, y, 190, y);
+  y += 9;
+  pdf.text(`Subtotal: ${currencyPdf(factura.subtotal)}`, 130, y);
+  y += 7;
+  pdf.text(`IVA: ${currencyPdf(factura.iva)}`, 130, y);
+  y += 7;
+  pdf.text(`Exentos: ${currencyPdf(factura.conceptos_exentos)}`, 130, y);
+  y += 7;
+  pdf.setFontSize(12);
+  pdf.text(`Total: ${currencyPdf(factura.importe_total)}`, 130, y);
+  pdf.save(`factura-${numero.replace('-', '_')}.pdf`);
+}
+
+function currencyPdf(value) {
+  return `$${Number(value || 0).toFixed(2)}`;
+}
+
+export async function getFacturaDetalle(idFactura) {
+  const { data, error } = await supabase
+    .from('detalle_factura_proveedor')
+    .select(`
+      id_detalle_factura,
+      descripcion,
+      cantidad,
+      precio_unitario,
+      tasa_iva,
+      importe,
+      articulo:id_articulo(nombre)
+    `)
+    .eq('id_factura_proveedor', idFactura)
+    .order('id_detalle_factura', { ascending: true });
+
+  return { data: data || [], error };
+}
+
