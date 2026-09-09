@@ -1,18 +1,20 @@
 import { useState, useEffect } from "react";
-import EditModal from "../components/EditModal.jsx";
 import { Plus, Search, Edit2 } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
-import { showAlert } from "../lib/alerts.js"; 
-
 
 export default function Sucursales() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEstado, setSelectedEstado] = useState("Todos");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedSucursal, setSelectedSucursal] = useState(null);
+  const [sucursalEditando, setSucursalEditando] = useState(null);
   
   const [sucursales, setSucursales] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Estados del formulario
+  const [codigoAuto, setCodigoAuto] = useState("");
+  const [descripcion, setDescripcion] = useState("");
+  const [estado, setEstado] = useState(true);
 
   // 1. OBTENER SUCURSALES DESDE SUPABASE
   const fetchSucursales = async () => {
@@ -35,37 +37,52 @@ export default function Sucursales() {
     fetchSucursales();
   }, []);
 
-  // 2. CAMPOS DEL MODAL
-  const editFields = [
-    { key: "codigo", label: "Código (Ej: SUC-001)" },
-    { key: "descripcion", label: "Descripción" },
-    { 
-      key: "estado", 
-      label: "Estado", 
-      type: "select", 
-      options: [
-        { value: true, label: "Activo" },
-        { value: false, label: "Inactivo" }
-      ] 
+  // Función para calcular automáticamente el siguiente código correlativo (ej. SUC-015)
+  const calcularSiguienteCodigoSucursal = async () => {
+    const { data } = await supabase.from("sucursal").select("codigo");
+    if (!data || data.length === 0) {
+      setCodigoAuto("SUC-001");
+      return;
     }
-  ];
 
-  const handleOpenCreate = () => {
-    setSelectedSucursal(null);
+    let maxNum = 0;
+    data.forEach(item => {
+      if (item.codigo) {
+        const limpio = item.codigo.replace(/\s+/g, "").toUpperCase();
+        const parts = limpio.split("-");
+        if (parts.length >= 2) {
+          const num = parseInt(parts[1], 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    });
+
+    const siguiente = String(maxNum + 1).padStart(3, "0");
+    setCodigoAuto(`SUC-${siguiente}`);
+  };
+
+  const handleOpenCreate = async () => {
+    setSucursalEditando(null);
+    await calcularSiguienteCodigoSucursal();
+    setDescripcion("");
+    setEstado(true); // Activo por defecto al crear (oculto en el modal de alta)
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (sucursal) => {
-    setSelectedSucursal({
-      ...sucursal,
-      estado: sucursal.estado === true || sucursal.estado === "Activo" || sucursal.estado === 1
-    });
+    setSucursalEditando(sucursal);
+    setCodigoAuto(sucursal.codigo);
+    setDescripcion(sucursal.descripcion);
+    setEstado(sucursal.estado === true || sucursal.estado === "Activo" || sucursal.estado === 1);
     setIsModalOpen(true);
   };
 
   // 3. GUARDAR O EDITAR SUCURSAL
-  const handleSaveSucursal = async (formData) => {
-    const mensajeConfirm = selectedSucursal
+  const handleSaveSucursal = async (e) => {
+    e.preventDefault();
+    const mensajeConfirm = sucursalEditando
       ? "¿Deseas guardar los cambios?"
       : "¿Deseas registrar esta nueva sucursal?";
 
@@ -73,26 +90,26 @@ export default function Sucursales() {
 
     try {
       const dataToSave = {
-        codigo: formData.codigo,
-        descripcion: formData.descripcion,
-        estado: formData.estado === true || formData.estado === "Activo" || formData.estado === "true"
+        descripcion: descripcion.trim(),
+        estado: estado
       };
 
-      if (selectedSucursal) {
+      if (sucursalEditando) {
         const { data, error } = await supabase
           .from('sucursal')
           .update(dataToSave)
-          .eq('id_sucursal', selectedSucursal.id_sucursal)
+          .eq('id_sucursal', sucursalEditando.id_sucursal)
           .select();
 
         if (error) throw error;
 
         if (data) {
           setSucursales((prev) =>
-            prev.map((item) => (item.id_sucursal === selectedSucursal.id_sucursal ? data[0] : item))
+            prev.map((item) => (item.id_sucursal === sucursalEditando.id_sucursal ? data[0] : item))
           );
         }
       } else {
+        dataToSave.codigo = codigoAuto;
         const { data, error } = await supabase
           .from('sucursal')
           .insert([
@@ -111,6 +128,7 @@ export default function Sucursales() {
       }
       
       setIsModalOpen(false);
+      fetchSucursales();
     } catch (error) {
       console.error("Error al guardar la sucursal:", error.message);
       alert("Hubo un error al guardar los datos: " + error.message);
@@ -171,13 +189,13 @@ export default function Sucursales() {
             placeholder="Buscar por código o descripción..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" }}
+            style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box", backgroundColor: "#fff" }}
           />
         </div>
         <select
           value={selectedEstado}
           onChange={(e) => setSelectedEstado(e.target.value)}
-          style={{ padding: "0.625rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", backgroundColor: "#fff" }}
+          style={{ padding: "0.625rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", outline: "none", backgroundColor: "#fff", cursor: "pointer" }}
         >
           <option value="Todos">Todos los estados</option>
           <option value="Activo">Activo</option>
@@ -193,7 +211,6 @@ export default function Sucursales() {
           <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.9rem" }}>
             <thead style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb", color: "#4b5563", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
               <tr>
-                <th style={{ padding: "0.75rem 1rem" }}>ID</th>
                 <th style={{ padding: "0.75rem 1rem" }}>Código</th>
                 <th style={{ padding: "0.75rem 1rem" }}>Descripción</th>
                 <th style={{ padding: "0.75rem 1rem" }}>Fecha de Registro</th>
@@ -204,7 +221,7 @@ export default function Sucursales() {
             <tbody>
               {filteredSucursales.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
                     No se encontraron sucursales registradas.
                   </td>
                 </tr>
@@ -221,22 +238,22 @@ export default function Sucursales() {
                         transition: "background-color 0.15s ease"
                       }}
                     >
-                      <td style={{ padding: "1rem", color: "#111827", fontWeight: "500" }}>{s.id_sucursal}</td>
-                      <td style={{ padding: "1rem", color: "#111827" }}>{s.codigo}</td>
-                      <td style={{ padding: "1rem", color: "#111827", fontWeight: "600" }}>{s.descripcion}</td>
+                      <td style={{ padding: "1rem", color: "#111827", fontWeight: "600" }}>{s.codigo}</td>
+                      <td style={{ padding: "1rem", color: "#111827" }}>{s.descripcion}</td>
                       <td style={{ padding: "1rem", color: "#6b7280" }}>
                         {s.fecha_registro ? new Date(s.fecha_registro).toLocaleString() : '-'}
                       </td>
                       <td style={{ padding: "1rem" }}>
                         <span 
                           style={{ 
-                            fontSize: "0.75rem", 
+                            fontSize: "0.68rem", 
                             fontWeight: "700", 
-                            padding: "0.2rem 0.75rem", 
-                            borderRadius: "1rem", 
-                            backgroundColor: isActivo ? "#d1fae5" : "#f3f4f6",
-                            color: isActivo ? "#065f46" : "#4b5563",
                             letterSpacing: "0.05em",
+                            padding: "0.15rem 0.5rem", 
+                            borderRadius: "4px", 
+                            backgroundColor: isActivo ? "#f0fdf4" : "#fef2f2", 
+                            color: isActivo ? "#15803d" : "#b91c1c",
+                            border: `1px solid ${isActivo ? "#bbf7d0" : "#fecaca"}`,
                             display: "inline-block"
                           }}
                         >
@@ -260,20 +277,86 @@ export default function Sucursales() {
               )}
             </tbody>
           </table>
-          
         </div>
       )}
 
-      {/* MODAL */}
-      <EditModal
-        key={selectedSucursal ? selectedSucursal.id_sucursal : "nueva-sucursal"}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveSucursal}
-        title={selectedSucursal ? "Editar Sucursal" : "Nueva Sucursal"}
-        fields={editFields}
-        initialData={selectedSucursal}
-      />
+      {/* MODAL NATIVO PERSONALIZADO */}
+      {isModalOpen && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" }}>
+          <div style={{ backgroundColor: "#fff", padding: "1.75rem", borderRadius: "0.75rem", width: "100%", maxWidth: "520px", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
+            <h2 style={{ margin: "0 0 1rem 0", fontSize: "1.3rem" }}>
+              {sucursalEditando ? "Editar Sucursal" : "Nueva Sucursal"}
+            </h2>
+
+            <form onSubmit={handleSaveSucursal} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={{ fontWeight: "600", fontSize: "0.85rem", display: "block", marginBottom: "0.25rem" }}>
+                  Código (Autogenerado)
+                </label>
+                <input
+                  type="text"
+                  value={codigoAuto}
+                  readOnly
+                  style={{
+                    width: "100%",
+                    padding: "0.55rem",
+                    borderRadius: "0.375rem",
+                    border: "1px solid #d1d5db",
+                    boxSizing: "border-box",
+                    backgroundColor: "#f3f4f6",
+                    color: "#374151",
+                    fontWeight: "bold",
+                    cursor: "not-allowed"
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontWeight: "600", fontSize: "0.85rem", display: "block", marginBottom: "0.25rem" }}>Descripción *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Sucursal Central - Av. San Martín 300"
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value)}
+                  style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", boxSizing: "border-box" }}
+                />
+              </div>
+
+              {/* ESTADO: Solo visible cuando se está EDITANDO una sucursal existente */}
+              {sucursalEditando && (
+                <div>
+                  <label style={{ fontWeight: "600", fontSize: "0.85rem", display: "block", marginBottom: "0.25rem" }}>Estado *</label>
+                  <select
+                    value={estado ? "true" : "false"}
+                    onChange={(e) => setEstado(e.target.value === "true")}
+                    style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", backgroundColor: "#fff" }}
+                  >
+                    <option value="true">Activo</option>
+                    <option value="false">Inactivo</option>
+                  </select>
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  style={{ padding: "0.55rem 1rem", border: "1px solid #d1d5db", background: "#fff", borderRadius: "0.375rem", cursor: "pointer", fontWeight: "500" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: "0.55rem 1.25rem", background: "#65482b", color: "#fff", border: "none", borderRadius: "0.375rem", fontWeight: "bold", cursor: "pointer" }}
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

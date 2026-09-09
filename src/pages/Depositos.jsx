@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase.js";
-import EditModal from "../components/EditModal.jsx";
 import InventarioDeposito from "./InventarioDeposito.jsx"; 
-import { Plus, Search, Building2, FileText, CalendarDays, PackagePlus, Eye, Edit3, Warehouse, MapPin, Tag, ArrowRight } from "lucide-react";
-import { showAlert } from "../lib/alerts.js"; // <--- Tu importación de alertas
-import toast, { Toaster } from "react-hot-toast";
+import { Plus, Search, Warehouse, MapPin, Tag, ArrowRight, Edit3, Lock } from "lucide-react";
+import { showAlert } from "../lib/alerts.js"; 
 
 const RUBROS_CATALOGO = [
   { codigo: "MED", label: "MED – Medicamentos" },
@@ -33,17 +31,16 @@ export default function Depositos() {
   const [loading, setLoading] = useState(false);
   const [vistaActual, setVistaActual] = useState("tarjetas");
   const [depositoSeleccionadoInventario, setDepositoSeleccionadoInventario] = useState(null);
+  
+  // Estados para búsqueda y filtro de estado ("todos", "activos", "inactivos")
   const [searchTerm, setSearchTerm] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("todos");
 
-  // Modal para asociar (Mocks de estado, ya que usabas funciones de esto sin declarar los estados arriba)
-  const [isAsociarModalOpen, setIsAsociarModalOpen] = useState(false);
-  const [depositoAAsociar, setDepositoAAsociar] = useState(null);
-  const [formDataAsociar, setFormDataAsociar] = useState({ id_articulo: "", stock_inicial: 0, stock_minimo: 0, numero_lote: "", fecha_vencimiento: "" });
-
-  // Formulario
+  // Formulario de Depósito
   const [codigoAuto, setCodigoAuto] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [idSucursal, setIdSucursal] = useState("");
+  const [estado, setEstado] = useState(true); 
   const [aceptaTodos, setAceptaTodos] = useState(true);
   const [rubrosSeleccionados, setRubrosSeleccionados] = useState([]);
 
@@ -60,7 +57,7 @@ export default function Depositos() {
   async function fetchDepositos() {
     const { data, error } = await supabase
       .from("deposito")
-      .select("id_deposito, codigo, descripcion, rubros_permitidos, id_sucursal, sucursal:id_sucursal(descripcion, codigo)")
+      .select("id_deposito, codigo, descripcion, rubros_permitidos, id_sucursal, estado, sucursal:id_sucursal(descripcion, codigo)")
       .order("id_deposito", { ascending: true });
 
     if (!error && data) setDepositos(data);
@@ -96,6 +93,7 @@ export default function Depositos() {
     await calcularSiguienteCodigoDeposito();
     setDescripcion("");
     setIdSucursal(sucursales[0]?.id_sucursal || "");
+    setEstado(true); // Por defecto activo al crear
     setAceptaTodos(true);
     setRubrosSeleccionados([]);
     setIsModalOpen(true);
@@ -106,6 +104,7 @@ export default function Depositos() {
     setCodigoAuto(dep.codigo.replace(/\s+/g, "").toUpperCase());
     setDescripcion(dep.descripcion);
     setIdSucursal(dep.id_sucursal || "");
+    setEstado(dep.estado !== false);
     if (!dep.rubros_permitidos || dep.rubros_permitidos.trim() === "") {
       setAceptaTodos(true);
       setRubrosSeleccionados([]);
@@ -128,7 +127,7 @@ export default function Depositos() {
     e.preventDefault();
 
     if (!descripcion.trim() || !idSucursal) {
-      showAlert.errorSave("Por favor completa la descripción y selecciona la sucursal."); // <-- REEMPLAZO DE ALERT
+      showAlert.errorSave("Por favor completa la descripción y selecciona la sucursal.");
       return;
     }
 
@@ -143,12 +142,13 @@ export default function Depositos() {
           .update({
             descripcion: descripcion.trim(),
             id_sucursal: parseInt(idSucursal),
-            rubros_permitidos: rubrosFinales
+            rubros_permitidos: rubrosFinales,
+            estado: estado 
           })
           .eq("id_deposito", depositoEditando.id_deposito);
 
         if (error) throw new Error(error.message);
-        showAlert.successAction("Depósito", true); // <-- REEMPLAZO DE ALERT
+        showAlert.successAction("Depósito", true);
       } else {
         const { data: todos } = await supabase.from("deposito").select("codigo");
         const yaExiste = todos?.some(
@@ -164,18 +164,19 @@ export default function Depositos() {
             codigo: codigoAuto,
             descripcion: descripcion.trim(),
             id_sucursal: parseInt(idSucursal),
-            rubros_permitidos: rubrosFinales
+            rubros_permitidos: rubrosFinales,
+            estado: true // Al crear un nuevo depósito, el estado es siempre activo por defecto
           }
         ]);
 
         if (error) throw new Error(error.message);
-        showAlert.successAction("Depósito", false); // <-- REEMPLAZO DE ALERT
+        showAlert.successAction("Depósito", false);
       }
 
       setIsModalOpen(false);
       fetchDepositos();
     } catch (err) {
-      showAlert.errorSave(err.message); // <-- REEMPLAZO DE ALERT
+      showAlert.errorSave(err.message);
       if (!depositoEditando) {
         calcularSiguienteCodigoDeposito();
       }
@@ -185,121 +186,32 @@ export default function Depositos() {
   };
 
   const handleIrAInventario = (dep) => {
+    const activo = dep.estado !== false;
+    if (!activo) {
+      showAlert.errorSave("Este depósito se encuentra inactivo. Debe activarlo mediante la opción 'Modificar' para acceder a su inventario.");
+      return;
+    }
     navigate(`/depositos/${dep.id_deposito}/inventario`);
   };
 
-  // 5. GUARDAR ASOCIACIÓN + LOTE + MOVIMIENTO
-  const handleGuardarAsociacion = async (e) => {
-    e.preventDefault();
-    if (!formDataAsociar.id_articulo) {
-      showAlert.errorSave("Debes seleccionar un producto."); // <-- REEMPLAZO DEL TOAST VIEJO
-      return;
-    }
+  const filteredDepositos = depositos.filter((d) => {
+    const term = searchTerm.toLowerCase().trim();
+    const codigoLimpio = (d.codigo || "").toLowerCase();
+    const descLimpia = (d.descripcion || "").toLowerCase();
+    const coincideTexto = codigoLimpio.includes(term) || descLimpia.includes(term);
 
-    const stockInicial = parseInt(formDataAsociar.stock_inicial) || 0;
-    const stockMinimo = parseInt(formDataAsociar.stock_minimo) || 0;
-
-    if (stockInicial > 0) {
-      if (!formDataAsociar.numero_lote.trim()) {
-        showAlert.errorSave("Debe ingresar el número de lote para el stock inicial.");
-        return;
-      }
-      if (!formDataAsociar.fecha_vencimiento) {
-        showAlert.errorSave("Debe seleccionar la fecha de vencimiento del lote.");
-        return;
-      }
-    }
-
-    const { data: existente } = await supabase
-      .from("articulo_deposito")
-      .select("id_articulo_deposito")
-      .eq("id_articulo", formDataAsociar.id_articulo)
-      .eq("id_deposito", depositoAAsociar.id_deposito)
-      .maybeSingle();
-
-    if (existente) {
-      showAlert.errorSave("Este artículo ya está asociado a este depósito."); // <-- REEMPLAZO DEL TOAST VIEJO
-      return;
-    }
-
-    const { data: nuevaAsociacion, error: errInsert } = await supabase
-      .from("articulo_deposito")
-      .insert([
-        {
-          id_articulo: parseInt(formDataAsociar.id_articulo),
-          id_deposito: depositoAAsociar.id_deposito,
-          stock_actual: stockInicial,
-          stock_minimo: stockMinimo,
-          estado: true,
-          fecha_registro: new Date().toISOString()
-        }
-      ])
-      .select("id_articulo_deposito")
-      .single();
-
-    if (errInsert) {
-      showAlert.errorSave("Error al asociar el producto: " + errInsert.message);
-      return;
-    }
-
-    if (stockInicial > 0 && nuevaAsociacion) {
-      const { data: nuevoLote, error: errLote } = await supabase
-        .from("lote")
-        .insert([
-          {
-            id_articulo: parseInt(formDataAsociar.id_articulo),
-            id_deposito: depositoAAsociar.id_deposito,
-            numero_lote: formDataAsociar.numero_lote.trim(),
-            fecha_vencimiento: formDataAsociar.fecha_vencimiento,
-            cantidad: stockInicial,
-            estado: "Vigente",
-            fecha_registro: new Date().toISOString()
-          }
-        ])
-        .select("id_lote")
-        .single();
-
-      if (errLote) {
-        showAlert.errorSave("Producto asociado, pero ocurrió un error al registrar el lote: " + errLote.message);
-      }
-
-      await supabase.from("movimiento_stock").insert([
-        {
-          id_articulo_deposito: nuevaAsociacion.id_articulo_deposito,
-          id_lote: nuevoLote ? nuevoLote.id_lote : null,
-          tipo_movimiento: "INGRESO_INICIAL",
-          cantidad: stockInicial,
-          fecha_movimiento: new Date().toISOString()
-        }
-      ]);
-    }
-
-    showAlert.successSave("¡Producto y stock vinculados exitosamente!");
-    setIsAsociarModalOpen(false);
-  };
-
-  const filteredDepositos = depositos.filter((d) => 
-    d.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    d.descripcion?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  if (vistaActual === "inventario") {
-    return (
-      <InventarioDeposito 
-        deposito={depositoSeleccionadoInventario} 
-        onBack={() => setVistaActual("tarjetas")} 
-      />
-    );
-  }
+    const activo = d.estado !== false;
+    if (filtroEstado === "activos") return coincideTexto && activo;
+    if (filtroEstado === "inactivos") return coincideTexto && !activo;
+    return coincideTexto; 
+  });
 
   return (
     <div style={{ padding: "1rem" }}>
-      {/* ❌ SE ELIMINÓ EL <Toaster /> QUE ROMPÍA LA VISTA */}
-
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
         <div>
           <h1 style={{ margin: 0, fontSize: "1.9rem", fontWeight: "700", color: "#111827" }}>Depósitos</h1>
-          <p style={{ color: "#6b7280", margin: "0.25rem 0 0 0" }}>{depositos.length} centros de almacenamiento activos</p>
+          <p style={{ color: "#6b7280", margin: "0.25rem 0 0 0" }}>{filteredDepositos.length} de {depositos.length} centros de almacenamiento</p>
         </div>
         <button
           onClick={handleAbrirCrear}
@@ -309,10 +221,53 @@ export default function Depositos() {
         </button>
       </header>
 
-      {/* Grid de Cuadros (Cards) */}
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", alignItems: "center" }}>
+        <div style={{ position: "relative", flex: 1 }}>
+          <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+          <input
+            type="text"
+            placeholder="Buscar por código (ej. 22) o descripción..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "0.7rem 0.75rem 0.7rem 2.5rem",
+              borderRadius: "0.5rem",
+              border: "1px solid #d1d5db",
+              fontSize: "0.95rem",
+              outline: "none",
+              boxSizing: "border-box",
+              backgroundColor: "#fff"
+            }}
+          />
+        </div>
+        
+        <select
+          value={filtroEstado}
+          onChange={(e) => setFiltroEstado(e.target.value)}
+          style={{
+            padding: "0.7rem 1rem",
+            borderRadius: "0.5rem",
+            border: "1px solid #d1d5db",
+            fontSize: "0.95rem",
+            outline: "none",
+            backgroundColor: "#fff",
+            cursor: "pointer",
+            fontWeight: "500",
+            color: "#374151",
+            minWidth: "160px"
+          }}
+        >
+          <option value="todos">Todos los estados</option>
+          <option value="activos">Activos</option>
+          <option value="inactivos">Inactivos</option>
+        </select>
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1.5rem" }}>
-        {depositos.map((dep) => {
+        {filteredDepositos.map((dep) => {
           const rubros = dep.rubros_permitidos ? dep.rubros_permitidos.split(",") : [];
+          const activo = dep.estado !== false; 
           return (
             <div
               key={dep.id_deposito}
@@ -324,7 +279,9 @@ export default function Depositos() {
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                opacity: activo ? 1 : 0.7,
+                position: "relative"
               }}
             >
               <div>
@@ -333,9 +290,25 @@ export default function Depositos() {
                     <div style={{ backgroundColor: "#f3f4f6", padding: "0.5rem", borderRadius: "0.375rem", color: "#374151" }}>
                       <Warehouse size={20} />
                     </div>
-                    <span style={{ fontSize: "1.2rem", fontWeight: "700", color: "#111827" }}>
-                      {dep.codigo}
-                    </span>
+                    <div>
+                      <span style={{ fontSize: "1.2rem", fontWeight: "700", color: "#111827", display: "block" }}>
+                        {dep.codigo}
+                      </span>
+                      <span style={{ 
+                        fontSize: "0.68rem", 
+                        fontWeight: "700", 
+                        letterSpacing: "0.05em",
+                        padding: "0.15rem 0.5rem", 
+                        borderRadius: "4px", 
+                        backgroundColor: activo ? "#f0fdf4" : "#fef2f2", 
+                        color: activo ? "#15803d" : "#b91c1c",
+                        border: `1px solid ${activo ? "#bbf7d0" : "#fecaca"}`,
+                        display: "inline-block",
+                        marginTop: "0.15rem"
+                      }}>
+                        {activo ? "ACTIVO" : "INACTIVO"}
+                      </span>
+                    </div>
                   </div>
                   <button
                     onClick={() => handleAbrirEditar(dep)}
@@ -379,7 +352,7 @@ export default function Depositos() {
                 onClick={() => handleIrAInventario(dep)}
                 style={{
                   width: "100%",
-                  backgroundColor: "#365314",
+                  backgroundColor: activo ? "#365314" : "#9ca3af",
                   color: "#ffffff",
                   border: "none",
                   padding: "0.6rem 1rem",
@@ -389,15 +362,25 @@ export default function Depositos() {
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "0.5rem",
-                  cursor: "pointer"
+                  cursor: activo ? "pointer" : "not-allowed"
                 }}
               >
-                Ver Inventario <ArrowRight size={16} />
+                {activo ? (
+                  <>Ver Inventario <ArrowRight size={16} /></>
+                ) : (
+                  <>Depósito Inactivo <Lock size={16} /></>
+                )}
               </button>
             </div>
           );
         })}
       </div>
+
+      {filteredDepositos.length === 0 && (
+        <div style={{ textAlign: "center", padding: "3rem", color: "#6b7280" }}>
+          No se encontraron depósitos que coincidan con los filtros de búsqueda.
+        </div>
+      )}
 
       {/* Modal Crear / Modificar Depósito */}
       {isModalOpen && (
@@ -456,6 +439,21 @@ export default function Depositos() {
                   ))}
                 </select>
               </div>
+
+              {/* ESTADO: Solo visible si se está EDITANDO un depósito existente */}
+              {depositoEditando && (
+                <div>
+                  <label style={{ fontWeight: "600", fontSize: "0.85rem", display: "block", marginBottom: "0.25rem" }}>Estado *</label>
+                  <select
+                    value={estado ? "true" : "false"}
+                    onChange={(e) => setEstado(e.target.value === "true")}
+                    style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db" }}
+                  >
+                    <option value="true">Activo</option>
+                    <option value="false">Inactivo</option>
+                  </select>
+                </div>
+              )}
 
               <div style={{ border: "1px solid #e5e7eb", padding: "0.85rem", borderRadius: "0.5rem", background: "#f9fafb" }}>
                 <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: "bold", fontSize: "0.9rem", cursor: "pointer", marginBottom: "0.6rem" }}>
