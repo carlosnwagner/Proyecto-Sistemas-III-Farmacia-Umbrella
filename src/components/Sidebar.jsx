@@ -23,23 +23,19 @@ export default function Sidebar() {
 
   const location = useLocation();
 
-  // Submenú de Compras
+  // Submenú unificado de Compras (sin repeticiones sueltas en el menú principal)
   const comprasSubItems = [
     { key: "Proveedores", label: "Proveedores", path: "/proveedores", icon: Truck },
-    { key: "OrdenesCompra", label: "Orden de compra", path: "/ordenes-compra", icon: ClipboardList },
+    { key: "OrdenesCompra", label: "Órdenes de compra", path: "/ordenes-compra", icon: ClipboardList },
+    { key: "Facturas", label: "Facturas de proveedores", path: "/facturas-proveedores", icon: FileText },
     { key: "Pagos", label: "Pagos a Proveedores", path: "/pagos-proveedores", icon: Receipt },
     { key: "Notas", label: "Notas Crédito/Débito", path: "/notas-credito-debito", icon: FileText },
   ];
 
-  // Elementos principales
+  // Elementos principales limpios (sin duplicar los submódulos de compras)
   const menuItems = [
     { key: "Inicio", label: "Inicio", path: "/inicio", icon: Home },
     { key: "Inventario", label: "Inventario", path: "/inventario", icon: Package },
-  { key: "OrdenesCompra", label: "Órdenes de compra", path: "/ordenes-compra", icon: ClipboardList },
-    { key: "Facturas", label: "Facturas de proveedores", path: "/facturas-proveedores", icon: FileText },
-    { key: "Proveedores", label: "Proveedores", path: "/proveedores", icon: Truck },
-    { key: "Pagos", label: "Pagos a Proveedores", path: "/pagos-proveedores", icon: Truck },
-    { key: "Notas", label: "Notas Crédito/Débito", path: "/notas-credito-debito", icon: ClipboardList },
     { key: "Sucursales", label: "Sucursales", path: "/sucursales", icon: MapPin },
     { key: "Depositos", label: "Depósitos", path: "/depositos", icon: Warehouse },
     { key: "Ventas", label: "Ventas", path: "/ventas", icon: Globe },
@@ -56,7 +52,7 @@ export default function Sidebar() {
         setHoveredButton(null);
       }}
       style={{
-        width: isHovered ? "220px" : "72px",
+        width: isHovered ? "240px" : "72px",
         backgroundColor: "#2d241e",
         color: "#ffffff",
         display: "flex",
@@ -125,7 +121,8 @@ export default function Sidebar() {
         }}
       >
         {/* Inicio & Inventario */}
-        {menuItems.slice(0, 2).map((item) => renderNavLink(item))}
+        {renderNavLink(menuItems[0])}
+        {renderNavLink(menuItems[1])}
 
         {/* MÓDULO AGRUPADO: COMPRAS */}
         <div>
@@ -260,7 +257,7 @@ export default function Sidebar() {
           )}
         </div>
 
-        {/* Resto de Secciones */}
+        {/* Resto de Secciones (Sucursales, Depósitos, Ventas, Reportes) */}
         {menuItems.slice(2).map((item) => renderNavLink(item))}
       </nav>
 
