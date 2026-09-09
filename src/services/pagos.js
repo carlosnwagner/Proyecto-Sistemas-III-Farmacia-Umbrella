@@ -23,6 +23,12 @@ import { supabase } from '../lib/supabase';
  * IMPORTANTE: el importe_total del pago NO se pide como input separado. Se calcula
  * siempre como la suma de las aplicaciones, así no puede haber un pago cuyo total
  * no coincida con lo que realmente se aplicó a las facturas.
+ *
+ * FIX: el saldo pendiente de una factura no depende solo de los pagos aplicados
+ * (detalle_pago). También lo modifican las notas de crédito/débito
+ * (nota_credito_debito_proveedor): una nota de Crédito reduce el saldo, una de
+ * Débito lo aumenta. Antes esta función solo restaba los pagos y por eso una nota
+ * registrada no se reflejaba acá. Ver getFacturasPendientesPorProveedor.
  */
 
 /**
@@ -43,6 +49,10 @@ import { supabase } from '../lib/supabase';
  * Trae las facturas con saldo pendiente de un proveedor, para que el formulario
  * las muestre como checklist ("aplicar $X a la factura F-0001, saldo $Y").
  * Pablo: usar esto al elegir el proveedor, para poblar la lista de comprobantes.
+ *
+ * El saldo pendiente ahora contempla: importe_total - pagos aplicados +/- notas
+ * de crédito/débito (crédito resta, débito suma), igual que en
+ * RegistrarNotaCreditoDebito.jsx y en notasCreditoDebito.js.
  *
  * @param {number} idProveedor
  * @returns {Promise<{
@@ -69,12 +79,20 @@ export async function getFacturasPendientesPorProveedor(idProveedor) {
   if (!facturas.length) return { data: [], error: null };
 
   const ids = facturas.map((f) => f.id_factura_proveedor);
-  const { data: aplicaciones, error: aplicacionesError } = await supabase
-    .from('detalle_pago')
-    .select('id_factura_proveedor, importe_aplicado')
-    .in('id_factura_proveedor', ids);
+
+  const [{ data: aplicaciones, error: aplicacionesError }, { data: notas, error: notasError }] = await Promise.all([
+    supabase
+      .from('detalle_pago')
+      .select('id_factura_proveedor, importe_aplicado')
+      .in('id_factura_proveedor', ids),
+    supabase
+      .from('nota_credito_debito_proveedor')
+      .select('id_factura_proveedor, tipo_nota, importe')
+      .in('id_factura_proveedor', ids),
+  ]);
 
   if (aplicacionesError) return { data: [], error: aplicacionesError };
+  if (notasError) return { data: [], error: notasError };
 
   const pagadoPorFactura = new Map();
   for (const a of aplicaciones) {
@@ -82,10 +100,28 @@ export async function getFacturasPendientesPorProveedor(idProveedor) {
     pagadoPorFactura.set(a.id_factura_proveedor, acumulado + Number(a.importe_aplicado));
   }
 
-  const data = facturas.map((f) => ({
-    ...f,
-    saldo_pendiente: Number((f.importe_total - (pagadoPorFactura.get(f.id_factura_proveedor) || 0)).toFixed(2)),
-  }));
+  const impactoNotasPorFactura = new Map();
+  for (const n of notas || []) {
+    const importe = Number(n.importe) || 0;
+    const esCredito = n.tipo_nota === 'Crédito';
+    const acumulado = impactoNotasPorFactura.get(n.id_factura_proveedor) || 0;
+    impactoNotasPorFactura.set(n.id_factura_proveedor, acumulado + (esCredito ? -importe : importe));
+  }
+
+  const data = facturas
+    .map((f) => {
+      const totalPagado = pagadoPorFactura.get(f.id_factura_proveedor) || 0;
+      const impactoNotas = impactoNotasPorFactura.get(f.id_factura_proveedor) || 0;
+      const saldo = Number(f.importe_total) + impactoNotas - totalPagado;
+      return {
+        ...f,
+        saldo_pendiente: Number(Math.max(0, saldo).toFixed(2)),
+      };
+    })
+    // Una nota de crédito puede haber cancelado completamente una factura que
+    // seguía marcada como 'Pendiente'/'Pagada Parcial' por una desactualización
+    // puntual del campo estado; no la mostramos como aplicable si ya no tiene saldo.
+    .filter((f) => f.saldo_pendiente > 0);
 
   return { data, error: null };
 }
@@ -153,6 +189,15 @@ function parseSupabaseError(error) {
 /**
  * Registra un pago a proveedor y sus aplicaciones a una o más facturas (HU33).
  * Toda la operación es atómica: se ejecuta en la función SQL registrar_pago_proveedor.
+ *
+ * ATENCIÓN: la validación SALDO_INSUFICIENTE ocurre dentro de esa función SQL, del
+ * lado del servidor. Si esa función calcula el saldo de la misma forma en que lo
+ * hacía esta función (solo importe_total - pagos, sin considerar notas), puede
+ * seguir permitiendo pagos por encima del saldo real cuando hay una nota de por
+ * medio, o rechazar pagos válidos. Convendría revisar/actualizar también
+ * sql/002_fn_registrar_pago_proveedor.sql para que reste/sume el impacto de
+ * nota_credito_debito_proveedor igual que acá. Pasame ese archivo si querés que
+ * lo revise.
  *
  * @param {PagoProveedorInput} payload
  * @returns {Promise<{
