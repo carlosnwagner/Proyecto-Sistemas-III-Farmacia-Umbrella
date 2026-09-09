@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "../lib/supabase.js";
 import { showAlert } from "../lib/alerts.js";
-import { FileText, Search } from "lucide-react";
+import { FileText, Search, Receipt, Eye } from "lucide-react";
 import "../App.css";
 
 // Componentes reutilizables con el diseño del proyecto
@@ -61,6 +61,9 @@ export default function RegistrarPagoProveedor() {
   const [mediosPago, setMediosPago] = useState([]);
   const [selectedProveedorId, setSelectedProveedorId] = useState("");
 
+  // Pestaña activa: "comprobantes" | "historial"
+  const [tabActiva, setTabActiva] = useState("comprobantes");
+
   // Control del modal de pago y parámetros de la orden
   const [isModalPagoOpen, setIsModalPagoOpen] = useState(false);
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
@@ -76,6 +79,13 @@ export default function RegistrarPagoProveedor() {
 
   // Imputaciones: { [id_factura_proveedor]: { seleccionado: boolean, montoAplicado: number | string } }
   const [aplicaciones, setAplicaciones] = useState({});
+
+  // Historial de Pagos Realizados
+  const [historialPagos, setHistorialPagos] = useState([]);
+  const [loadingPagos, setLoadingPagos] = useState(false);
+  const [filtroTipoPago, setFiltroTipoPago] = useState("TODOS");
+  const [searchTermPagos, setSearchTermPagos] = useState("");
+  const [pagoDetalleModal, setPagoDetalleModal] = useState(null);
 
   const formatearFecha = (fechaStr) => {
     if (!fechaStr) return "-";
@@ -122,97 +132,133 @@ export default function RegistrarPagoProveedor() {
     loadCatalogos();
   }, []);
 
-  useEffect(() => {
-    if (!selectedProveedorId) {
+  const fetchFacturasProveedor = useCallback(async (idProveedor) => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("factura_proveedor")
+      .select(`
+        id_factura_proveedor,
+        tipo_comprobante,
+        tipo_factura,
+        numero_comprobante,
+        punto_venta,
+        subtotal,
+        iva,
+        conceptos_exentos,
+        percepcion_iva,
+        percepcion_iibb,
+        fecha,
+        importe_total,
+        estado,
+        detalle_pago (
+          id_detalle_pago,
+          importe_aplicado
+        ),
+        nota_credito_debito_proveedor (
+          id_nota,
+          tipo_nota,
+          importe
+        )
+      `)
+      .eq("id_proveedor", idProveedor)
+      .order("fecha", { ascending: false });
+
+    if (error) {
+      showAlert.errorSave("Error al cargar comprobantes: " + error.message);
       setFacturas([]);
-      setAplicaciones({});
-      return;
-    }
+    } else {
+      const procesadas = (data || []).map((f) => {
+        const totalOriginal = Number(f.importe_total) || 0;
 
-    async function fetchFacturasProveedor() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("factura_proveedor")
-        .select(`
+        const pagado = (f.detalle_pago || []).reduce(
+          (acc, curr) => acc + (Number(curr.importe_aplicado) || 0),
+          0
+        );
+
+        let impactoNotas = 0;
+        (f.nota_credito_debito_proveedor || []).forEach((n) => {
+          const imp = Number(n.importe) || 0;
+          const esNC =
+            n.tipo_nota?.toUpperCase().includes("NC") ||
+            n.tipo_nota?.toLowerCase().includes("crédito");
+          impactoNotas += esNC ? -imp : imp;
+        });
+
+        const saldoCalculado = Math.max(0, totalOriginal + impactoNotas - pagado);
+
+        const estadoCalculado =
+          saldoCalculado === 0
+            ? "Pagada Total"
+            : pagado > 0
+            ? "Pagada Parcial"
+            : "Pendiente";
+
+        return {
+          ...f,
+          totalOriginal,
+          totalPagado: pagado,
+          impactoNotas,
+          saldoPendiente: saldoCalculado,
+          estadoCalculado,
+        };
+      });
+
+      setFacturas(procesadas);
+
+      const initApp = {};
+      procesadas.forEach((p) => {
+        initApp[p.id_factura_proveedor] = { seleccionado: false, montoAplicado: "" };
+      });
+      setAplicaciones(initApp);
+    }
+    setLoading(false);
+  }, []);
+
+  const fetchHistorialPagos = useCallback(async (idProveedor) => {
+    setLoadingPagos(true);
+    const { data, error } = await supabase
+      .from("pago_proveedor")
+      .select(`
+        id_pago,
+        fecha_pago,
+        importe_total,
+        tipo_cancelacion,
+        id_medio_pago,
+        medio_pago ( nombre ),
+        detalle_pago (
+          id_detalle_pago,
+          importe_aplicado,
           id_factura_proveedor,
-          tipo_comprobante,
-          tipo_factura,
-          numero_comprobante,
-          punto_venta,
-          subtotal,
-          iva,
-          conceptos_exentos,
-          percepcion_iva,
-          percepcion_iibb,
-          fecha,
-          importe_total,
-          estado,
-          detalle_pago (
-            id_detalle_pago,
-            importe_aplicado
-          ),
-          nota_credito_debito_proveedor (
-            id_nota,
-            tipo_nota,
-            importe
+          factura_proveedor (
+            id_factura_proveedor,
+            tipo_comprobante,
+            tipo_factura,
+            numero_comprobante,
+            punto_venta,
+            importe_total
           )
-        `)
-        .eq("id_proveedor", selectedProveedorId)
-        .order("fecha", { ascending: false });
+        )
+      `)
+      .eq("id_proveedor", idProveedor)
+      .order("fecha_pago", { ascending: false })
+      .order("id_pago", { ascending: false });
 
-      if (error) {
-        showAlert.errorSave("Error al cargar comprobantes: " + error.message);
-        setFacturas([]);
-      } else {
-        const procesadas = (data || []).map((f) => {
-          const totalOriginal = Number(f.importe_total) || 0;
-
-          const pagado = (f.detalle_pago || []).reduce(
-            (acc, curr) => acc + (Number(curr.importe_aplicado) || 0),
-            0
-          );
-
-          let impactoNotas = 0;
-          (f.nota_credito_debito_proveedor || []).forEach((n) => {
-            const imp = Number(n.importe) || 0;
-            const esNC =
-              n.tipo_nota?.toUpperCase().includes("NC") ||
-              n.tipo_nota?.toLowerCase().includes("crédito");
-            impactoNotas += esNC ? -imp : imp;
-          });
-
-          const saldoCalculado = Math.max(0, totalOriginal + impactoNotas - pagado);
-
-          const estadoCalculado =
-            saldoCalculado === 0
-              ? "Pagada Total"
-              : pagado > 0
-              ? "Pagada Parcial"
-              : "Pendiente";
-
-          return {
-            ...f,
-            totalOriginal,
-            totalPagado: pagado,
-            impactoNotas,
-            saldoPendiente: saldoCalculado,
-            estadoCalculado,
-          };
-        });
-
-        setFacturas(procesadas);
-
-        const initApp = {};
-        procesadas.forEach((p) => {
-          initApp[p.id_factura_proveedor] = { seleccionado: false, montoAplicado: "" };
-        });
-        setAplicaciones(initApp);
-      }
-      setLoading(false);
+    if (error) {
+      console.error("Error al cargar historial de pagos:", error);
+      setHistorialPagos([]);
+    } else {
+      setHistorialPagos(data || []);
     }
+    setLoadingPagos(false);
+  }, []);
 
-    fetchFacturasProveedor();
-  }, [selectedProveedorId]);
+  useEffect(() => {
+    if (!selectedProveedorId) return;
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchFacturasProveedor(selectedProveedorId);
+    fetchHistorialPagos(selectedProveedorId);
+  }, [selectedProveedorId, fetchFacturasProveedor, fetchHistorialPagos]);
 
   const resumen = useMemo(() => {
     let saldoTotalAdeudado = 0;
@@ -225,8 +271,13 @@ export default function RegistrarPagoProveedor() {
       totalNotas += f.impactoNotas;
     });
 
-    return { saldoTotalAdeudado, totalOriginal, totalNotas };
-  }, [facturas]);
+    const totalHistoricoPagado = historialPagos.reduce(
+      (acc, p) => acc + (Number(p.importe_total) || 0),
+      0
+    );
+
+    return { saldoTotalAdeudado, totalOriginal, totalNotas, totalHistoricoPagado };
+  }, [facturas, historialPagos]);
 
   const facturasFiltradas = useMemo(() => {
     return facturas.filter((f) => {
@@ -242,6 +293,37 @@ export default function RegistrarPagoProveedor() {
       return matchSearch && matchEstado;
     });
   }, [facturas, filtroEstado, searchTerm]);
+
+  const pagosFiltrados = useMemo(() => {
+    return historialPagos.filter((p) => {
+      let matchTipo = true;
+      if (filtroTipoPago === "TOTAL") {
+        matchTipo = (p.tipo_cancelacion || "").toLowerCase() === "total";
+      } else if (filtroTipoPago === "PARCIAL") {
+        matchTipo = (p.tipo_cancelacion || "").toLowerCase() === "parcial";
+      }
+
+      if (!searchTermPagos.trim()) return matchTipo;
+
+      const term = searchTermPagos.toLowerCase();
+      const nroOp = `op-${String(p.id_pago).padStart(6, "0")}`.toLowerCase();
+      const idPagoStr = String(p.id_pago);
+      const fechaStr = formatearFecha(p.fecha_pago).toLowerCase();
+      const medioStr = (p.medio_pago?.nombre || "").toLowerCase();
+      const comprobantesStr = (p.detalle_pago || [])
+        .map((d) => (d.factura_proveedor?.numero_comprobante || "").toLowerCase())
+        .join(" ");
+
+      const matchSearch =
+        nroOp.includes(term) ||
+        idPagoStr.includes(term) ||
+        fechaStr.includes(term) ||
+        medioStr.includes(term) ||
+        comprobantesStr.includes(term);
+
+      return matchTipo && matchSearch;
+    });
+  }, [historialPagos, filtroTipoPago, searchTermPagos]);
 
   const handleToggleSelect = (item) => {
     const id = item.id_factura_proveedor;
@@ -353,17 +435,18 @@ export default function RegistrarPagoProveedor() {
         if (updErr) throw updErr;
       }
 
-      // 4. Cierre ordenado y refresco de vista
+      // 4. Cierre ordenado y refresco de vista simultáneo
       showAlert.successSave("¡Pago registrado e imputado exitosamente!");
       setIsModalPagoOpen(false);
 
       // Limpia selección de montos e inputs
       setAplicaciones({});
 
-      // Recarga los comprobantes del proveedor para reflejar los nuevos saldos y badges
-      const provActual = selectedProveedorId;
-      setSelectedProveedorId("");
-      setTimeout(() => setSelectedProveedorId(provActual), 100);
+      // Recarga los comprobantes y el historial de pagos de manera reactiva
+      await Promise.all([
+        fetchFacturasProveedor(selectedProveedorId),
+        fetchHistorialPagos(selectedProveedorId)
+      ]);
 
     } catch (err) {
       console.error("Error al registrar pago:", err);
@@ -382,7 +465,7 @@ export default function RegistrarPagoProveedor() {
             Pagos a Proveedores
           </h1>
           <p className="subtitulo" style={{ margin: "0.25rem 0 0" }}>
-            Consulta de cuentas corrientes y aplicación de pagos
+            Consulta de cuentas corrientes, comprobantes e historial de pagos
           </p>
         </div>
       </header>
@@ -395,7 +478,15 @@ export default function RegistrarPagoProveedor() {
           </label>
           <select
             value={selectedProveedorId}
-            onChange={(e) => setSelectedProveedorId(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSelectedProveedorId(val);
+              if (!val) {
+                setFacturas([]);
+                setHistorialPagos([]);
+                setAplicaciones({});
+              }
+            }}
             className="select-proveedor"
             style={{ width: "100%", padding: "0.6rem 0.75rem", borderRadius: "0.5rem", border: "1px solid #d1d5db" }}
           >
@@ -409,19 +500,24 @@ export default function RegistrarPagoProveedor() {
         </div>
       </div>
 
-      {/* Panel de Estadísticas (HU 34) */}
+      {/* Panel de Estadísticas / Conciliación (HU 34) */}
       {selectedProveedorId && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
           <StatCard
             title="SALDO TOTAL ADEUDADO"
             value={`$${resumen.saldoTotalAdeudado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
-            subtitle="Saldo neto a cancelar"
+            subtitle="Saldo neto actual a cancelar"
             alert={resumen.saldoTotalAdeudado > 0}
           />
           <StatCard
-            title="TOTAL COMPROBANTES"
+            title="TOTAL FACTURADO"
             value={`$${resumen.totalOriginal.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
             subtitle="Importe facturado original"
+          />
+          <StatCard
+            title="TOTAL HISTÓRICO PAGADO"
+            value={`$${resumen.totalHistoricoPagado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
+            subtitle={`${historialPagos.length} orden(es) de pago realizadas`}
           />
           <StatCard
             title="NOTAS CRÉDITO / DÉBITO"
@@ -431,38 +527,125 @@ export default function RegistrarPagoProveedor() {
         </div>
       )}
 
-      {/* Tabla e Imputación de Facturas */}
-      <div className="tarjeta-formulario">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
-          <h2 className="subtitulo-seccion" style={{ margin: 0 }}>
-            Comprobantes del Proveedor
-          </h2>
+      {/* Selector de Pestañas (Tabs) */}
+      {selectedProveedorId && (
+        <div style={{ display: "flex", gap: "0.5rem", borderBottom: "2px solid #e5e7eb", marginBottom: "1.5rem" }}>
+          <button
+            type="button"
+            onClick={() => setTabActiva("comprobantes")}
+            style={{
+              padding: "0.75rem 1.25rem",
+              fontWeight: "600",
+              fontSize: "0.95rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              border: "none",
+              borderBottom: tabActiva === "comprobantes" ? "3px solid var(--marron-principal)" : "3px solid transparent",
+              backgroundColor: "transparent",
+              color: tabActiva === "comprobantes" ? "var(--marron-principal)" : "#6b7280",
+              cursor: "pointer",
+              marginBottom: "-2px",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <FileText size={18} />
+            <span>Comprobantes y Liquidación</span>
+            <span
+              style={{
+                backgroundColor: tabActiva === "comprobantes" ? "#f3ede7" : "#f3f4f6",
+                color: tabActiva === "comprobantes" ? "#65482b" : "#6b7280",
+                padding: "0.15rem 0.5rem",
+                borderRadius: "9999px",
+                fontSize: "0.75rem",
+              }}
+            >
+              {facturas.length}
+            </span>
+          </button>
 
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            {["PENDIENTES", "PARCIALES", "PAGADOS", "TODOS"].map((st) => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => setFiltroEstado(st)}
-                style={{
-                  padding: "0.35rem 0.75rem",
-                  borderRadius: "0.375rem",
-                  fontSize: "0.75rem",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  border: "1px solid var(--borde-suave)",
-                  backgroundColor: filtroEstado === st ? "var(--marron-principal)" : "#ffffff",
-                  color: filtroEstado === st ? "#ffffff" : "var(--texto-secundario)",
-                }}
-              >
-                {st}
-              </button>
-            ))}
+          <button
+            type="button"
+            onClick={() => setTabActiva("historial")}
+            style={{
+              padding: "0.75rem 1.25rem",
+              fontWeight: "600",
+              fontSize: "0.95rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              border: "none",
+              borderBottom: tabActiva === "historial" ? "3px solid var(--marron-principal)" : "3px solid transparent",
+              backgroundColor: "transparent",
+              color: tabActiva === "historial" ? "var(--marron-principal)" : "#6b7280",
+              cursor: "pointer",
+              marginBottom: "-2px",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <Receipt size={18} />
+            <span>Historial de Pagos Realizados</span>
+            <span
+              style={{
+                backgroundColor: tabActiva === "historial" ? "#f3ede7" : "#f3f4f6",
+                color: tabActiva === "historial" ? "#65482b" : "#6b7280",
+                padding: "0.15rem 0.5rem",
+                borderRadius: "9999px",
+                fontSize: "0.75rem",
+              }}
+            >
+              {historialPagos.length}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Aviso cuando no hay proveedor seleccionado */}
+      {!selectedProveedorId && (
+        <div className="tarjeta-formulario">
+          <div className="aviso" style={{ textAlign: "center", padding: "3rem" }}>
+            Selecciona un proveedor para consultar su saldo, comprobantes pendientes e historial de pagos.
           </div>
         </div>
+      )}
 
-        {/* Buscador interno */}
-        {selectedProveedorId && (
+      {/* PESTAÑA 1: Comprobantes del Proveedor */}
+      {selectedProveedorId && tabActiva === "comprobantes" && (
+        <div className="tarjeta-formulario">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
+            <div>
+              <h2 className="subtitulo-seccion" style={{ margin: 0 }}>
+                Comprobantes del Proveedor
+              </h2>
+              <p style={{ margin: "0.2rem 0 0", fontSize: "0.85rem", color: "var(--texto-secundario)" }}>
+                Seleccione los comprobantes que desea abonar total o parcialmente
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {["PENDIENTES", "PARCIALES", "PAGADOS", "TODOS"].map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setFiltroEstado(st)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "0.375rem",
+                    fontSize: "0.75rem",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    border: "1px solid var(--borde-suave)",
+                    backgroundColor: filtroEstado === st ? "var(--marron-principal)" : "#ffffff",
+                    color: filtroEstado === st ? "#ffffff" : "var(--texto-secundario)",
+                  }}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Buscador interno */}
           <div style={{ position: "relative", marginBottom: "1.25rem" }}>
             <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
             <input
@@ -474,142 +657,484 @@ export default function RegistrarPagoProveedor() {
               style={{ paddingLeft: "2.5rem" }}
             />
           </div>
-        )}
 
-        {!selectedProveedorId ? (
-          <div className="aviso" style={{ textAlign: "center", padding: "3rem" }}>
-            Selecciona un proveedor para consultar su saldo y comprobantes pendientes.
-          </div>
-        ) : loading ? (
-          <div style={{ textAlign: "center", padding: "3rem", color: "var(--texto-secundario)" }}>
-            Cargando comprobantes...
-          </div>
-        ) : facturasFiltradas.length === 0 ? (
-          <div className="aviso" style={{ textAlign: "center", padding: "2.5rem" }}>
-            No se encontraron comprobantes para el filtro seleccionado.
-          </div>
-        ) : (
-          <div className="tabla-contenedor" style={{ width: "100%", overflowX: "auto" }}>
-            <table className="tabla-facturas" style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th style={{ width: "5%", textAlign: "center" }}>PAGAR</th>
-                  <th style={{ width: "24%", textAlign: "left" }}>COMPROBANTE</th>
-                  <th style={{ width: "11%", textAlign: "center" }}>EMISIÓN</th>
-                  <th style={{ width: "14%", textAlign: "right" }}>HABER (FACTURA)</th>
-                  <th style={{ width: "14%", textAlign: "right" }}>DEBE (PAGOS/NC)</th>
-                  <th style={{ width: "12%", textAlign: "right" }}>SALDO PENDIENTE</th>
-                  <th style={{ width: "10%", textAlign: "center" }}>ESTADO</th>
-                  <th style={{ width: "10%", textAlign: "right" }}>IMPORTE ($)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {facturasFiltradas.map((f) => {
-                  const isChecked = aplicaciones[f.id_factura_proveedor]?.seleccionado || false;
-                  const monto = aplicaciones[f.id_factura_proveedor]?.montoAplicado || "";
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "var(--texto-secundario)" }}>
+              Cargando comprobantes...
+            </div>
+          ) : facturasFiltradas.length === 0 ? (
+            <div className="aviso" style={{ textAlign: "center", padding: "2.5rem" }}>
+              No se encontraron comprobantes para el filtro seleccionado.
+            </div>
+          ) : (
+            <div className="tabla-contenedor" style={{ width: "100%", overflowX: "auto" }}>
+              <table className="tabla-facturas" style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: "5%", textAlign: "center" }}>PAGAR</th>
+                    <th style={{ width: "24%", textAlign: "left" }}>COMPROBANTE</th>
+                    <th style={{ width: "11%", textAlign: "center" }}>EMISIÓN</th>
+                    <th style={{ width: "14%", textAlign: "right" }}>HABER (FACTURA)</th>
+                    <th style={{ width: "14%", textAlign: "right" }}>DEBE (PAGOS/NC)</th>
+                    <th style={{ width: "12%", textAlign: "right" }}>SALDO PENDIENTE</th>
+                    <th style={{ width: "10%", textAlign: "center" }}>ESTADO</th>
+                    <th style={{ width: "10%", textAlign: "right" }}>IMPORTE ($)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {facturasFiltradas.map((f) => {
+                    const isChecked = aplicaciones[f.id_factura_proveedor]?.seleccionado || false;
+                    const monto = aplicaciones[f.id_factura_proveedor]?.montoAplicado || "";
 
-                  const haber = f.totalOriginal + (f.impactoNotas > 0 ? f.impactoNotas : 0);
-                  const debe = f.totalPagado + (f.impactoNotas < 0 ? Math.abs(f.impactoNotas) : 0);
+                    const haber = f.totalOriginal + (f.impactoNotas > 0 ? f.impactoNotas : 0);
+                    const debe = f.totalPagado + (f.impactoNotas < 0 ? Math.abs(f.impactoNotas) : 0);
 
-                  return (
-                    <tr key={f.id_factura_proveedor} style={{ backgroundColor: isChecked ? "#faf8f5" : "transparent" }}>
-                      <td style={{ textAlign: "center", verticalAlign: "middle" }}>
-                        <input
-                          type="checkbox"
-                          disabled={f.saldoPendiente <= 0}
-                          checked={isChecked}
-                          onChange={() => handleToggleSelect(f)}
-                          style={{
-                            cursor: f.saldoPendiente > 0 ? "pointer" : "not-allowed",
-                            width: "16px",
-                            height: "16px",
-                            margin: "0 auto",
-                            display: "block"
-                          }}
-                        />
-                      </td>
-                      <td style={{ textAlign: "left", verticalAlign: "middle" }}>
-                        <button
-                          type="button"
-                          onClick={() => setComprobanteDetalle(f)}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            padding: 0,
-                            cursor: "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
-                            color: "var(--marron-principal)",
-                            maxWidth: "100%"
-                          }}
-                        >
-                          <FileText size={16} style={{ flexShrink: 0 }} />
-                          <span style={{ fontWeight: "600", textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {f.tipo_comprobante || "Factura"} {f.tipo_factura || ""} {String(f.numero_comprobante || f.id_factura_proveedor).padStart(8, "0")}
-                          </span>
-                        </button>
-                      </td>
-                      <td style={{ textAlign: "center", verticalAlign: "middle", color: "var(--texto-secundario)" }}>
-                        {formatearFecha(f.fecha)}
-                      </td>
-                      <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "500" }}>
-                        ${haber.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "500", color: debe > 0 ? "#166534" : "var(--texto-secundario)" }}>
-                        ${debe.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "700", color: f.saldoPendiente > 0 ? "#dc2626" : "#166534" }}>
-                        ${f.saldoPendiente.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ textAlign: "center", verticalAlign: "middle" }}>
-                        <Badge variant={f.estadoCalculado === "Pagada Total" ? "success" : f.estadoCalculado === "Pagada Parcial" ? "warning" : "danger"}>
-                          {f.estadoCalculado}
-                        </Badge>
-                      </td>
-                      <td style={{ textAlign: "right", verticalAlign: "middle" }}>
-                        <input
-                          type="number"
-                          placeholder="0.00"
-                          className="input-aplicacion"
-                          disabled={f.saldoPendiente <= 0}
-                          value={monto}
-                          onChange={(e) => handleMontoChange(f.id_factura_proveedor, f.saldoPendiente, e.target.value)}
-                          style={{
-                            width: "100%",
-                            maxWidth: "100px",
-                            textAlign: "right",
-                            boxSizing: "border-box"
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    return (
+                      <tr key={f.id_factura_proveedor} style={{ backgroundColor: isChecked ? "#faf8f5" : "transparent" }}>
+                        <td style={{ textAlign: "center", verticalAlign: "middle" }}>
+                          <input
+                            type="checkbox"
+                            disabled={f.saldoPendiente <= 0}
+                            checked={isChecked}
+                            onChange={() => handleToggleSelect(f)}
+                            style={{
+                              cursor: f.saldoPendiente > 0 ? "pointer" : "not-allowed",
+                              width: "16px",
+                              height: "16px",
+                              margin: "0 auto",
+                              display: "block"
+                            }}
+                          />
+                        </td>
+                        <td style={{ textAlign: "left", verticalAlign: "middle" }}>
+                          <button
+                            type="button"
+                            onClick={() => setComprobanteDetalle(f)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              color: "var(--marron-principal)",
+                              maxWidth: "100%"
+                            }}
+                          >
+                            <FileText size={16} style={{ flexShrink: 0 }} />
+                            <span style={{ fontWeight: "600", textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {f.tipo_comprobante || "Factura"} {f.tipo_factura || ""} {String(f.numero_comprobante || f.id_factura_proveedor).padStart(8, "0")}
+                            </span>
+                          </button>
+                        </td>
+                        <td style={{ textAlign: "center", verticalAlign: "middle", color: "var(--texto-secundario)" }}>
+                          {formatearFecha(f.fecha)}
+                        </td>
+                        <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "500" }}>
+                          ${haber.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "500", color: debe > 0 ? "#166534" : "var(--texto-secundario)" }}>
+                          ${debe.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "700", color: f.saldoPendiente > 0 ? "#dc2626" : "#166534" }}>
+                          ${f.saldoPendiente.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ textAlign: "center", verticalAlign: "middle" }}>
+                          <Badge variant={f.estadoCalculado === "Pagada Total" ? "success" : f.estadoCalculado === "Pagada Parcial" ? "warning" : "danger"}>
+                            {f.estadoCalculado}
+                          </Badge>
+                        </td>
+                        <td style={{ textAlign: "right", verticalAlign: "middle" }}>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            className="input-aplicacion"
+                            disabled={f.saldoPendiente <= 0}
+                            value={monto}
+                            onChange={(e) => handleMontoChange(f.id_factura_proveedor, f.saldoPendiente, e.target.value)}
+                            style={{
+                              width: "100%",
+                              maxWidth: "100px",
+                              textAlign: "right",
+                              boxSizing: "border-box"
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Tarjeta de Totalización y Botón para Abrir Modal de Pago */}
+          <div className="tarjeta-total" style={{ marginTop: "1.5rem" }}>
+            <div>
+              <span className="etiqueta-total">Total a Pagar:</span>
+              <div className="valor-total">
+                ${totalPagoCalculado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="boton-principal"
+              disabled={submitting || totalPagoCalculado <= 0}
+              onClick={() => setIsModalPagoOpen(true)}
+            >
+              Continuar al Pago
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Tarjeta de Totalización y Botón para Abrir Modal de Pago */}
-        <div className="tarjeta-total" style={{ marginTop: "1.5rem" }}>
-          <div>
-            <span className="etiqueta-total">Total a Pagar:</span>
-            <div className="valor-total">
-              ${totalPagoCalculado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+      {/* PESTAÑA 2: Historial de Pagos Realizados */}
+      {selectedProveedorId && tabActiva === "historial" && (
+        <div className="tarjeta-formulario">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
+            <div>
+              <h2 className="subtitulo-seccion" style={{ margin: 0 }}>
+                Historial de Pagos Realizados
+              </h2>
+              <p style={{ margin: "0.2rem 0 0", fontSize: "0.85rem", color: "var(--texto-secundario)" }}>
+                Registro de egresos y cancelaciones emitidas a este proveedor
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {["TODOS", "TOTAL", "PARCIAL"].map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setFiltroTipoPago(st)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "0.375rem",
+                    fontSize: "0.75rem",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    border: "1px solid var(--borde-suave)",
+                    backgroundColor: filtroTipoPago === st ? "var(--marron-principal)" : "#ffffff",
+                    color: filtroTipoPago === st ? "#ffffff" : "var(--texto-secundario)",
+                  }}
+                >
+                  {st === "TODOS" ? "Todos los pagos" : `Cancelación ${st}`}
+                </button>
+              ))}
             </div>
           </div>
 
-          <button
-            type="button"
-            className="boton-principal"
-            disabled={submitting || totalPagoCalculado <= 0}
-            onClick={() => setIsModalPagoOpen(true)}
-          >
-            Continuar al Pago
-          </button>
+          {/* Buscador interno de pagos */}
+          <div style={{ position: "relative", marginBottom: "1.25rem" }}>
+            <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+            <input
+              type="text"
+              placeholder="Buscar por N° de orden, fecha, medio de pago o comprobante..."
+              value={searchTermPagos}
+              onChange={(e) => setSearchTermPagos(e.target.value)}
+              className="campo-entrada"
+              style={{ paddingLeft: "2.5rem" }}
+            />
+          </div>
+
+          {loadingPagos ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "var(--texto-secundario)" }}>
+              Cargando historial de pagos...
+            </div>
+          ) : pagosFiltrados.length === 0 ? (
+            <div className="aviso" style={{ textAlign: "center", padding: "2.5rem" }}>
+              No se encontraron pagos emitidos para este proveedor con los filtros aplicados.
+            </div>
+          ) : (
+            <div className="tabla-contenedor" style={{ width: "100%", overflowX: "auto" }}>
+              <table className="tabla-facturas" style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: "16%", textAlign: "left" }}>ORDEN DE PAGO</th>
+                    <th style={{ width: "12%", textAlign: "center" }}>FECHA PAGO</th>
+                    <th style={{ width: "18%", textAlign: "left" }}>MEDIO DE PAGO</th>
+                    <th style={{ width: "14%", textAlign: "center" }}>CANCELACIÓN</th>
+                    <th style={{ width: "22%", textAlign: "left" }}>COMPROBANTES APLICADOS</th>
+                    <th style={{ width: "18%", textAlign: "right" }}>IMPORTE TOTAL</th>
+                    <th style={{ width: "10%", textAlign: "center" }}>ACCIÓN</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagosFiltrados.map((p) => {
+                    const totalDetalles = p.detalle_pago?.length || 0;
+                    return (
+                      <tr key={p.id_pago}>
+                        <td style={{ textAlign: "left", verticalAlign: "middle", fontWeight: "700", color: "var(--marron-principal)" }}>
+                          #OP-{String(p.id_pago).padStart(6, "0")}
+                        </td>
+                        <td style={{ textAlign: "center", verticalAlign: "middle", color: "var(--texto-secundario)" }}>
+                          {formatearFecha(p.fecha_pago)}
+                        </td>
+                        <td style={{ textAlign: "left", verticalAlign: "middle" }}>
+                          <span style={{ fontWeight: "500", color: "#374151" }}>
+                            {p.medio_pago?.nombre || "No especificado"}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: "center", verticalAlign: "middle" }}>
+                          <Badge variant={(p.tipo_cancelacion || "").toLowerCase() === "total" ? "success" : "warning"}>
+                            {p.tipo_cancelacion || "Parcial"}
+                          </Badge>
+                        </td>
+                        <td style={{ textAlign: "left", verticalAlign: "middle" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", alignItems: "center" }}>
+                            {p.detalle_pago?.slice(0, 2).map((d) => (
+                              <span
+                                key={d.id_detalle_pago}
+                                style={{
+                                  fontSize: "0.75rem",
+                                  backgroundColor: "#f3f4f6",
+                                  color: "#374151",
+                                  padding: "0.15rem 0.4rem",
+                                  borderRadius: "0.25rem",
+                                  fontWeight: "500",
+                                }}
+                              >
+                                {d.factura_proveedor
+                                  ? `${d.factura_proveedor.tipo_factura || ""} ${d.factura_proveedor.numero_comprobante || d.id_factura_proveedor}`
+                                  : `#${d.id_factura_proveedor}`}
+                              </span>
+                            ))}
+                            {totalDetalles > 2 && (
+                              <span style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: "600" }}>
+                                +{totalDetalles - 2} más
+                              </span>
+                            )}
+                            {totalDetalles === 0 && (
+                              <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>Sin comprobantes</span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: "right", verticalAlign: "middle", fontWeight: "700", color: "#166534" }}>
+                          ${Number(p.importe_total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ textAlign: "center", verticalAlign: "middle" }}>
+                          <button
+                            type="button"
+                            onClick={() => setPagoDetalleModal(p)}
+                            title="Ver detalle del pago"
+                            style={{
+                              backgroundColor: "transparent",
+                              border: "1px solid #d1d5db",
+                              borderRadius: "0.375rem",
+                              padding: "0.35rem 0.6rem",
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.3rem",
+                              fontSize: "0.75rem",
+                              color: "var(--marron-principal)",
+                              fontWeight: "600",
+                            }}
+                          >
+                            <Eye size={14} />
+                            Ver
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* Modal: Detalle del Pago Realizado (Auditoría) */}
+      {pagoDetalleModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1150,
+            padding: "1rem",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "0.75rem",
+              width: "100%",
+              maxWidth: "600px",
+              padding: "1.5rem",
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                marginBottom: "1.25rem",
+                borderBottom: "1px solid #e5e7eb",
+                paddingBottom: "0.85rem",
+              }}
+            >
+              <div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    fontWeight: "700",
+                    color: "#6b7280",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Detalle de Pago a Proveedor
+                </span>
+                <h3
+                  style={{
+                    margin: "0.2rem 0 0",
+                    fontSize: "1.4rem",
+                    fontWeight: "700",
+                    color: "#111827",
+                  }}
+                >
+                  Orden de Pago #OP-{String(pagoDetalleModal.id_pago).padStart(6, "0")}
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPagoDetalleModal(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "1.25rem",
+                  color: "#6b7280",
+                  padding: "0.25rem",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Datos cabecera del pago */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: "0.85rem",
+                fontSize: "0.875rem",
+                marginBottom: "1.25rem",
+                backgroundColor: "#f9fafb",
+                padding: "1rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Fecha de Pago</span>
+                <b style={{ color: "#111827" }}>{formatearFecha(pagoDetalleModal.fecha_pago)}</b>
+              </div>
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Medio de Pago</span>
+                <b style={{ color: "#111827" }}>{pagoDetalleModal.medio_pago?.nombre || "No especificado"}</b>
+              </div>
+              <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Tipo Cancelación</span>
+                <Badge variant={(pagoDetalleModal.tipo_cancelacion || "").toLowerCase() === "total" ? "success" : "warning"}>
+                  {pagoDetalleModal.tipo_cancelacion || "Parcial"}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Comprobantes cancelados / imputados */}
+            <div style={{ marginBottom: "1.25rem" }}>
+              <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", color: "#374151", fontWeight: "600" }}>
+                Comprobantes Imputados en este Pago
+              </h4>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: "0.5rem", overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
+                      <th style={{ padding: "0.5rem 0.75rem", textAlign: "left", color: "#4b5563" }}>Comprobante</th>
+                      <th style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: "#4b5563" }}>Total Factura</th>
+                      <th style={{ padding: "0.5rem 0.75rem", textAlign: "right", color: "#4b5563" }}>Monto Aplicado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(pagoDetalleModal.detalle_pago || []).length === 0 ? (
+                      <tr>
+                        <td colSpan={3} style={{ padding: "1rem", textAlign: "center", color: "#6b7280" }}>
+                          Sin comprobantes asociados registrados.
+                        </td>
+                      </tr>
+                    ) : (
+                      pagoDetalleModal.detalle_pago.map((det, idx) => {
+                        const fac = det.factura_proveedor;
+                        return (
+                          <tr key={det.id_detalle_pago || idx} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                            <td style={{ padding: "0.6rem 0.75rem", color: "#111827", fontWeight: "500" }}>
+                              {fac
+                                ? `${fac.tipo_comprobante || "Factura"} ${fac.tipo_factura || ""} ${String(fac.punto_venta || 1).padStart(4, "0")}-${String(fac.numero_comprobante || fac.id_factura_proveedor).padStart(8, "0")}`
+                                : `Comprobante #${det.id_factura_proveedor}`}
+                            </td>
+                            <td style={{ padding: "0.6rem 0.75rem", textAlign: "right", color: "#6b7280" }}>
+                              {fac?.importe_total != null
+                                ? `$${Number(fac.importe_total).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
+                                : "-"}
+                            </td>
+                            <td style={{ padding: "0.6rem 0.75rem", textAlign: "right", fontWeight: "700", color: "#166534" }}>
+                              ${Number(det.importe_aplicado || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Resumen Total */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                backgroundColor: "#faf8f5",
+                padding: "0.85rem 1rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #ebd8c8",
+                marginBottom: "1.25rem",
+              }}
+            >
+              <span style={{ fontWeight: "600", color: "#785b46" }}>Total Abonado en la Orden:</span>
+              <span style={{ fontSize: "1.3rem", fontWeight: "800", color: "var(--marron-principal)" }}>
+                ${Number(pagoDetalleModal.importe_total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setPagoDetalleModal(null)}
+                className="boton-principal"
+                style={{ padding: "0.5rem 1.5rem" }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Detalle de Comprobante (HU 34) */}
       {comprobanteDetalle && (
