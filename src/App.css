@@ -34,6 +34,7 @@ body {
 .pagos-pagina, .notas-pagina {
   max-width: 1200px;
   margin: 0 auto;
+  width: 100%;
 }
 
 .contenedor-principal { 
@@ -44,7 +45,7 @@ body {
 
 /* Títulos alineados al estilo del equipo */
 .titulo-pagina { 
-  font-size: 1.5rem; 
+  font-size: 1.9rem; 
   font-weight: 700; 
   color: var(--marron-oscuro); 
   margin-bottom: 0.5rem;
@@ -59,6 +60,30 @@ body {
   font-weight: 600; 
   color: var(--marron-oscuro); 
   margin-bottom: 0.5rem; 
+}
+
+/* ✅ ESTILOS DE SELECT — IGUALES A PAGOS A PROVEEDORES */
+.select-proveedor,
+.select-campo {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  font-size: 0.875rem;
+  color: var(--texto-principal);
+  background: #ffffff;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 16px;
+  cursor: pointer;
+}
+.select-proveedor:focus,
+.select-campo:focus {
+  outline: none;
+  border-color: var(--marron-principal);
+  box-shadow: 0 0 0 2px rgba(101, 72, 43, 0.15);
 }
 
 /* Alertas */
@@ -79,12 +104,13 @@ body {
 }
 
 /* Tarjetas iguales a DataTable del equipo */
-.tarjeta-formulario { 
+.tarjeta-formulario, .card-formulario { 
   background: var(--fondo-tarjeta); 
   padding: 1.5rem; 
   border-radius: var(--redondeo); 
   box-shadow: var(--sombra-suave); 
   border: 1px solid var(--borde-suave); 
+  margin-bottom: 1.5rem;
 }
 .form-contenido { 
   display: flex; 
@@ -100,13 +126,14 @@ body {
 label { 
   font-weight: 600; 
   color: var(--texto-principal); 
-  font-size: 0.875rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
 }
 .campo-entrada { 
   width: 100%; 
-  padding: 0.5rem 0.75rem; 
-  border: 1px solid var(--borde-suave); 
-  border-radius: 0.375rem; 
+  padding: 0.6rem 0.75rem; 
+  border: 1px solid #d1d5db; 
+  border-radius: 0.5rem; 
   font-size: 0.875rem; 
   color: var(--texto-principal); 
   background: #ffffff; 
@@ -180,13 +207,13 @@ label {
 /* Botón PRINCIPAL → IGUAL al EditModal del equipo */
 .boton-principal { 
   align-self: flex-end; 
-  padding: 0.5rem 1rem; 
+  padding: 0.65rem 1.5rem; 
   background-color: var(--marron-principal); 
   color: #ffffff; 
   font-size: 0.875rem; 
   font-weight: 600; 
   border: none; 
-  border-radius: 0.375rem; 
+  border-radius: 0.5rem; 
   cursor: pointer; 
   transition: background 0.2s ease; 
 }

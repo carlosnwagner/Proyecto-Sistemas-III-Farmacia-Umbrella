@@ -90,6 +90,13 @@ function parseSupabaseError(error) {
   return { field: null, message: error?.message || 'Ocurrió un error al guardar la factura.' };
 }
 
+/**
+ * FIX: el saldo pendiente de una factura no depende solo de los pagos aplicados
+ * (detalle_pago). También lo modifican las notas de crédito/débito
+ * (nota_credito_debito_proveedor): una nota de Crédito reduce el saldo, una de
+ * Débito lo aumenta. Antes esta función solo restaba los pagos, por lo que una
+ * nota registrada no se reflejaba en el listado de facturas. Ver getFacturasProveedores.
+ */
 export async function getFacturasProveedores() {
   const { data, error } = await supabase
     .from('factura_proveedor')
@@ -107,12 +114,19 @@ export async function getFacturasProveedores() {
   const ids = (data || []).map((factura) => factura.id_factura_proveedor);
   if (!ids.length) return { data: [], error: null };
 
-  const { data: aplicaciones, error: aplicacionesError } = await supabase
-    .from('detalle_pago')
-    .select('id_factura_proveedor, importe_aplicado')
-    .in('id_factura_proveedor', ids);
+  const [{ data: aplicaciones, error: aplicacionesError }, { data: notas, error: notasError }] = await Promise.all([
+    supabase
+      .from('detalle_pago')
+      .select('id_factura_proveedor, importe_aplicado')
+      .in('id_factura_proveedor', ids),
+    supabase
+      .from('nota_credito_debito_proveedor')
+      .select('id_factura_proveedor, tipo_nota, importe')
+      .in('id_factura_proveedor', ids),
+  ]);
 
   if (aplicacionesError) return { data: [], error: aplicacionesError };
+  if (notasError) return { data: [], error: notasError };
 
   const pagadoPorFactura = new Map();
   for (const aplicacion of aplicaciones || []) {
@@ -122,11 +136,26 @@ export async function getFacturasProveedores() {
     );
   }
 
+  const impactoNotasPorFactura = new Map();
+  for (const nota of notas || []) {
+    const importe = Number(nota.importe) || 0;
+    const esCredito = nota.tipo_nota === 'Crédito';
+    impactoNotasPorFactura.set(
+      nota.id_factura_proveedor,
+      (impactoNotasPorFactura.get(nota.id_factura_proveedor) || 0) + (esCredito ? -importe : importe),
+    );
+  }
+
   return {
-    data: data.map((factura) => ({
-      ...factura,
-      saldo_pendiente: Number((Number(factura.importe_total) - (pagadoPorFactura.get(factura.id_factura_proveedor) || 0)).toFixed(2)),
-    })),
+    data: data.map((factura) => {
+      const totalPagado = pagadoPorFactura.get(factura.id_factura_proveedor) || 0;
+      const impactoNotas = impactoNotasPorFactura.get(factura.id_factura_proveedor) || 0;
+      const saldo = Number(factura.importe_total) + impactoNotas - totalPagado;
+      return {
+        ...factura,
+        saldo_pendiente: Number(Math.max(0, saldo).toFixed(2)),
+      };
+    }),
     error: null,
   };
 }
@@ -250,4 +279,3 @@ export async function getFacturaDetalle(idFactura) {
 
   return { data: data || [], error };
 }
-
