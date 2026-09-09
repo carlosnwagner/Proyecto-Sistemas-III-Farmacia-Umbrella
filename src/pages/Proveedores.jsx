@@ -4,6 +4,7 @@ import EditModal from "../components/EditModal.jsx";
 import { Plus, Search } from "lucide-react";
 import { supabase } from '../lib/supabase.js';
 import { showAlert } from "../lib/alerts.js";
+
 // SERVICIOS BACKEND
 import { createProveedor, updateProveedor } from '../services/proveedores.js';
 
@@ -12,14 +13,6 @@ export default function Proveedores() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProveedor, setSelectedProveedor] = useState(null);
   const [proveedores, setProveedores] = useState([]);
-
-  // Estado local para notificaciones flotantes (Toasts)
-  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
-
-  const showToast = (message, type = "success") => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: "", type: "success" }), 3500);
-  };
 
   // CARGA DE DATOS DESDE SUPABASE
   useEffect(() => {
@@ -36,7 +29,7 @@ export default function Proveedores() {
     else setProveedores(data || []);
   };
 
-  // Configuración de Campos de Modal (CUIT editable, se quitó el readOnly)
+  // Configuración de Campos de Modal
   const editFields = useMemo(() => [
     { key: "razon_social", label: "Razón Social" },
     { 
@@ -80,15 +73,17 @@ export default function Proveedores() {
     return digitoVerificador === parseInt(limpio[10]);
   };
 
-  // GUARDADO DE DATOS CON VALIDACIÓN DE CUIT
+  // GUARDADO DE DATOS CON VALIDACIÓN DE CUIT Y ALERTAS CENTRALIZADAS
   const handleSaveProveedor = async (formData) => {
-    // Validar formato del CUIT antes de enviar al backend
-    if (!validarCuitCuil(formData.identificacion_fiscal)) {
-      alert("El CUIT ingresado no es válido. Debe contener 11 dígitos numéricos y cumplir con el formato oficial de Argentina.");
-      return;
+    // 1. Evaluar si el CUIT es válido usando la función del algoritmo
+    const cuitValido = validarCuitCuil(formData.identificacion_fiscal);
+
+    if (!cuitValido) {
+      showAlert.errorSave("El CUIT ingresado no es válido. Debe contener 11 dígitos numéricos y cumplir con el formato oficial de Argentina.");
+      return; // Stop para evitar que intente guardar si el CUIT está mal
     }
 
-    // payload
+    // 2. Preparar Payload
     const payload = {
       razon_social: formData.razon_social,
       identificacion_fiscal: formData.identificacion_fiscal,
@@ -97,30 +92,28 @@ export default function Proveedores() {
     };
 
     if (selectedProveedor) {
-  // --- MODO EDICIÓN ---
-  const { error } = await updateProveedor(selectedProveedor.id_proveedor, payload);
-  
-  if (error) {
-    showAlert.errorSave(`Error: ${error.message}`);
-  } else {
-    showAlert.successSave("¡Proveedor actualizado con éxito!");
-    fetchProveedores();
-    setIsModalOpen(false);
-  }
-} else {
-  // --- MODO CREACIÓN ---
-  const { error } = await createProveedor(payload);
-  
-  if (error) {
-    showAlert.errorSave(`Error: ${error.message}`);
-  } else {
-    showAlert.successSave("¡Proveedor registrado con éxito!");
-    fetchProveedores();
-    setIsModalOpen(false);
-  }
-}
-
-   
+      // --- MODO EDICIÓN ---
+      const { error } = await updateProveedor(selectedProveedor.id_proveedor, payload);
+      
+      if (error) {
+        showAlert.errorSave(`Error: ${error.message}`);
+      } else {
+        showAlert.successSave("¡Proveedor actualizado con éxito!");
+        fetchProveedores();
+        setIsModalOpen(false);
+      }
+    } else {
+      // --- MODO CREACIÓN ---
+      const { error } = await createProveedor(payload);
+      
+      if (error) {
+        showAlert.errorSave(`Error: ${error.message}`);
+      } else {
+        showAlert.successSave("¡Proveedor registrado con éxito!");
+        fetchProveedores();
+        setIsModalOpen(false);
+      }
+    }
   };
 
   const filteredProveedores = proveedores.filter((p) => {
@@ -149,28 +142,6 @@ export default function Proveedores() {
 
   return (
     <div style={{ padding: "1rem" }}>
-      {/* Toast Flotante Custom */}
-      {toast.show && (
-        <div 
-          style={{
-            position: "fixed",
-            top: "20px",
-            right: "20px",
-            zIndex: 9999,
-            padding: "0.75rem 1.25rem",
-            borderRadius: "0.5rem",
-            color: "#ffffff",
-            backgroundColor: toast.type === "error" ? "#ef4444" : "#10b981",
-            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-            fontWeight: "600",
-            fontSize: "0.875rem",
-            transition: "all 0.3s ease"
-          }}
-        >
-          {toast.message}
-        </div>
-      )}
-
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
         <div>
           <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Proveedores</h1>

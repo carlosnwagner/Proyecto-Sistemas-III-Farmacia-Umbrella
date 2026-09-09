@@ -34,7 +34,7 @@ export const showAlert = {
       icon: 'error',
       title,
       showConfirmButton: false,
-      timer: 2000,
+      timer: 6000,
     });
   },
 };

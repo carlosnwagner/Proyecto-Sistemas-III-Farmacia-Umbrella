@@ -54,14 +54,6 @@ export default function InventarioProductos() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todas");
 
-  // Estado local para notificaciones flotantes (Toasts)
-  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
-
-  const showToast = (message, type = "success") => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: "", type: "success" }), 3500);
-  };
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [initialFormData, setInitialFormData] = useState(null);
@@ -162,15 +154,17 @@ export default function InventarioProductos() {
   const handleSaveProduct = async (formData) => {
     if (!formData.codigo || formData.codigo.trim() === "") {
       showAlert.errorSave("El código interno es obligatorio.");
+      showAlert.errorSave("El código interno es obligatorio.");
       return;
     }
 
     if (formData.codigo_barras && !/^\d+$/.test(formData.codigo_barras)) {
       showAlert.errorSave("El código de barras debe contener únicamente números.");
+      showAlert.errorSave("El código de barras debe contener únicamente números.");
       return;
     }
 
-    // Evaluación limpia y robusta del estado proveniente del modal
+    // Evaluación del estado proveniente del modal
     let estadoBoolean = true;
     if (selectedProduct) {
       if (
@@ -199,9 +193,11 @@ export default function InventarioProductos() {
 
     if (selectedProduct) {
       // --- MODO EDICIÓN ---
+      // --- MODO EDICIÓN ---
       const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
 
       if (error) {
+        showAlert.errorSave(`Error: ${error.message}`);
         showAlert.errorSave(`Error: ${error.message}`);
       } else {
         showAlert.successAction("Producto", true);
@@ -210,9 +206,11 @@ export default function InventarioProductos() {
       }
     } else {
       // --- MODO CREACIÓN ---
+      // --- MODO CREACIÓN ---
       const { error } = await createArticulo(payload);
 
       if (error) {
+        showAlert.errorSave(`Error: ${error.message}`);
         showAlert.errorSave(`Error: ${error.message}`);
       } else {
         showAlert.successAction("Producto", false);
@@ -220,7 +218,7 @@ export default function InventarioProductos() {
         setIsModalOpen(false); 
       }
     }
-  };
+  }; // 👈 Se cierra correctamente la función handleSaveProduct
 
   const filteredProducts = products.filter(p =>
     (p.nombre + (p.codigo || "") + (p.codigo_barras || "")).toLowerCase().includes(searchTerm.toLowerCase())

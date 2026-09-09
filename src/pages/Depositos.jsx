@@ -5,6 +5,7 @@ import EditModal from "../components/EditModal.jsx";
 import InventarioDeposito from "./InventarioDeposito.jsx"; 
 import { Plus, Search, Building2, FileText, CalendarDays, PackagePlus, Eye, Edit3, Warehouse, MapPin, Tag, ArrowRight } from "lucide-react";
 import { showAlert } from "../lib/alerts.js"; // <--- Tu importación de alertas
+import toast, { Toaster } from "react-hot-toast";
 
 const RUBROS_CATALOGO = [
   { codigo: "MED", label: "MED – Medicamentos" },
