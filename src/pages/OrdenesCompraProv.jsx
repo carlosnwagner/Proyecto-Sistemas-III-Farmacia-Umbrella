@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import DataTable from "../components/DataTable.jsx";
-import { Plus, Search, Trash2, ArrowLeft, Save, CheckCircle, FileText } from "lucide-react";
+import { Plus, Search, Trash2, ArrowLeft, Save, CheckCircle, FileText, FileDown } from "lucide-react";
 import { supabase } from '../lib/supabase.js';
 import { showAlert } from "../lib/alerts.js";
+import { generateStandardPDF } from "../components/pdfGenerador.jsx";
 
 import { getCondicionesPago, getMediosPago } from '../services/catalogos.js';
 import { 
@@ -144,6 +145,65 @@ export default function OrdenesCompra() {
     }
   };
 
+  const generarPDFOrden = (orden, detalleOrden = []) => {
+    const filasTabla = detalleOrden.map((d) => {
+      const cantidad = Number(d.cantidad_solicitada || 0);
+      const precio = Number(d.precio_unitario || 0);
+
+      return [
+        cantidad.toString(),
+        d.articulo?.nombre || "Artículo sin nombre",
+        `$ ${precio.toFixed(2)}`,
+        `$ ${(cantidad * precio).toFixed(2)}`
+      ];
+    });
+
+    const total = detalleOrden.reduce(
+      (acc, d) =>
+        acc +
+        Number(d.cantidad_solicitada || 0) *
+          Number(d.precio_unitario || 0),
+      0
+    );
+
+    filasTabla.push(["TOTAL", "", "", `$ ${total.toFixed(2)}`]);
+
+    generateStandardPDF({
+      title: "ORDEN DE COMPRA",
+      subtitle: `N° ${orden.numero_orden || "N/A"}`,
+      infoData: [
+        {
+          label: "Proveedor",
+          value: orden.proveedor?.razon_social || "N/A"
+        },
+        {
+          label: "Fecha Emisión",
+          value: orden.fecha_emision
+            ? new Date(orden.fecha_emision).toLocaleDateString()
+            : "N/A"
+        },
+        {
+          label: "Estado",
+          value: orden.estado || "N/A"
+        }
+      ],
+      columns: ["Cant.", "Descripción", "Precio Unit.", "Subtotal"],
+      rows: filasTabla,
+      fileName: `Orden_Compra_${orden.numero_orden || "sin_numero"}.pdf`
+    });
+  };
+
+  const handleDescargarPDF = async (orden) => {
+    const { data, error } = await getOrdenCompraPorId(orden.id_orden_compra);
+
+    if (error) {
+      showAlert.errorSave("Error al cargar la orden para generar el PDF: " + error.message);
+      return;
+    }
+
+    generarPDFOrden(data, data?.detalle || []);
+  };
+
   const BadgeEstado = ({ estado }) => {
     const colores = {
       Emitida: { bg: "#e0f2fe", text: "#075985" },
@@ -160,6 +220,31 @@ export default function OrdenesCompra() {
     { header: "PROVEEDOR", render: (o) => <span>{o.proveedor?.razon_social}</span> },
     { header: "FECHA", render: (o) => <span>{new Date(o.fecha_emision).toLocaleDateString()}</span> },
     { header: "ESTADO", render: (o) => <BadgeEstado estado={o.estado} /> },
+    {
+      header: "PDF",
+      render: (o) => (
+        <button
+          type="button"
+          onClick={() => handleDescargarPDF(o)}
+          title="Descargar orden en PDF"
+          style={{
+            backgroundColor: "#ffffff",
+            color: "#65482b",
+            border: "1px solid #65482b",
+            padding: "0.375rem 0.625rem",
+            borderRadius: "0.375rem",
+            fontWeight: "600",
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.375rem"
+          }}
+        >
+          <FileDown size={15} />
+          PDF
+        </button>
+      )
+    },
   ];
 
   const commonInputStyle = { padding: "0.5rem 0.75rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", fontSize: "0.875rem", outline: "none", width: "100%", boxSizing: "border-box" };
@@ -245,7 +330,32 @@ export default function OrdenesCompra() {
               </h2>
               <p>Proveedor: {ordenSeleccionada.proveedor?.razon_social}</p>
             </div>
-            <button onClick={() => setVistaActual("listado")} style={{ background: "transparent", border: "none", fontWeight: "600", cursor: "pointer" }}><ArrowLeft size={18} /> Volver</button>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <button
+                type="button"
+                onClick={() => generarPDFOrden(ordenSeleccionada, detallesSeguimiento)}
+                style={{
+                  backgroundColor: "#65482b",
+                  color: "#ffffff",
+                  border: "none",
+                  padding: "0.625rem 0.875rem",
+                  borderRadius: "0.5rem",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem"
+                }}
+              >
+                <FileDown size={16} /> Descargar PDF
+              </button>
+              <button
+                onClick={() => setVistaActual("listado")}
+                style={{ background: "transparent", border: "none", fontWeight: "600", cursor: "pointer" }}
+              >
+                <ArrowLeft size={18} /> Volver
+              </button>
+            </div>
           </div>
 
           <div style={{ marginBottom: "2.5rem" }}>
