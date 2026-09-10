@@ -237,7 +237,7 @@ export default function RegistrarNotaCreditoDebito() {
                             {formatearComprobante(f)}
                           </td>
                           <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                            <Badge variant={f.estado === 'Pagada Total' ? 'success' : f.estado === 'Pagada Parcial' ? 'warning' : 'primary'}>
+                            <Badge variant={f.estado === 'Pagada' ? 'success' : f.estado === 'Pagada Parcial' ? 'warning' : 'primary'}>
                               {f.estado}
                             </Badge>
                           </td>

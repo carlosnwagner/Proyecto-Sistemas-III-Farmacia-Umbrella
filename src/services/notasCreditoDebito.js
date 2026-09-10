@@ -38,7 +38,7 @@ export async function getFacturasParaNota() {
     const saldo = Number(f.importe_total) + notasImp - pagado;
     
     let estadoReal = f.estado;
-    if (saldo <= 0) estadoReal = 'Pagada Total';
+    if (saldo <= 0) estadoReal = 'Pagada';
 
     return {
       ...f,
@@ -130,7 +130,7 @@ export async function createNotaCreditoDebito(payload) {
   const saldoFinal = Math.max(0, nuevoSaldo);
 
   let nuevoEstado;
-  if (saldoFinal <= 0) nuevoEstado = 'Pagada Total';
+  if (saldoFinal <= 0) nuevoEstado = 'Pagada';
   else if (saldoFinal < Number(facturaActual.importe_total)) nuevoEstado = 'Pagada Parcial';
   else nuevoEstado = 'Pendiente';
 
