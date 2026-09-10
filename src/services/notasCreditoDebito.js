@@ -1,19 +1,18 @@
 import { supabase } from '../lib/supabase';
+import { jsPDF } from 'jspdf';
 
 export const TIPOS_NOTA = ['Crédito', 'Débito'];
 
 export async function getFacturasParaNota() {
-  // AGREGO punto_venta, tipo_factura y tipo_comprobante para que el frontend pueda armar la vista completa (Ej: "A 0001-00000001")
   const { data: facturas, error } = await supabase
     .from('factura_proveedor')
-    .select('id_factura_proveedor, tipo_comprobante, tipo_factura, punto_venta, numero_comprobante, importe_total, estado, id_proveedor, proveedor(razon_social)')
+    .select('id_factura_proveedor, tipo_comprobante, tipo_factura, punto_venta, numero_comprobante, importe_total, estado, id_proveedor, proveedor(razon_social, identificacion_fiscal)')
     .order('fecha', { ascending: false });
 
   if (error || !facturas?.length) return { data: facturas ?? [], error };
 
   const ids = facturas.map(f => f.id_factura_proveedor);
 
-  // Traemos pagos y notas para recalcular el saldo real en vivo
   const [resPagos, resNotas] = await Promise.all([
     supabase.from('detalle_pago').select('id_factura_proveedor, importe_aplicado').in('id_factura_proveedor', ids),
     supabase.from('nota_credito_debito_proveedor').select('id_factura_proveedor, tipo_nota, importe').in('id_factura_proveedor', ids)
@@ -34,17 +33,16 @@ export async function getFacturasParaNota() {
   }
 
   const dataConSaldo = facturas.map(f => {
-    // Blindaje: si la base de datos ya la marca como pagada, forzamos saldo 0 en la vista.
-    if (f.estado === 'Pagada' || f.estado === 'Pagada Total') {
-      return { ...f, saldo_pendiente: 0 };
-    }
-
     const pagado = pagadoPorFactura.get(f.id_factura_proveedor) || 0;
     const notasImp = impactoNotas.get(f.id_factura_proveedor) || 0;
     const saldo = Number(f.importe_total) + notasImp - pagado;
     
+    let estadoReal = f.estado;
+    if (saldo <= 0) estadoReal = 'Pagada Total';
+
     return {
       ...f,
+      estado: estadoReal,
       saldo_pendiente: Number(Math.max(0, saldo).toFixed(2))
     };
   });
@@ -61,11 +59,10 @@ export function validateNotaPayload(payload, saldoPendienteFactura = null, numer
   if (!payload?.numero_comprobante?.trim()) {
     errors.numero_comprobante = 'Número de comprobante obligatorio.';
   } else {
-    // Validamos que tenga la estructura correcta y evitamos que sea un clon de la factura
     const regexFormato = /^([AB]\s)?\d{4,5}-\d{8}$/i;
     if (!regexFormato.test(payload.numero_comprobante.trim())) {
-      errors.numero_comprobante = 'Formato inválido. Ejemplo: "A 0001-00000001" o "0001-00000001".';
-    } else if (payload.numero_comprobante.trim() === numeroFacturaOriginal) {
+      errors.numero_comprobante = 'Formato inválido. Ejemplo: "A 0001-00000001".';
+    } else if (payload.numero_comprobante.trim().toLowerCase() === numeroFacturaOriginal?.trim().toLowerCase()) {
       errors.numero_comprobante = 'La nota no puede tener el mismo número que la factura original.';
     }
   }
@@ -87,6 +84,17 @@ export async function createNotaCreditoDebito(payload) {
   const idFactura = Number(payload.id_factura_proveedor);
   if (!idFactura || idFactura <= 0) {
     return { data: null, error: { field: 'id_factura_proveedor', message: 'ID de factura inválido.' } };
+  }
+
+  // Verificamos si ya existe una nota con EXACTAMENTE este mismo número de comprobante para evitar duplicados fiscales
+  const { data: notaExistente } = await supabase
+    .from('nota_credito_debito_proveedor')
+    .select('id_nota')
+    .eq('numero_comprobante', payload.numero_comprobante.trim())
+    .maybeSingle();
+
+  if (notaExistente) {
+    return { data: null, error: { field: 'numero_comprobante', message: `El número de comprobante "${payload.numero_comprobante.trim()}" ya fue registrado anteriormente.` } };
   }
 
   const { data: facturaActual, error: facturaError } = await supabase
@@ -170,4 +178,50 @@ export async function getNotasPorFactura(idFacturaProveedor) {
     .eq('id_factura_proveedor', idFacturaProveedor)
     .order('fecha', { ascending: false });
   return { data: data ?? [], error };
+}
+
+export function downloadNotaPdf(nota, factura, proveedor) {
+  const pdf = new jsPDF();
+  let y = 20;
+
+  pdf.setFontSize(16);
+  pdf.text(`NOTA DE ${nota.tipo_nota.toUpperCase()}`, 20, y);
+  y += 10;
+  
+  pdf.setFontSize(10);
+  pdf.text(`Comprobante N°: ${nota.numero_comprobante}`, 20, y);
+  y += 6;
+  pdf.text(`Fecha de Emisión: ${nota.fecha}`, 20, y);
+  y += 10;
+
+  pdf.line(20, y, 190, y);
+  y += 8;
+
+  pdf.text(`Proveedor: ${proveedor?.razon_social || '-'}`, 20, y);
+  y += 6;
+  pdf.text(`CUIT: ${proveedor?.identificacion_fiscal || '-'}`, 20, y);
+  y += 6;
+  pdf.text(`Factura Asociada: ${factura.tipo_comprobante || 'Factura'} ${factura.tipo_factura || ''} ${String(factura.punto_venta || 1).padStart(4, '0')}-${String(factura.numero_comprobante || factura.id_factura_proveedor).padStart(8, '0')}`, 20, y);
+  y += 12;
+
+  pdf.line(20, y, 190, y);
+  y += 8;
+
+  pdf.text('Concepto / Detalle', 20, y);
+  pdf.text('Importe', 160, y);
+  y += 6;
+  pdf.line(20, y, 190, y);
+  y += 8;
+
+  pdf.text(`Corrección por Nota de ${nota.tipo_nota} aplicada a comprobante`, 20, y);
+  pdf.text(`$${Number(nota.importe).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`, 160, y);
+  y += 15;
+
+  pdf.line(20, y, 190, y);
+  y += 10;
+
+  pdf.setFontSize(12);
+  pdf.text(`Importe Total: $${Number(nota.importe).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`, 130, y);
+
+  pdf.save(`nota_${nota.tipo_nota.toLowerCase()}_${nota.numero_comprobante.replace(/\s+/g, '_')}.pdf`);
 }

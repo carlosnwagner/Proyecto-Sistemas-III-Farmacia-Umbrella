@@ -298,8 +298,8 @@ export default function Depositos() {
                         fontSize: "0.68rem", 
                         fontWeight: "700", 
                         letterSpacing: "0.05em",
-                        padding: "0.15rem 0.5rem", 
-                        borderRadius: "4px", 
+                        padding: "0.15rem 0.6rem", 
+                        borderRadius: "9999px", // <-- Píldora redondeada
                         backgroundColor: activo ? "#f0fdf4" : "#fef2f2", 
                         color: activo ? "#15803d" : "#b91c1c",
                         border: `1px solid ${activo ? "#bbf7d0" : "#fecaca"}`,

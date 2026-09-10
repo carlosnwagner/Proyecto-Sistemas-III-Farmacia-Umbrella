@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import DataTable from "../components/DataTable.jsx";
-import { Plus, Search, Trash2, ArrowLeft, Save, CheckCircle, FileText, FileDown } from "lucide-react";
+import { Plus, Search, Trash2, ArrowLeft, CheckCircle, FileDown, Ban, X } from "lucide-react";
 import { supabase } from '../lib/supabase.js';
 import { showAlert } from "../lib/alerts.js";
 import { generateStandardPDF } from "../components/pdfGenerador.jsx";
@@ -11,45 +11,40 @@ import {
   getOrdenesCompra, 
   getOrdenCompraPorId, 
   registrarRecepcion 
-} from '../services/ordenes_compra.js'; //
+} from '../services/ordenes_compra.js';
 
-export default function OrdenesCompra() {
+export default function OrdenesCompraProv() {
   const [ordenes, setOrdenes] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [vistaActual, setVistaActual] = useState("listado"); 
-  
-  // SELECTS
+   
   const [proveedores, setProveedores] = useState([]);
   const [articulos, setArticulos] = useState([]);
   const [condiciones, setCondiciones] = useState([]);
   const [mediosPago, setMediosPago] = useState([]);
 
-  // Estados CREACIÓN
-  const [nuevaOrden, setNuevaOrden] = useState({ id_proveedor: "", id_condicion_pago: "", plazo_dias: "" });
+  const [nuevaOrden, setNuevaOrden] = useState({ id_proveedor: "", id_condicion_pago: "", plazo_dias: "", estadoInicial: "Borrador" });
   const [detalles, setDetalles] = useState([]);
 
-  // Estados SEGUIMIENTO
   const [ordenSeleccionada, setOrdenSeleccionada] = useState(null);
   const [detallesSeguimiento, setDetallesSeguimiento] = useState([]);
+  const [modalAbierto, setModalAbierto] = useState(false);
 
-  // --- CARGA INICIAL DE DATOS ---
   useEffect(() => {
     cargarDatosBase();
   }, []);
 
   const cargarDatosBase = async () => {
-    // Ordenes
     const { data: dataOrdenes } = await getOrdenesCompra();
     setOrdenes(dataOrdenes || []);
 
-    // catálogos activos
     const { data: dataCond } = await getCondicionesPago();
     setCondiciones(dataCond || []);
 
     const { data: dataMedios } = await getMediosPago();
     setMediosPago(dataMedios || []);
 
-    // Proveedores y artículos
     const { data: provs } = await supabase.from('proveedor').select('id_proveedor, razon_social').eq('estado', true);
     setProveedores(provs || []);
 
@@ -57,55 +52,66 @@ export default function OrdenesCompra() {
     setArticulos(arts || []);
   };
 
-  // --- LÓGICA DE LISTADO Y SEGUIMIENTO ---
   const handleVerOrden = async (orden) => {
     const { data, error } = await getOrdenCompraPorId(orden.id_orden_compra); 
     if (error) {
       showAlert.errorSave("Error al cargar detalle: " + error.message);
       return;
     }
-    
+     
     setOrdenSeleccionada(data);
-    
     const detallesFormateados = (data.detalle || []).map(d => ({
       ...d,
-      input_recepcion: d.cantidad_solicitada - d.cantidad_recibida // sugerencia de recepción
+      input_recepcion: d.cantidad_solicitada - d.cantidad_recibida
     }));
     setDetallesSeguimiento(detallesFormateados);
-    setVistaActual("seguimiento");
+    setModalAbierto(true);
   };
 
-  const actualizarInputRecepcion = (index, valor) => {
-    const nuevos = [...detallesSeguimiento];
-    nuevos[index].input_recepcion = Number(valor);
-    setDetallesSeguimiento(nuevos);
-  };
+  const handleCambiarEstado = async (nuevoEstado) => {
+    if (nuevoEstado === "Cancelada") {
+      const { data: facturaAsociada, error: errorFactura } = await supabase
+        .from('factura_proveedor')
+        .select('*')
+        .eq('id_orden_compra', ordenSeleccionada.id_orden_compra);
 
-  // REGISTRAR RECEPCIÓN
-  const handleConfirmarRecepcion = async () => {
-    const payloadRecepcion = detallesSeguimiento
-      .filter(d => d.input_recepcion > 0)
-      .map(d => ({
+      if (errorFactura) {
+        console.error("Error al verificar facturas:", errorFactura);
+      }
+
+      if (facturaAsociada && facturaAsociada.length > 0) {
+        showAlert.errorSave(
+          `Acción bloqueada: La Orden N° ${ordenSeleccionada.numero_orden} tiene una factura asociada. Debe registrar una Nota de Crédito antes de poder cancelar esta orden.`
+        );
+        return; 
+      }
+    }
+
+    if (nuevoEstado === "Recibida") {
+      const payloadRecepcion = detallesSeguimiento.map(d => ({
         id_detalle_orden: d.id_detalle_orden,
-        cantidad: d.input_recepcion
-      }));
+        cantidad: d.cantidad_solicitada - (d.cantidad_recibida || 0)
+      })).filter(d => d.cantidad > 0);
 
-    const { error } = await registrarRecepcion(ordenSeleccionada.id_orden_compra, payloadRecepcion);
-    
+      if (payloadRecepcion.length > 0) {
+        await registrarRecepcion(ordenSeleccionada.id_orden_compra, payloadRecepcion);
+      }
+    }
+
+    const { error } = await supabase
+      .from('orden_compra')
+      .update({ estado: nuevoEstado })
+      .eq('id_orden_compra', ordenSeleccionada.id_orden_compra);
+
     if (error) {
-      showAlert.errorSave(`Error en ${error.field || 'recepción'}: ${error.message}`); 
+      showAlert.errorSave("Error al actualizar estado: " + error.message);
     } else {
-      showAlert.successSave("Cantidades recibidas registradas con éxito.");
+      showAlert.successSave(`Orden actualizada a estado: ${nuevoEstado}`);
       cargarDatosBase();
-      setVistaActual("listado");
+      setModalAbierto(false);
     }
   };
 
-  const handleVincularFacturaMock = () => {
-    alert("La vinculación de facturas requiere el servicio de la HU30 (Facturas). Por ahora el backend pide un id_factura_proveedor ya existente."); 
-  };
-
-  // --- LÓGICA DE CREACIÓN ---
   const agregarFila = () => setDetalles([...detalles, { id_articulo: "", cantidad_solicitada: 1, precio_unitario: 0 }]); 
   
   const actualizarFila = (index, campo, valor) => {
@@ -122,7 +128,6 @@ export default function OrdenesCompra() {
   const calcularTotal = (lista) => lista.reduce((acc, det) => acc + (Number(det.cantidad_solicitada) * Number(det.precio_unitario)), 0);
   
   const handleGuardarOrden = async () => {
-    // Mapeamos el payload exacto para la validación del backend[cite: 11]
     const payload = {
       id_proveedor: Number(nuevaOrden.id_proveedor),
       id_condicion_pago: nuevaOrden.id_condicion_pago ? Number(nuevaOrden.id_condicion_pago) : undefined,
@@ -137,8 +142,15 @@ export default function OrdenesCompra() {
     const { data, error } = await createOrdenCompra(payload); 
 
     if (error) {
-      showAlert.errorSave(`Error en el campo ${error.field || 'general'}: ${error.message}`); 
+      showAlert.errorSave(`Error: ${error.message}`); 
     } else {
+      if (nuevaOrden.estadoInicial !== 'Emitida' && data?.id_orden_compra) {
+        await supabase
+          .from('orden_compra')
+          .update({ estado: nuevaOrden.estadoInicial })
+          .eq('id_orden_compra', data.id_orden_compra);
+      }
+
       showAlert.successAction("¡Orden registrada con éxito!");
       cargarDatosBase();
       setVistaActual("listado");
@@ -146,46 +158,27 @@ export default function OrdenesCompra() {
   };
 
   const generarPDFOrden = (orden, detalleOrden = []) => {
+    if (orden.estado === "Borrador") {
+      showAlert.errorSave("No se puede generar PDF de una orden en estado Borrador.");
+      return;
+    }
+
     const filasTabla = detalleOrden.map((d) => {
       const cantidad = Number(d.cantidad_solicitada || 0);
       const precio = Number(d.precio_unitario || 0);
-
-      return [
-        cantidad.toString(),
-        d.articulo?.nombre || "Artículo sin nombre",
-        `$ ${precio.toFixed(2)}`,
-        `$ ${(cantidad * precio).toFixed(2)}`
-      ];
+      return [cantidad.toString(), d.articulo?.nombre || "Concepto / Servicio", `$ ${precio.toFixed(2)}`, `$ ${(cantidad * precio).toFixed(2)}`];
     });
 
-    const total = detalleOrden.reduce(
-      (acc, d) =>
-        acc +
-        Number(d.cantidad_solicitada || 0) *
-          Number(d.precio_unitario || 0),
-      0
-    );
-
+    const total = detalleOrden.reduce((acc, d) => acc + Number(d.cantidad_solicitada || 0) * Number(d.precio_unitario || 0), 0);
     filasTabla.push(["TOTAL", "", "", `$ ${total.toFixed(2)}`]);
 
     generateStandardPDF({
       title: "ORDEN DE COMPRA",
       subtitle: `N° ${orden.numero_orden || "N/A"}`,
       infoData: [
-        {
-          label: "Proveedor",
-          value: orden.proveedor?.razon_social || "N/A"
-        },
-        {
-          label: "Fecha Emisión",
-          value: orden.fecha_emision
-            ? new Date(orden.fecha_emision).toLocaleDateString()
-            : "N/A"
-        },
-        {
-          label: "Estado",
-          value: orden.estado || "N/A"
-        }
+        { label: "Proveedor", value: orden.proveedor?.razon_social || "N/A" },
+        { label: "Fecha Emisión", value: orden.fecha_emision ? new Date(orden.fecha_emision).toLocaleDateString() : "N/A" },
+        { label: "Estado", value: orden.estado || "N/A" }
       ],
       columns: ["Cant.", "Descripción", "Precio Unit.", "Subtotal"],
       rows: filasTabla,
@@ -193,89 +186,72 @@ export default function OrdenesCompra() {
     });
   };
 
-  const handleDescargarPDF = async (orden) => {
-    const { data, error } = await getOrdenCompraPorId(orden.id_orden_compra);
-
-    if (error) {
-      showAlert.errorSave("Error al cargar la orden para generar el PDF: " + error.message);
-      return;
-    }
-
-    generarPDFOrden(data, data?.detalle || []);
-  };
-
   const BadgeEstado = ({ estado }) => {
     const colores = {
+      Borrador: { bg: "#f3f4f6", text: "#4b5563" },
       Emitida: { bg: "#e0f2fe", text: "#075985" },
-      Recibida: { bg: "#fef3c7", text: "#92400e" },
-      Facturada: { bg: "#dcfce7", text: "#166534" },
+      Pendiente: { bg: "#e0f2fe", text: "#075985" },
+      Recibida: { bg: "#dcfce7", text: "#166534" },
       Cerrada: { bg: "#f3f4f6", text: "#374151" },
+      Cancelada: { bg: "#fee2e2", text: "#b91c1c" },
     };
-    const c = colores[estado] || colores.Cerrada;
+    const c = colores[estado] || colores.Borrador;
     return <span style={{ backgroundColor: c.bg, color: c.text, padding: "0.25rem 0.625rem", borderRadius: "9999px", fontSize: "0.75rem", fontWeight: "600" }}>{estado}</span>;
   };
 
   const columns = [
-    { header: "N° ORDEN", render: (o) => <span style={{ fontWeight: "600" }}>{o.numero_orden}</span> },
+    { header: "N° ORDEN", render: (o) => <span style={{ fontWeight: "600", color: "#111827" }}>{o.numero_orden}</span> },
     { header: "PROVEEDOR", render: (o) => <span>{o.proveedor?.razon_social}</span> },
     { header: "FECHA", render: (o) => <span>{new Date(o.fecha_emision).toLocaleDateString()}</span> },
     { header: "ESTADO", render: (o) => <BadgeEstado estado={o.estado} /> },
-    {
-      header: "PDF",
-      render: (o) => (
-        <button
-          type="button"
-          onClick={() => handleDescargarPDF(o)}
-          title="Descargar orden en PDF"
-          style={{
-            backgroundColor: "#ffffff",
-            color: "#65482b",
-            border: "1px solid #65482b",
-            padding: "0.375rem 0.625rem",
-            borderRadius: "0.375rem",
-            fontWeight: "600",
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.375rem"
-          }}
-        >
-          <FileDown size={15} />
-          PDF
-        </button>
-      )
-    },
   ];
 
   const commonInputStyle = { padding: "0.5rem 0.75rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", fontSize: "0.875rem", outline: "none", width: "100%", boxSizing: "border-box" };
 
+  const ordenesFiltradas = ordenes.filter(o => {
+    const coincideTexto = o.numero_orden?.toLowerCase().includes(searchTerm.toLowerCase()) || o.proveedor?.razon_social?.toLowerCase().includes(searchTerm.toLowerCase());
+    const coincideEstado = filtroEstado === "TODOS" || o.estado === filtroEstado;
+    return coincideTexto && coincideEstado;
+  });
+
   return (
-    <>
+    <div style={{ padding: "1.5rem" }}>
       {vistaActual === "listado" && (
         <div>
           <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
             <div>
               <h1 style={{ fontSize: "1.9rem", fontWeight: "700", color: "#111827", margin: 0 }}>Órdenes de Compra</h1>
             </div>
-            <button onClick={() => { setNuevaOrden({ id_proveedor: "", id_condicion_pago: "", plazo_dias: "" }); setDetalles([]); setVistaActual("creacion"); }} style={{ backgroundColor: "#65482b", color: "#ffffff", border: "none", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+            <button onClick={() => { setNuevaOrden({ id_proveedor: "", id_condicion_pago: "", plazo_dias: "", estadoInicial: "Borrador" }); setDetalles([]); setVistaActual("creacion"); }} style={{ backgroundColor: "#65482b", color: "#ffffff", border: "none", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
               <Plus size={18} /> Nueva Orden
             </button>
           </header>
           
-          <div style={{ position: "relative", marginBottom: "1.5rem" }}>
-            <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
-            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db" }} />
+          <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <Search size={18} style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+              <input type="text" placeholder="Buscar por orden o proveedor..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ width: "100%", padding: "0.625rem 0.625rem 0.625rem 2.5rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)} style={{ padding: "0.625rem 1rem", borderRadius: "0.5rem", border: "1px solid #d1d5db", backgroundColor: "#ffffff", fontWeight: "600", outline: "none", cursor: "pointer" }}>
+                <option value="TODOS">Todos los estados</option>
+                <option value="Borrador">Borrador</option>
+                <option value="Emitida">Emitida</option>
+                <option value="Recibida">Recibida</option>
+                <option value="Cancelada">Cancelada</option>
+              </select>
+            </div>
           </div>
 
-          <DataTable columns={columns} data={ordenes.filter(o => o.numero_orden?.toLowerCase().includes(searchTerm.toLowerCase()) || o.proveedor?.razon_social?.toLowerCase().includes(searchTerm.toLowerCase()))} onEdit={handleVerOrden} />
+          <DataTable columns={columns} data={ordenesFiltradas} onEdit={handleVerOrden} />
         </div>
       )}
 
       {vistaActual === "creacion" && (
         <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "2rem", border: "1px solid #e5e7eb" }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1.5rem" }}>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: "700", margin: 0 }}>Emitir Orden</h2>
-            <button onClick={() => setVistaActual("listado")} style={{ background: "transparent", border: "none", fontWeight: "600", cursor: "pointer" }}><ArrowLeft size={18} /> Volver</button>
+            <h2 style={{ fontSize: "1.25rem", fontWeight: "700", margin: 0 }}>Emitir Orden de Compra / Gasto</h2>
+            <button onClick={() => setVistaActual("listado")} style={{ background: "transparent", border: "none", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}><ArrowLeft size={18} /> Volver</button>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
@@ -293,10 +269,17 @@ export default function OrdenesCompra() {
                 {condiciones.map(c => <option key={c.id_condicion_pago} value={c.id_condicion_pago}>{c.nombre}</option>)}
               </select>
             </div>
+            <div>
+              <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", marginBottom: "0.375rem" }}>Estado Inicial</label>
+              <select style={commonInputStyle} value={nuevaOrden.estadoInicial} onChange={(e) => setNuevaOrden({...nuevaOrden, estadoInicial: e.target.value})}>
+                <option value="Borrador">Borrador</option>
+                <option value="Emitida">Emitida (Pendiente)</option>
+              </select>
+            </div>
           </div>
 
           <div style={{ marginBottom: "2rem" }}>
-            <h3 style={{ fontSize: "1rem", fontWeight: "600", marginBottom: "1rem" }}>Artículos</h3>
+            <h3 style={{ fontSize: "1rem", fontWeight: "600", marginBottom: "1rem" }}>Artículos / Conceptos</h3>
             {detalles.map((det, index) => (
               <div key={index} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr auto", gap: "1rem", alignItems: "center", marginBottom: "0.75rem" }}>
                 <select style={commonInputStyle} value={det.id_articulo} onChange={(e) => actualizarFila(index, "id_articulo", e.target.value)}>
@@ -304,7 +287,7 @@ export default function OrdenesCompra() {
                   {articulos.map(a => <option key={a.id_articulo} value={a.id_articulo}>{a.nombre}</option>)}
                 </select>
                 <input type="number" min="1" placeholder="Cant" style={commonInputStyle} value={det.cantidad_solicitada} onChange={(e) => actualizarFila(index, "cantidad_solicitada", e.target.value)} />
-                <input type="number" step="any" placeholder="Precio U" style={commonInputStyle} value={det.precio_unitario} onChange={(e) => actualizarFila(index, "precio_unitario", e.target.value)} />
+                <input type="number" step="any" placeholder="Precio Unit." style={commonInputStyle} value={det.precio_unitario} onChange={(e) => actualizarFila(index, "precio_unitario", e.target.value)} />
                 <div style={{ fontWeight: "600", textAlign: "right" }}>${(det.cantidad_solicitada * det.precio_unitario).toLocaleString()}</div>
                 <button onClick={() => eliminarFila(index)} style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer" }}><Trash2 size={18} /></button>
               </div>
@@ -319,108 +302,74 @@ export default function OrdenesCompra() {
         </div>
       )}
 
-      {vistaActual === "seguimiento" && ordenSeleccionada && (
-        <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "2rem", border: "1px solid #e5e7eb" }}>
-          
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1.5rem" }}>
-            <div>
-              <h2 style={{ fontSize: "1.5rem", fontWeight: "700", display: "flex", alignItems: "center", gap: "1rem" }}>
-                Orden {ordenSeleccionada.numero_orden}
-                <BadgeEstado estado={ordenSeleccionada.estado} />
-              </h2>
-              <p>Proveedor: {ordenSeleccionada.proveedor?.razon_social}</p>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <button
-                type="button"
-                onClick={() => generarPDFOrden(ordenSeleccionada, detallesSeguimiento)}
-                style={{
-                  backgroundColor: "#65482b",
-                  color: "#ffffff",
-                  border: "none",
-                  padding: "0.625rem 0.875rem",
-                  borderRadius: "0.5rem",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem"
-                }}
-              >
-                <FileDown size={16} /> Descargar PDF
-              </button>
-              <button
-                onClick={() => setVistaActual("listado")}
-                style={{ background: "transparent", border: "none", fontWeight: "600", cursor: "pointer" }}
-              >
-                <ArrowLeft size={18} /> Volver
+      {/* Modal / Recuadro flotante limpio para ver detalle de la OC */}
+      {modalAbierto && ordenSeleccionada && (
+        <div style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000 }}>
+          <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "2rem", width: "90%", maxWidth: "800px", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <div>
+                <h2 style={{ fontSize: "1.5rem", fontWeight: "700", display: "flex", alignItems: "center", gap: "1rem", margin: 0 }}>
+                  Orden {ordenSeleccionada.numero_orden}
+                  <BadgeEstado estado={ordenSeleccionada.estado} />
+                </h2>
+                <p style={{ color: "#4b5563", marginTop: "0.25rem", margin: 0 }}>Proveedor: <strong>{ordenSeleccionada.proveedor?.razon_social}</strong></p>
+              </div>
+              <button onClick={() => setModalAbierto(false)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "#6b7280" }}>
+                <X size={24} />
               </button>
             </div>
-          </div>
 
-          <div style={{ marginBottom: "2.5rem" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.875rem" }}>
-              <thead style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
-                <tr>
-                  <th style={{ padding: "0.75rem" }}>Artículo</th>
-                  <th style={{ padding: "0.75rem", textAlign: "center" }}>Solicitado</th>
-                  <th style={{ padding: "0.75rem", textAlign: "center" }}>Ya Recibido</th>
-                  <th style={{ padding: "0.75rem", textAlign: "center", backgroundColor: "#e0f2fe" }}>Ingresar Recepción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detallesSeguimiento.map((det, idx) => (
-                  <tr key={idx} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                    <td style={{ padding: "0.75rem" }}>{det.articulo?.nombre}</td>
-                    <td style={{ padding: "0.75rem", textAlign: "center" }}>{det.cantidad_solicitada}</td>
-                    <td style={{ padding: "0.75rem", textAlign: "center", fontWeight: "bold" }}>{det.cantidad_recibida}</td>
-                    
-                    <td style={{ padding: "0.5rem", backgroundColor: "#f0f9ff", textAlign: "center" }}>
-                      <input 
-                        type="number" 
-                        min="0" 
-                        max={det.cantidad_solicitada - det.cantidad_recibida}
-                        value={det.input_recepcion} 
-                        onChange={(e) => actualizarInputRecepcion(idx, e.target.value)}
-                        disabled={ordenSeleccionada.estado !== "Emitida"}
-                        style={{ ...commonInputStyle, 
-                            width: "80px", 
-                            textAlign: "center",
-                            backgroundColor: ordenSeleccionada.estado !== "Emitida" ? "transparent" : "#ffffff" }}
-                      />
-                    </td>
+            <div style={{ marginBottom: "2rem" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.875rem" }}>
+                <thead style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                  <tr>
+                    <th style={{ padding: "0.75rem" }}>Concepto / Artículo</th>
+                    <th style={{ padding: "0.75rem", textAlign: "center" }}>Solicitado</th>
+                    <th style={{ padding: "0.75rem", textAlign: "center" }}>Ya Recibido</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            
-            {ordenSeleccionada.estado === "Emitida" && (
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
-                    <button 
-                    onClick={handleConfirmarRecepcion} 
-                    style={{ backgroundColor: "#0284c7", color: "#ffffff", border: "none", padding: "0.75rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer" }}
-                    >
-                    <CheckCircle size={18} style={{ marginRight: '8px' }} /> Confirmar Recepción
-                    </button>
-                </div>
-                )}
-          </div>
+                </thead>
+                <tbody>
+                  {detallesSeguimiento.map((det, idx) => (
+                    <tr key={idx} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                      <td style={{ padding: "0.75rem" }}>{det.articulo?.nombre || "Artículo / Servicio"}</td>
+                      <td style={{ padding: "0.75rem", textAlign: "center" }}>{det.cantidad_solicitada}</td>
+                      <td style={{ padding: "0.75rem", textAlign: "center", fontWeight: "bold" }}>{det.cantidad_recibida || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-          {(ordenSeleccionada.estado === "Recibida" || ordenSeleccionada.estado === "Facturada") && (
-             <div style={{ backgroundColor: "#f8fafc", padding: "1.5rem", borderRadius: "0.5rem", border: "1px solid #cbd5e1" }}>
-               <h3 style={{ fontSize: "1.125rem", fontWeight: "600", display: "flex", alignItems: "center" }}>
-                 <FileText size={20} style={{ marginRight: '8px' }}/> Vinculación de Factura
-               </h3>
-               <p style={{ fontSize: "0.875rem", color: "#64748b" }}>
-                 La creación de la factura requiere tener lista la HU30. 
-               </p>
-               <button onClick={handleVincularFacturaMock} style={{ backgroundColor: "#16a34a", color: "#ffffff", border: "none", padding: "0.75rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer", marginTop: "1rem" }}>
-                 Simular Vinculación (Mock)
-               </button>
-             </div>
-          )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
+              <div style={{ display: "flex", gap: "0.75rem" }}>
+                {ordenSeleccionada.estado !== "Borrador" && (
+                  <button type="button" onClick={() => generarPDFOrden(ordenSeleccionada, detallesSeguimiento)} style={{ backgroundColor: "#65482b", color: "#ffffff", border: "none", padding: "0.625rem 0.875rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <FileDown size={16} /> Descargar PDF
+                  </button>
+                )}
+                {ordenSeleccionada.estado === "Borrador" && (
+                  <button type="button" onClick={() => handleCambiarEstado("Emitida")} style={{ backgroundColor: "#0284c7", color: "#ffffff", border: "none", padding: "0.625rem 0.875rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer" }}>
+                    Pasar a Emitida (Pendiente)
+                  </button>
+                )}
+                {ordenSeleccionada.estado === "Emitida" && (
+                  <>
+                    <button type="button" onClick={() => handleCambiarEstado("Recibida")} style={{ backgroundColor: "#16a34a", color: "#ffffff", border: "none", padding: "0.625rem 0.875rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <CheckCircle size={16} /> Marcar Recibida
+                    </button>
+                    <button type="button" onClick={() => handleCambiarEstado("Cancelada")} style={{ backgroundColor: "#dc2626", color: "#ffffff", border: "none", padding: "0.625rem 0.875rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <Ban size={16} /> Cancelar Orden
+                    </button>
+                  </>
+                )}
+              </div>
+              <button onClick={() => setModalAbierto(false)} style={{ backgroundColor: "#334155", color: "#ffffff", border: "none", padding: "0.625rem 1.25rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer" }}>
+                Cerrar
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

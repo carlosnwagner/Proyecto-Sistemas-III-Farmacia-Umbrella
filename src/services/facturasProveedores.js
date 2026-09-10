@@ -90,13 +90,6 @@ function parseSupabaseError(error) {
   return { field: null, message: error?.message || 'Ocurrió un error al guardar la factura.' };
 }
 
-/**
- * FIX: el saldo pendiente de una factura no depende solo de los pagos aplicados
- * (detalle_pago). También lo modifican las notas de crédito/débito
- * (nota_credito_debito_proveedor): una nota de Crédito reduce el saldo, una de
- * Débito lo aumenta. Antes esta función solo restaba los pagos, por lo que una
- * nota registrada no se reflejaba en el listado de facturas. Ver getFacturasProveedores.
- */
 export async function getFacturasProveedores() {
   const { data, error } = await supabase
     .from('factura_proveedor')
@@ -151,9 +144,20 @@ export async function getFacturasProveedores() {
       const totalPagado = pagadoPorFactura.get(factura.id_factura_proveedor) || 0;
       const impactoNotas = impactoNotasPorFactura.get(factura.id_factura_proveedor) || 0;
       const saldo = Number(factura.importe_total) + impactoNotas - totalPagado;
+      
+      const saldoPendiente = Number(Math.max(0, saldo).toFixed(2));
+      let estadoUnificado = factura.estado;
+
+      if (saldoPendiente <= 0 && factura.estado !== 'Anulada') {
+        estadoUnificado = 'Pagada';
+      } else if (factura.estado === 'Pagada Total') {
+        estadoUnificado = 'Pagada';
+      }
+
       return {
         ...factura,
-        saldo_pendiente: Number(Math.max(0, saldo).toFixed(2)),
+        estado: estadoUnificado,
+        saldo_pendiente: saldoPendiente,
       };
     }),
     error: null,

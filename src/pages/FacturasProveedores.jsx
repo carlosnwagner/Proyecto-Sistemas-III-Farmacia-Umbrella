@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText, Plus, Search, RefreshCw } from "lucide-react";
+import { FileText, Plus, Search, RefreshCw, X } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
 import {
   createFacturaProveedor,
@@ -49,6 +49,7 @@ export default function FacturasProveedores() {
   const [facturaDetalle, setFacturaDetalle] = useState(null);
   const [detalleFactura, setDetalleFactura] = useState([]);
   const [loadingFacturaDetalle, setLoadingFacturaDetalle] = useState(false);
+  const [modalRegistroAbierto, setModalRegistroAbierto] = useState(false);
 
   async function loadData() {
     setLoading(true);
@@ -63,7 +64,7 @@ export default function FacturasProveedores() {
           .order("razon_social"),
         supabase
           .from("orden_compra")
-          .select("id_orden_compra, numero_orden, id_proveedor")
+          .select("id_orden_compra, numero_orden, id_proveedor, estado")
           .order("fecha_emision", { ascending: false }),
       ]);
 
@@ -71,7 +72,14 @@ export default function FacturasProveedores() {
       setError(
         `No se pudieron cargar las facturas: ${facturasResult.error.message}`,
       );
-    else setFacturas(facturasResult.data);
+    else {
+      // Normalizamos "Pagada Total" a "Pagada" para mantener coherencia
+      const normalizadas = (facturasResult.data || []).map(f => ({
+        ...f,
+        estado: f.estado === "Pagada Total" ? "Pagada" : f.estado
+      }));
+      setFacturas(normalizadas);
+    }
     setProveedores(proveedoresResult.data || []);
     setOrdenes(ordenesResult.data || []);
     if (proveedoresResult.error || ordenesResult.error) {
@@ -151,7 +159,10 @@ export default function FacturasProveedores() {
 
   const ordenesDisponibles = form.id_proveedor
     ? ordenes.filter(
-        (orden) => String(orden.id_proveedor) === String(form.id_proveedor),
+        (orden) =>
+          String(orden.id_proveedor) === String(form.id_proveedor) &&
+          orden.estado !== "Borrador" &&
+          orden.estado !== "Cancelada",
       )
     : [];
 
@@ -257,6 +268,7 @@ export default function FacturasProveedores() {
       });
       setDetallesOrden([]);
       setLoadingDetalle(false);
+      setModalRegistroAbierto(false);
       await loadData();
     }
     setSaving(false);
@@ -277,30 +289,59 @@ export default function FacturasProveedores() {
     );
   });
 
+  const BadgeEstado = ({ estado }) => {
+    const colores = {
+      Pendiente: { bg: "#e0f2fe", text: "#075985" },
+      "Pagada Parcial": { bg: "#dcfce7", text: "#166534" },
+      Pagada: { bg: "#166534", text: "#ffffff" },
+      Anulada: { bg: "#fee2e2", text: "#b91c1c" },
+      Cancelada: { bg: "#fee2e2", text: "#b91c1c" },
+    };
+    const c = colores[estado] || { bg: "#f3f4f6", text: "#4b5563" };
+    return (
+      <span
+        style={{
+          backgroundColor: c.bg,
+          color: c.text,
+          padding: "0.25rem 0.625rem",
+          borderRadius: "9999px",
+          fontSize: "0.75rem",
+          fontWeight: "600",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {estado}
+      </span>
+    );
+  };
+
   const inputStyle = {
     width: "100%",
     padding: "0.625rem 0.75rem",
     borderRadius: "0.5rem",
     border: "1px solid #d1d5db",
     boxSizing: "border-box",
+    fontSize: "0.875rem",
+    outline: "none",
+    backgroundColor: "#fff",
   };
+
   const labelStyle = {
     display: "block",
     color: "#374151",
     fontWeight: "600",
     fontSize: "0.875rem",
-    marginBottom: "0.4rem",
+    marginBottom: "0.375rem",
   };
 
   return (
-    <section style={{ maxWidth: "1250px", margin: "0 auto" }}>
+    <div style={{ padding: "1.5rem" }}>
       <header
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: "1rem",
-          marginBottom: "1.5rem",
+          alignItems: "center",
+          marginBottom: "2rem",
         }}
       >
         <div>
@@ -318,24 +359,46 @@ export default function FacturasProveedores() {
             Registrar comprobantes y consultar saldos pendientes
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleRefresh}
-          disabled={refreshing}
-          title="Actualizar facturas"
-          style={{
-            ...inputStyle,
-            width: "auto",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.4rem",
-            background: "#fff",
-            cursor: refreshing ? "wait" : "pointer",
-          }}
-        >
-          <RefreshCw size={16} />{" "}
-          {refreshing ? "Actualizando..." : "Actualizar"}
-        </button>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Actualizar facturas"
+            style={{
+              padding: "0.625rem 1rem",
+              borderRadius: "0.5rem",
+              border: "1px solid #d1d5db",
+              backgroundColor: "#ffffff",
+              fontWeight: "600",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              cursor: refreshing ? "wait" : "pointer",
+            }}
+          >
+            <RefreshCw size={16} />{" "}
+            {refreshing ? "Actualizando..." : "Actualizar"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setModalRegistroAbierto(true)}
+            style={{
+              backgroundColor: "#65482b",
+              color: "#ffffff",
+              border: "none",
+              padding: "0.625rem 1.25rem",
+              borderRadius: "0.5rem",
+              fontWeight: "600",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              cursor: "pointer",
+            }}
+          >
+            <Plus size={18} /> Registrar factura
+          </button>
+        </div>
       </header>
 
       {error && (
@@ -369,525 +432,11 @@ export default function FacturasProveedores() {
         </div>
       )}
 
-      <div
-        style={{
-          background: "#fff",
-          border: "1px solid #e5e7eb",
-          borderRadius: "0.75rem",
-          padding: "1.25rem",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <h2
-          style={{
-            color: "#111827",
-            fontSize: "1.15rem",
-            margin: "0 0 1rem",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-          }}
-        >
-          <Plus size={18} color="#65482b" /> Registrar factura
-        </h2>
-        <form onSubmit={handleSubmit}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-              gap: "1rem",
-              marginBottom: "1rem",
-            }}
-          >
-            <div>
-              <label style={labelStyle}>Punto de venta *</label>
-              <input
-                type="number"
-                min="1"
-                max="99999"
-                step="1"
-                value={form.punto_venta}
-                onChange={(e) => updateField("punto_venta", e.target.value)}
-                placeholder="00001"
-                style={inputStyle}
-                required
-              />
-              {fieldErrors.punto_venta && (
-                <small style={{ color: "#b91c1c" }}>
-                  {fieldErrors.punto_venta}
-                </small>
-              )}
-            </div>
-            <div>
-              <label style={labelStyle}>Número *</label>
-              <input
-                inputMode="numeric"
-                pattern="[0-9]{1,8}"
-                value={form.numero_comprobante}
-                onChange={(e) =>
-                  updateField(
-                    "numero_comprobante",
-                    e.target.value.replace(/\D/g, "").slice(0, 8),
-                  )
-                }
-                placeholder="00001234"
-                style={inputStyle}
-                required
-              />
-              {fieldErrors.numero_comprobante && (
-                <small style={{ color: "#b91c1c" }}>
-                  {fieldErrors.numero_comprobante}
-                </small>
-              )}
-              <small
-                style={{
-                  display: "block",
-                  color: "#6b7280",
-                  marginTop: "0.25rem",
-                }}
-              >
-                Comprobante:{" "}
-                {formatNumeroComprobante(
-                  form.punto_venta,
-                  form.numero_comprobante,
-                )}
-              </small>
-            </div>
-            <div>
-              <label style={labelStyle}>Tipo de comprobante *</label>
-              <select
-                value={form.tipo_comprobante}
-                onChange={(e) =>
-                  updateField("tipo_comprobante", e.target.value)
-                }
-                style={inputStyle}
-                required
-              >
-                {TIPOS_COMPROBANTE.map((tipo) => (
-                  <option key={tipo} value={tipo}>
-                    {tipo}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.tipo_comprobante && (
-                <small style={{ color: "#b91c1c" }}>
-                  {fieldErrors.tipo_comprobante}
-                </small>
-              )}
-            </div>
-            <div>
-              <label style={labelStyle}>Tipo de factura *</label>
-              <select
-                value={form.tipo_factura}
-                onChange={(e) => updateField("tipo_factura", e.target.value)}
-                style={inputStyle}
-                required
-              >
-                <option value="">Seleccionar letra</option>
-                {TIPOS_FACTURA.map((tipo) => (
-                  <option key={tipo} value={tipo}>
-                    {tipo}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.tipo_factura && (
-                <small style={{ color: "#b91c1c" }}>
-                  {fieldErrors.tipo_factura}
-                </small>
-              )}
-            </div>
-            <div>
-              <label style={labelStyle}>Proveedor *</label>
-              <select
-                value={form.id_proveedor}
-                onChange={(e) => {
-                  updateField("id_proveedor", e.target.value);
-                  updateField("id_orden_compra", "");
-                  setDetallesOrden([]);
-                }}
-                style={inputStyle}
-                required
-              >
-                <option value="">Seleccionar proveedor</option>
-                {proveedores.map((p) => (
-                  <option key={p.id_proveedor} value={p.id_proveedor}>
-                    {p.razon_social}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.id_proveedor && (
-                <small style={{ color: "#b91c1c" }}>
-                  {fieldErrors.id_proveedor}
-                </small>
-              )}
-            </div>
-            <div>
-              <label style={labelStyle}>Orden de compra</label>
-              <select
-                value={form.id_orden_compra}
-                onChange={(e) => handleOrdenChange(e.target.value)}
-                style={inputStyle}
-                disabled={!form.id_proveedor || loadingDetalle}
-              >
-                <option value="">Sin asociación</option>
-                {ordenesDisponibles.map((orden) => (
-                  <option
-                    key={orden.id_orden_compra}
-                    value={orden.id_orden_compra}
-                  >
-                    {orden.numero_orden}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Fecha *</label>
-              <input
-                type="date"
-                value={form.fecha}
-                onChange={(e) => updateField("fecha", e.target.value)}
-                style={inputStyle}
-                required
-              />
-              {fieldErrors.fecha && (
-                <small style={{ color: "#b91c1c" }}>{fieldErrors.fecha}</small>
-              )}
-            </div>
-          </div>
-          {form.id_orden_compra ? (
-            <div
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: "0.5rem",
-                padding: "0.75rem",
-                marginBottom: "1rem",
-                overflowX: "auto",
-              }}
-            >
-              <strong style={{ color: "#374151" }}>
-                Productos de la orden
-              </strong>
-              <p
-                style={{
-                  color: "#6b7280",
-                  fontSize: "0.85rem",
-                  margin: "0.35rem 0",
-                }}
-              >
-                Ingresá la cantidad de cada producto para calcular el importe.
-                Elegí la alícuota que figura en cada renglón.
-              </p>
-              {loadingDetalle ? (
-                <p style={{ color: "#6b7280" }}>Cargando productos...</p>
-              ) : (
-                <table
-                  style={{
-                    width: "100%",
-                    marginTop: "0.6rem",
-                    borderCollapse: "collapse",
-                    minWidth: "700px",
-                  }}
-                >
-                  <thead>
-                    <tr
-                      style={{
-                        textAlign: "left",
-                        color: "#6b7280",
-                        fontSize: "0.78rem",
-                      }}
-                    >
-                      <th>Producto</th>
-                      <th>Solicitada</th>
-                      <th>Cantidad</th>
-                      <th>Precio unitario</th>
-                      <th>IVA</th>
-                      <th>Importe</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detallesOrden.map((detalle, index) => (
-                      <tr key={detalle.id_detalle_orden}>
-                        <td style={{ padding: "0.5rem 0" }}>
-                          {detalle.articulo?.nombre || "Artículo"}
-                        </td>
-                        <td>{detalle.cantidad_solicitada}</td>
-                        <td>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.001"
-                            value={detalle.cantidad}
-                            onChange={(e) =>
-                              updateDetalle(index, "cantidad", e.target.value)
-                            }
-                            style={{ ...inputStyle, width: "115px" }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={detalle.precio_unitario}
-                            onChange={(e) =>
-                              updateDetalle(
-                                index,
-                                "precio_unitario",
-                                e.target.value,
-                              )
-                            }
-                            style={{ ...inputStyle, width: "115px" }}
-                          />
-                        </td>
-                        <td>
-                          <select
-                            value={detalle.tasa_iva}
-                            onChange={(e) =>
-                              updateDetalle(index, "tasa_iva", e.target.value)
-                            }
-                            style={{ ...inputStyle, width: "100px" }}
-                          >
-                            {ALICUOTAS_IVA.map((tasa) => (
-                              <option key={tasa} value={tasa}>
-                                {tasa === 0 ? "Exento" : `${tasa}%`}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          {currency(
-                            Number(detalle.cantidad || 0) *
-                              Number(detalle.precio_unitario || 0),
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          ) : (
-            <div
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: "0.5rem",
-                padding: "0.75rem",
-                marginBottom: "1rem",
-                overflowX: "auto",
-              }}
-            >
-              <strong style={{ color: "#374151" }}>Ítems de la factura</strong>
-              <p
-                style={{
-                  color: "#6b7280",
-                  fontSize: "0.85rem",
-                  margin: "0.35rem 0",
-                }}
-              >
-                Agregá servicios o gastos que no tienen orden de compra.
-              </p>
-              {detallesOrden.map((detalle, index) => (
-                <div
-                  key={`manual-${index}`}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
-                    gap: "0.75rem",
-                    alignItems: "end",
-                    marginTop: "0.75rem",
-                  }}
-                >
-                  <div>
-                    <label style={labelStyle}>Descripción</label>
-                    <input
-                      value={detalle.descripcion}
-                      onChange={(e) =>
-                        updateDetalle(index, "descripcion", e.target.value)
-                      }
-                      style={inputStyle}
-                      placeholder="Luz, gas, internet..."
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Cantidad</label>
-                    <input
-                      type="number"
-                      min="0.001"
-                      step="0.001"
-                      value={detalle.cantidad}
-                      onChange={(e) =>
-                        updateDetalle(index, "cantidad", e.target.value)
-                      }
-                      style={inputStyle}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Precio unitario</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={detalle.precio_unitario}
-                      onChange={(e) =>
-                        updateDetalle(index, "precio_unitario", e.target.value)
-                      }
-                      style={inputStyle}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>IVA</label>
-                    <select
-                      value={detalle.tasa_iva}
-                      onChange={(e) =>
-                        updateDetalle(index, "tasa_iva", e.target.value)
-                      }
-                      style={inputStyle}
-                    >
-                      {ALICUOTAS_IVA.map((tasa) => (
-                        <option key={tasa} value={tasa}>
-                          {tasa === 0 ? "Exento" : `${tasa}%`}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => eliminarDetalle(index)}
-                    style={{ ...inputStyle, width: "auto", cursor: "pointer" }}
-                  >
-                    Quitar
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={agregarDetalleManual}
-                style={{
-                  marginTop: "0.75rem",
-                  padding: "0.6rem 1rem",
-                  border: "1px solid #65482b",
-                  background: "#fff",
-                  color: "#65482b",
-                  borderRadius: "0.5rem",
-                  cursor: "pointer",
-                }}
-              >
-                <Plus size={16} /> Agregar ítem
-              </button>
-            </div>
-          )}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-              gap: "1rem",
-              alignItems: "end",
-            }}
-          >
-            {[
-              "subtotal",
-              "iva",
-              "conceptos_exentos",
-              "percepcion_iva",
-              "percepcion_iibb",
-            ].map((field) => (
-              <div key={field}>
-                <label style={labelStyle}>
-                  {field === "conceptos_exentos"
-                    ? "Exentos"
-                    : field === "percepcion_iva"
-                      ? "Percepción IVA (opcional)"
-                      : field === "percepcion_iibb"
-                        ? "Percepción IIBB (opcional)"
-                        : field.toUpperCase()}{" "}
-                  {field === "subtotal" || field === "iva" ? "*" : ""}
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={
-                    field === "subtotal" && tieneDetalles
-                      ? subtotalDetalle.toFixed(2)
-                      : field === "iva" && tieneDetalles
-                        ? ivaCalculado.toFixed(2)
-                        : field === "conceptos_exentos" && tieneDetalles
-                          ? exentosCalculado.toFixed(2)
-                          : form[field]
-                  }
-                  onChange={(e) => updateField(field, e.target.value)}
-                  style={inputStyle}
-                  required={field === "subtotal" || field === "iva"}
-                  readOnly={
-                    tieneDetalles &&
-                    (field === "subtotal" ||
-                      field === "iva" ||
-                      field === "conceptos_exentos")
-                  }
-                />
-              </div>
-            ))}
-            <div
-              style={{
-                background: "#f7f3ef",
-                borderRadius: "0.5rem",
-                padding: "0.625rem 0.75rem",
-                minHeight: "42px",
-                boxSizing: "border-box",
-              }}
-            >
-              <span style={{ ...labelStyle, marginBottom: "0.15rem" }}>
-                Total
-              </span>
-              <strong style={{ color: "#65482b", fontSize: "1.1rem" }}>
-                {currency(tieneDetalles ? totalCalculado : total)}
-              </strong>
-            </div>
-          </div>
-          {fieldErrors.importe_total && (
-            <small
-              style={{
-                color: "#b91c1c",
-                display: "block",
-                marginTop: "0.5rem",
-              }}
-            >
-              {fieldErrors.importe_total}
-            </small>
-          )}
-          <button
-            type="submit"
-            disabled={saving}
-            style={{
-              marginTop: "1rem",
-              background: "#65482b",
-              color: "#fff",
-              border: 0,
-              borderRadius: "0.5rem",
-              padding: "0.7rem 1.25rem",
-              fontWeight: "700",
-              cursor: saving ? "wait" : "pointer",
-            }}
-          >
-            {saving ? "Guardando..." : "Registrar factura"}
-          </button>
-        </form>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          gap: "1rem",
-          marginBottom: "1rem",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ position: "relative", flex: "1 1 300px" }}>
+      {/* Barra de Filtros y Búsqueda Principal */}
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
+        <div style={{ position: "relative", flex: 1 }}>
           <Search
-            size={17}
+            size={18}
             style={{
               position: "absolute",
               left: "0.75rem",
@@ -897,25 +446,43 @@ export default function FacturasProveedores() {
             }}
           />
           <input
-            type="search"
+            type="text"
             placeholder="Buscar por comprobante, proveedor u orden..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ ...inputStyle, paddingLeft: "2.4rem" }}
+            style={{
+              width: "100%",
+              padding: "0.625rem 0.625rem 0.625rem 2.5rem",
+              borderRadius: "0.5rem",
+              border: "1px solid #d1d5db",
+              boxSizing: "border-box",
+              backgroundColor: "#fff",
+              outline: "none",
+            }}
           />
         </div>
-        <select
-          value={estadoFiltro}
-          onChange={(e) => setEstadoFiltro(e.target.value)}
-          style={{ ...inputStyle, width: "180px" }}
-        >
-          <option value="Todos">Todos los estados</option>
-          {ESTADOS_FACTURA.map((estado) => (
-            <option key={estado} value={estado}>
-              {estado}
-            </option>
-          ))}
-        </select>
+        <div>
+          <select
+            value={estadoFiltro}
+            onChange={(e) => setEstadoFiltro(e.target.value)}
+            style={{
+              padding: "0.625rem 1rem",
+              borderRadius: "0.5rem",
+              border: "1px solid #d1d5db",
+              backgroundColor: "#ffffff",
+              fontWeight: "600",
+              outline: "none",
+              cursor: "pointer",
+            }}
+          >
+            <option value="Todos">Todos los estados</option>
+            {ESTADOS_FACTURA.map((estado) => (
+              <option key={estado} value={estado}>
+                {estado}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {loading ? (
@@ -947,11 +514,17 @@ export default function FacturasProveedores() {
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: "1000px",
+              textAlign: "left",
+              fontSize: "0.875rem",
             }}
           >
-            <thead>
-              <tr style={{ background: "#f9fafb", textAlign: "left" }}>
+            <thead
+              style={{
+                backgroundColor: "#f9fafb",
+                borderBottom: "1px solid #e5e7eb",
+              }}
+            >
+              <tr>
                 {[
                   "Comprobante",
                   "Proveedor",
@@ -960,12 +533,11 @@ export default function FacturasProveedores() {
                   "Total",
                   "Saldo",
                   "Estado",
-                  "Visualizar",
                 ].map((heading) => (
                   <th
                     key={heading}
                     style={{
-                      padding: "0.8rem",
+                      padding: "0.75rem",
                       color: "#6b7280",
                       fontSize: "0.75rem",
                       textTransform: "uppercase",
@@ -980,33 +552,40 @@ export default function FacturasProveedores() {
               {facturasFiltradas.map((factura) => (
                 <tr
                   key={factura.id_factura_proveedor}
-                  style={{ borderTop: "1px solid #f1f5f9" }}
+                  onClick={() => handleVerDetalle(factura)}
+                  style={{
+                    borderBottom: "1px solid #e5e7eb",
+                    cursor: "pointer",
+                    transition: "background-color 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                 >
-                  <td style={{ padding: "0.8rem" }}>
-                    <strong>
+                  <td style={{ padding: "0.75rem" }}>
+                    <strong style={{ color: "#111827" }}>
                       {factura.tipo_comprobante} {factura.tipo_factura || ""}
                     </strong>
                     <br />
-                    <span style={{ color: "#6b7280", fontSize: "0.85rem" }}>
+                    <span style={{ color: "#6b7280", fontSize: "0.8rem" }}>
                       {formatNumeroComprobante(
                         factura.punto_venta,
                         factura.numero_comprobante,
                       )}
                     </span>
                   </td>
-                  <td style={{ padding: "0.8rem" }}>
+                  <td style={{ padding: "0.75rem" }}>
                     {factura.proveedor?.razon_social || "-"}
                   </td>
-                  <td style={{ padding: "0.8rem" }}>{factura.fecha}</td>
-                  <td style={{ padding: "0.8rem" }}>
+                  <td style={{ padding: "0.75rem" }}>{factura.fecha}</td>
+                  <td style={{ padding: "0.75rem" }}>
                     {factura.orden_compra?.numero_orden || "Sin orden"}
                   </td>
-                  <td style={{ padding: "0.8rem", fontWeight: "600" }}>
+                  <td style={{ padding: "0.75rem", fontWeight: "600" }}>
                     {currency(factura.importe_total)}
                   </td>
                   <td
                     style={{
-                      padding: "0.8rem",
+                      padding: "0.75rem",
                       fontWeight: "600",
                       color:
                         factura.saldo_pendiente > 0 ? "#b45309" : "#166534",
@@ -1014,37 +593,8 @@ export default function FacturasProveedores() {
                   >
                     {currency(factura.saldo_pendiente)}
                   </td>
-                  <td style={{ padding: "0.8rem" }}>
-                    <span
-                      style={{
-                        background:
-                          factura.estado === "Pagada" ? "#dcfce7" : "#fef3c7",
-                        color:
-                          factura.estado === "Pagada" ? "#166534" : "#92400e",
-                        borderRadius: "999px",
-                        padding: "0.25rem 0.6rem",
-                        fontSize: "0.78rem",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {factura.estado}
-                    </span>
-                  </td>
-                  <td style={{ padding: "0.8rem" }}>
-                    <button
-                      type="button"
-                      onClick={() => handleVerDetalle(factura)}
-                      style={{
-                        border: "1px solid #65482b",
-                        background: "#fff",
-                        color: "#65482b",
-                        borderRadius: "0.4rem",
-                        padding: "0.35rem 0.6rem",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Visualizar
-                    </button>
+                  <td style={{ padding: "0.75rem" }}>
+                    <BadgeEstado estado={factura.estado} />
                   </td>
                 </tr>
               ))}
@@ -1052,67 +602,16 @@ export default function FacturasProveedores() {
           </table>
         </div>
       )}
-      {facturasFiltradas.length > 0 && (
-        <div
-          style={{
-            marginTop: "1rem",
-            display: "flex",
-            gap: "0.75rem",
-            alignItems: "center",
-          }}
-        >
-          <select
-            aria-label="Seleccionar factura para ver detalle"
-            style={{ ...inputStyle, maxWidth: "420px" }}
-            defaultValue=""
-          >
-            <option value="" disabled>
-              Seleccionar factura para ver detalle
-            </option>
-            {facturasFiltradas.map((factura) => (
-              <option
-                key={factura.id_factura_proveedor}
-                value={factura.id_factura_proveedor}
-              >
-                {factura.tipo_comprobante} {factura.tipo_factura || ""} -{" "}
-                {formatNumeroComprobante(
-                  factura.punto_venta,
-                  factura.numero_comprobante,
-                )}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={(event) => {
-              const factura = facturasFiltradas.find(
-                (item) =>
-                  String(item.id_factura_proveedor) ===
-                  event.currentTarget.previousElementSibling.value,
-              );
-              if (factura) handleVerDetalle(factura);
-            }}
-            style={{
-              padding: "0.625rem 0.9rem",
-              border: "1px solid #65482b",
-              background: "#fff",
-              color: "#65482b",
-              borderRadius: "0.5rem",
-              cursor: "pointer",
-            }}
-          >
-            Ver detalle
-          </button>
-        </div>
-      )}
-      {facturaDetalle && (
+
+      {/* Modal para Registrar Factura */}
+      {modalRegistroAbierto && (
         <div
           role="dialog"
           aria-modal="true"
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.35)",
+            background: "rgba(0,0,0,0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1124,11 +623,553 @@ export default function FacturasProveedores() {
             style={{
               background: "#fff",
               borderRadius: "0.75rem",
-              padding: "1.25rem",
+              padding: "2rem",
+              width: "100%",
+              maxWidth: "900px",
+              maxHeight: "90vh",
+              overflow: "auto",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "1.5rem",
+              }}
+            >
+              <h2
+                style={{
+                  color: "#111827",
+                  fontSize: "1.25rem",
+                  margin: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
+              >
+                <Plus size={18} color="#65482b" /> Registrar factura
+              </h2>
+              <button
+                type="button"
+                onClick={() => setModalRegistroAbierto(false)}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: "#6b7280",
+                }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                  gap: "1rem",
+                  marginBottom: "1rem",
+                }}
+              >
+                <div>
+                  <label style={labelStyle}>Punto de venta *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99999"
+                    step="1"
+                    value={form.punto_venta}
+                    onChange={(e) => updateField("punto_venta", e.target.value)}
+                    placeholder="00001"
+                    style={inputStyle}
+                    required
+                  />
+                  {fieldErrors.punto_venta && (
+                    <small style={{ color: "#b91c1c" }}>
+                      {fieldErrors.punto_venta}
+                    </small>
+                  )}
+                </div>
+                <div>
+                  <label style={labelStyle}>Número *</label>
+                  <input
+                    inputMode="numeric"
+                    pattern="[0-9]{1,8}"
+                    value={form.numero_comprobante}
+                    onChange={(e) =>
+                      updateField(
+                        "numero_comprobante",
+                        e.target.value.replace(/\D/g, "").slice(0, 8),
+                      )
+                    }
+                    placeholder="00001234"
+                    style={inputStyle}
+                    required
+                  />
+                  {fieldErrors.numero_comprobante && (
+                    <small style={{ color: "#b91c1c" }}>
+                      {fieldErrors.numero_comprobante}
+                    </small>
+                  )}
+                  <small
+                    style={{
+                      display: "block",
+                      color: "#6b7280",
+                      marginTop: "0.25rem",
+                    }}
+                  >
+                    Comprobante:{" "}
+                    {formatNumeroComprobante(
+                      form.punto_venta,
+                      form.numero_comprobante,
+                    )}
+                  </small>
+                </div>
+                <div>
+                  <label style={labelStyle}>Tipo de comprobante *</label>
+                  <select
+                    value={form.tipo_comprobante}
+                    onChange={(e) =>
+                      updateField("tipo_comprobante", e.target.value)
+                    }
+                    style={inputStyle}
+                    required
+                  >
+                    {TIPOS_COMPROBANTE.map((tipo) => (
+                      <option key={tipo} value={tipo}>
+                        {tipo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Tipo de factura *</label>
+                  <select
+                    value={form.tipo_factura}
+                    onChange={(e) => updateField("tipo_factura", e.target.value)}
+                    style={inputStyle}
+                    required
+                  >
+                    <option value="">Seleccionar letra</option>
+                    {TIPOS_FACTURA.map((tipo) => (
+                      <option key={tipo} value={tipo}>
+                        {tipo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Proveedor *</label>
+                  <select
+                    value={form.id_proveedor}
+                    onChange={(e) => {
+                      updateField("id_proveedor", e.target.value);
+                      updateField("id_orden_compra", "");
+                      setDetallesOrden([]);
+                    }}
+                    style={inputStyle}
+                    required
+                  >
+                    <option value="">Seleccionar proveedor</option>
+                    {proveedores.map((p) => (
+                      <option key={p.id_proveedor} value={p.id_proveedor}>
+                        {p.razon_social}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Orden de compra</label>
+                  <select
+                    value={form.id_orden_compra}
+                    onChange={(e) => handleOrdenChange(e.target.value)}
+                    style={inputStyle}
+                    disabled={!form.id_proveedor || loadingDetalle}
+                  >
+                    <option value="">Sin asociación</option>
+                    {ordenesDisponibles.map((orden) => (
+                      <option
+                        key={orden.id_orden_compra}
+                        value={orden.id_orden_compra}
+                      >
+                        {orden.numero_orden}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Fecha *</label>
+                  <input
+                    type="date"
+                    value={form.fecha}
+                    onChange={(e) => updateField("fecha", e.target.value)}
+                    style={inputStyle}
+                    required
+                  />
+                </div>
+              </div>
+
+              {form.id_orden_compra ? (
+                <div
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "0.5rem",
+                    padding: "0.75rem",
+                    marginBottom: "1rem",
+                    overflowX: "auto",
+                  }}
+                >
+                  <strong style={{ color: "#374151" }}>
+                    Productos de la orden
+                  </strong>
+                  <p
+                    style={{
+                      color: "#6b7280",
+                      fontSize: "0.85rem",
+                      margin: "0.35rem 0",
+                    }}
+                  >
+                    Ingresá la cantidad de cada producto para calcular el importe.
+                    Elegí la alícuota que figura en cada renglón.
+                  </p>
+                  {loadingDetalle ? (
+                    <p style={{ color: "#6b7280" }}>Cargando productos...</p>
+                  ) : (
+                    <table
+                      style={{
+                        width: "100%",
+                        marginTop: "0.6rem",
+                        borderCollapse: "collapse",
+                        minWidth: "700px",
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            textAlign: "left",
+                            color: "#6b7280",
+                            fontSize: "0.78rem",
+                          }}
+                        >
+                          <th>Producto</th>
+                          <th>Solicitada</th>
+                          <th>Cantidad</th>
+                          <th>Precio unitario</th>
+                          <th>IVA</th>
+                          <th>Importe</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detallesOrden.map((detalle, index) => (
+                          <tr key={detalle.id_detalle_orden}>
+                            <td style={{ padding: "0.5rem 0" }}>
+                              {detalle.articulo?.nombre || "Artículo"}
+                            </td>
+                            <td>{detalle.cantidad_solicitada}</td>
+                            <td>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.001"
+                                value={detalle.cantidad}
+                                onChange={(e) =>
+                                  updateDetalle(index, "cantidad", e.target.value)
+                                }
+                                style={{ ...inputStyle, width: "115px" }}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={detalle.precio_unitario}
+                                onChange={(e) =>
+                                  updateDetalle(
+                                    index,
+                                    "precio_unitario",
+                                    e.target.value,
+                                  )
+                                }
+                                style={{ ...inputStyle, width: "115px" }}
+                              />
+                            </td>
+                            <td>
+                              <select
+                                value={detalle.tasa_iva}
+                                onChange={(e) =>
+                                  updateDetalle(index, "tasa_iva", e.target.value)
+                                }
+                                style={{ ...inputStyle, width: "100px" }}
+                              >
+                                {ALICUOTAS_IVA.map((tasa) => (
+                                  <option key={tasa} value={tasa}>
+                                    {tasa === 0 ? "Exento" : `${tasa}%`}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              {currency(
+                                Number(detalle.cantidad || 0) *
+                                  Number(detalle.precio_unitario || 0),
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "0.5rem",
+                    padding: "0.75rem",
+                    marginBottom: "1rem",
+                    overflowX: "auto",
+                  }}
+                >
+                  <strong style={{ color: "#374151" }}>Ítems de la factura</strong>
+                  <p
+                    style={{
+                      color: "#6b7280",
+                      fontSize: "0.85rem",
+                      margin: "0.35rem 0",
+                    }}
+                  >
+                    Agregá servicios o gastos que no tienen orden de compra.
+                  </p>
+                  {detallesOrden.map((detalle, index) => (
+                    <div
+                      key={`manual-${index}`}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
+                        gap: "0.75rem",
+                        alignItems: "end",
+                        marginTop: "0.75rem",
+                      }}
+                    >
+                      <div>
+                        <label style={labelStyle}>Descripción</label>
+                        <input
+                          value={detalle.descripcion}
+                          onChange={(e) =>
+                            updateDetalle(index, "descripcion", e.target.value)
+                          }
+                          style={inputStyle}
+                          placeholder="Luz, gas, internet..."
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Cantidad</label>
+                        <input
+                          type="number"
+                          min="0.001"
+                          step="0.001"
+                          value={detalle.cantidad}
+                          onChange={(e) =>
+                            updateDetalle(index, "cantidad", e.target.value)
+                          }
+                          style={inputStyle}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Precio unitario</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={detalle.precio_unitario}
+                          onChange={(e) =>
+                            updateDetalle(index, "precio_unitario", e.target.value)
+                          }
+                          style={inputStyle}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>IVA</label>
+                        <select
+                          value={detalle.tasa_iva}
+                          onChange={(e) =>
+                            updateDetalle(index, "tasa_iva", e.target.value)
+                          }
+                          style={inputStyle}
+                        >
+                          {ALICUOTAS_IVA.map((tasa) => (
+                            <option key={tasa} value={tasa}>
+                              {tasa === 0 ? "Exento" : `${tasa}%`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => eliminarDetalle(index)}
+                        style={{ ...inputStyle, width: "auto", cursor: "pointer" }}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={agregarDetalleManual}
+                    style={{
+                      marginTop: "0.75rem",
+                      padding: "0.6rem 1rem",
+                      border: "1px solid #65482b",
+                      background: "#fff",
+                      color: "#65482b",
+                      borderRadius: "0.5rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Plus size={16} /> Agregar ítem
+                  </button>
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                  gap: "1rem",
+                  alignItems: "end",
+                }}
+              >
+                {[
+                  "subtotal",
+                  "iva",
+                  "conceptos_exentos",
+                  "percepcion_iva",
+                  "percepcion_iibb",
+                ].map((field) => (
+                  <div key={field}>
+                    <label style={labelStyle}>
+                      {field === "conceptos_exentos"
+                        ? "Exentos"
+                        : field === "percepcion_iva"
+                          ? "Percepción IVA"
+                          : field === "percepcion_iibb"
+                            ? "Percepción IIBB"
+                            : field.toUpperCase()}{" "}
+                      {field === "subtotal" || field === "iva" ? "*" : ""}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={
+                        field === "subtotal" && tieneDetalles
+                          ? subtotalDetalle.toFixed(2)
+                          : field === "iva" && tieneDetalles
+                            ? ivaCalculado.toFixed(2)
+                            : field === "conceptos_exentos" && tieneDetalles
+                              ? exentosCalculado.toFixed(2)
+                              : form[field]
+                      }
+                      onChange={(e) => updateField(field, e.target.value)}
+                      style={inputStyle}
+                      required={field === "subtotal" || field === "iva"}
+                      readOnly={
+                        tieneDetalles &&
+                        (field === "subtotal" ||
+                          field === "iva" ||
+                          field === "conceptos_exentos")
+                      }
+                    />
+                  </div>
+                ))}
+                <div
+                  style={{
+                    background: "#f7f3ef",
+                    borderRadius: "0.5rem",
+                    padding: "0.625rem 0.75rem",
+                    minHeight: "42px",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <span style={{ ...labelStyle, marginBottom: "0.15rem" }}>
+                    Total
+                  </span>
+                  <strong style={{ color: "#65482b", fontSize: "1.1rem" }}>
+                    {currency(tieneDetalles ? totalCalculado : total)}
+                  </strong>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem", marginTop: "1.5rem" }}>
+                <button
+                  type="button"
+                  onClick={() => setModalRegistroAbierto(false)}
+                  style={{
+                    background: "#e5e7eb",
+                    color: "#374151",
+                    border: 0,
+                    borderRadius: "0.5rem",
+                    padding: "0.7rem 1.25rem",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  style={{
+                    background: "#65482b",
+                    color: "#fff",
+                    border: 0,
+                    borderRadius: "0.5rem",
+                    padding: "0.7rem 1.25rem",
+                    fontWeight: "700",
+                    cursor: saving ? "wait" : "pointer",
+                  }}
+                >
+                  {saving ? "Guardando..." : "Registrar factura"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Detalle de Factura */}
+      {facturaDetalle && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "1rem",
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "0.75rem",
+              padding: "2rem",
               width: "100%",
               maxWidth: "850px",
               maxHeight: "85vh",
               overflow: "auto",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
             }}
           >
             <div
@@ -1139,7 +1180,7 @@ export default function FacturasProveedores() {
               }}
             >
               <div>
-                <h2 style={{ margin: 0 }}>Detalle de factura</h2>
+                <h2 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "700" }}>Detalle de factura</h2>
                 <p style={{ color: "#6b7280", margin: "0.35rem 0 1rem" }}>
                   {facturaDetalle.tipo_comprobante}{" "}
                   {facturaDetalle.tipo_factura || ""} -{" "}
@@ -1157,10 +1198,10 @@ export default function FacturasProveedores() {
                   border: 0,
                   background: "transparent",
                   cursor: "pointer",
-                  fontSize: "1.5rem",
+                  color: "#6b7280",
                 }}
               >
-                X
+                <X size={24} />
               </button>
             </div>
             {loadingFacturaDetalle ? (
@@ -1172,7 +1213,7 @@ export default function FacturasProveedores() {
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
-                  <tr>
+                  <tr style={{ background: "#f9fafb" }}>
                     <th style={{ textAlign: "left", padding: "0.6rem" }}>
                       Descripción
                     </th>
@@ -1220,27 +1261,35 @@ export default function FacturasProveedores() {
             )}
             <div
               style={{
-                marginTop: "1rem",
+                marginTop: "1.5rem",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                borderTop: "1px solid #e5e7eb",
+                paddingTop: "1rem",
               }}
             >
-              <strong>Total: {currency(facturaDetalle.importe_total)}</strong>
-              <span style={{ color: "#6b7280", display: "inline-flex", alignItems: "center", gap: "0.6rem" }}>
-                Descarga disponible en PDF
+              <strong style={{ fontSize: "1.1rem" }}>Total: {currency(facturaDetalle.importe_total)}</strong>
+              <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
                 <button
                   type="button"
                   onClick={() => downloadFacturaPdf(facturaDetalle, detalleFactura)}
-                  style={{ border: 0, background: "#65482b", color: "#fff", borderRadius: "0.4rem", padding: "0.45rem 0.7rem", cursor: "pointer", fontWeight: "700" }}
+                  style={{ border: 0, background: "#65482b", color: "#fff", borderRadius: "0.5rem", padding: "0.6rem 1rem", cursor: "pointer", fontWeight: "700", display: "flex", alignItems: "center", gap: "0.5rem" }}
                 >
                   Descargar PDF
                 </button>
-              </span>
+                <button
+                  type="button"
+                  onClick={() => setFacturaDetalle(null)}
+                  style={{ background: "#334155", color: "#fff", border: 0, borderRadius: "0.5rem", padding: "0.6rem 1.25rem", fontWeight: "600", cursor: "pointer" }}
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }
