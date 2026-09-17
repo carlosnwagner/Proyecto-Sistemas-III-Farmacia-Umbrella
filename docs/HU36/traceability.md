@@ -56,5 +56,5 @@ Las siguientes decisiones definen el alcance inicial de la HU36:
 | DP01 | ¿El precio de la lista incluye IVA? | Si, precio final al publico; el sistema obtiene el desglose para el comprobante. |
 | DP02 | ¿Puede haber mas de una lista general vigente? | No. |
 | DP03 | ¿La lista puede depender de la sucursal? | No, en todas las sucursales se manejan los mismos precios. |
-| DP04 | ¿Como se cargaran las listas? | La migracion crea las tablas y se utiliza una pantalla administrativa minima para gestionar las listas. |
+| DP04 | ¿Como se cargaran las listas? | La migracion adapta las tablas existentes y se utiliza una pantalla administrativa minima para gestionar las listas. |
 | DP05 | ¿Que regla exacta activa las percepciones? | Las percepciones de IVA e IIBB serán ingresadas manualmente por un usuario autorizado. Los importes deben ser mayores o iguales a cero y se incorporarán al total de la venta. El sistema no determinará automáticamente si corresponden ni calculará sus porcentajes durante este sprint. |
