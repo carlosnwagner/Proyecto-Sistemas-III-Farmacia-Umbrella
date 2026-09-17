@@ -5,21 +5,27 @@ import {
   crearCliente, 
   getProductosConStock, 
   confirmarVenta, 
+  getHistorialVentas,
   downloadComprobanteVentaPdf 
 } from '../services/ventas';
 import { showAlert } from '../lib/alerts.js';
-import { ShoppingCart, User, Trash2, CheckCircle2, Download, ArrowLeft } from 'lucide-react';
+import { ShoppingCart, User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText } from 'lucide-react';
 import '../App.css';
 
 export default function RegistrarVenta() {
   const [cargando, setCargando] = useState(false);
-  const [paso, setPaso] = useState(1); 
+  const [paso, setPaso] = useState(1); // 1: Panel Principal / Historial, 2: Selector de Depósito, 3: POS / Carrito, 4: Éxito
 
   // Contexto
   const [sucursales, setSucursales] = useState([]);
   const [depositos, setDepositos] = useState([]);
   const [sucursalSeleccionada, setSucursalSeleccionada] = useState('');
   const [depositoSeleccionado, setDepositoSeleccionado] = useState('');
+
+  // Historial y Métricas
+  const [historialVentas, setHistorialVentas] = useState([]);
+  const [filtroTipoFactura, setFiltroTipoFactura] = useState('TODAS');
+  const [busquedaHistorial, setBusquedaHistorial] = useState('');
 
   // Cliente (HU37)
   const [busquedaCliente, setBusquedaCliente] = useState('');
@@ -49,6 +55,8 @@ export default function RegistrarVenta() {
         setSucursales(res.sucursales || []);
         setDepositos(res.depositos || []);
       }
+      const hist = await getHistorialVentas();
+      setHistorialVentas(hist.data || []);
       setCargando(false);
     }
     init();
@@ -75,14 +83,14 @@ export default function RegistrarVenta() {
     const { data } = await getProductosConStock(depositoSeleccionado);
     setProductosDisponibles(data || []);
     setCargando(false);
-    setPaso(2);
+    setPaso(3);
   };
 
   // Validación de Razón Social sin números e Identificación (DNI o CUIT)
   const handleGuardarCliente = async (e) => {
     e.preventDefault();
     const nombreTrim = tempCliente.nombre.trim();
-    
+     
     if (!nombreTrim) return showAlert.errorSave('El nombre o razón social es obligatorio.');
     if (/\d/.test(nombreTrim)) {
       return showAlert.errorSave('El nombre o razón social no puede contener números.');
@@ -205,7 +213,7 @@ export default function RegistrarVenta() {
 
   const handleConfirmarVentaFinal = async () => {
     if (carrito.length === 0) return showAlert.errorSave('El carrito está vacío.');
-    
+     
     const totalVenta = resumenImpuestos.total;
     if (medioPago === 'Efectivo') {
       const recibido = Number(montoRecibido);
@@ -239,15 +247,43 @@ export default function RegistrarVenta() {
     } else {
       showAlert.successSave('¡Venta confirmada y stock actualizado con éxito!');
       setVentaConfirmada(data);
+      const hist = await getHistorialVentas();
+      setHistorialVentas(hist.data || []);
       setPaso(4);
     }
     setCargando(false);
   };
 
+  // Filtrado de ventas para el historial
+  const ventasFiltradas = useMemo(() => {
+    return historialVentas.filter(v => {
+      const matchTipo = filtroTipoFactura === 'TODAS' || v.tipo_comprobante === filtroTipoFactura;
+      const matchBusqueda = !busquedaHistorial || 
+        String(v.numero_comprobante).includes(busquedaHistorial) || 
+        (v.cliente?.nombre || 'Consumidor Final').toLowerCase().includes(busquedaHistorial.toLowerCase());
+      return matchTipo && matchBusqueda;
+    });
+  }, [historialVentas, filtroTipoFactura, busquedaHistorial]);
+
+  // Historial Semanal (últimos 7 días)
+  const estadisticasSemanales = useMemo(() => {
+    const ahora = new Date();
+    const hace7Dias = new Date();
+    hace7Dias.setDate(ahora.getDate() - 7);
+
+    const ventasSemana = historialVentas.filter(v => new Date(v.fecha) >= hace7Dias);
+    const totalMonto = ventasSemana.reduce((acc, v) => acc + Number(v.importe_total || 0), 0);
+    
+    return {
+      cantidad: ventasSemana.length,
+      montoTotal: totalMonto
+    };
+  }, [historialVentas]);
+
   const inputStyle = {
     width: "100%",
     padding: "0.625rem 0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.375rem",
     border: "1px solid #d1d5db",
     boxSizing: "border-box",
     fontSize: "0.875rem",
@@ -256,81 +292,215 @@ export default function RegistrarVenta() {
   };
 
   return (
-    <div style={{ padding: '1.5rem' }}>
-      <header style={{ marginBottom: '2rem' }}>
-        <h1 style={{ margin: 0, fontSize: '1.9rem', fontWeight: '700', color: '#111827' }}>
-          Punto de Venta — Facturación Presencial
-        </h1>
-        <p style={{ color: '#6b7280', margin: '0.25rem 0 0' }}>
-          Gestión de operaciones, control de stock en tiempo real y emisión de comprobantes fiscales
-        </p>
-      </header>
-
-      {/* PASO 1: Selección de Sucursal y Depósito */}
+    <div style={{ padding: '1.5rem', width: '100%', boxSizing: 'border-box' }}>
+      
+      {/* PASO 1: Panel Principal / Historial a ancho completo */}
       {paso === 1 && (
-        <div style={{ backgroundColor: '#ffffff', borderRadius: '0.75rem', border: '1px solid #e5e7eb', padding: '1.5rem', marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', maxWidth: '500px' }}>
-          <h2 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1.25rem', color: '#111827', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <ShoppingCart size={18} /> Iniciar Operación de Venta
-          </h2>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.875rem', color: '#374151' }}>Sucursal *</label>
-            <select
-              value={sucursalSeleccionada}
-              onChange={(e) => {
-                setSucursalSeleccionada(e.target.value);
-                setDepositoSeleccionado('');
-              }}
-              style={inputStyle}
+        <div>
+          {/* Cabecera y Botón Nuevo Registro a la derecha */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '700', color: '#111827' }}>
+                Punto de Venta — Facturación Presencial
+              </h1>
+              <p style={{ color: '#6b7280', margin: '0.2rem 0 0', fontSize: '0.875rem' }}>
+                Historial de operaciones, control de stock en tiempo real y emisión de comprobantes fiscales
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPaso(2)}
+              style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem' }}
             >
-              <option value="">-- Seleccione Sucursal --</option>
-              {sucursales.map(s => (
-                <option key={s.id_sucursal} value={s.id_sucursal}>{s.codigo} - {s.descripcion}</option>
-              ))}
+              + Nuevo Registro de Venta
+            </button>
+          </div>
+
+          {/* Tarjetas de Métricas Semanales */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ backgroundColor: '#fff', padding: '1rem 1.25rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ padding: '0.75rem', backgroundColor: '#eff6ff', color: '#2563eb', borderRadius: '0.5rem' }}>
+                <FileText size={20} />
+              </div>
+              <div>
+                <p style={{ margin: 0, fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Ventas Semana (7 días)</p>
+                <h3 style={{ margin: '0.1rem 0 0', fontSize: '1.25rem', fontWeight: '700', color: '#111827' }}>{estadisticasSemanales.cantidad} operaciones</h3>
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: '#fff', padding: '1rem 1.25rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ padding: '0.75rem', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: '0.5rem' }}>
+                <DollarSign size={20} />
+              </div>
+              <div>
+                <p style={{ margin: 0, fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Facturación Semanal</p>
+                <h3 style={{ margin: '0.1rem 0 0', fontSize: '1.25rem', fontWeight: '700', color: '#166534' }}>${estadisticasSemanales.montoTotal.toFixed(2)}</h3>
+              </div>
+            </div>
+          </div>
+
+          {/* Buscador y Filtro Integrados a ancho completo */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: '#9ca3af' }} />
+              <input
+                type="text"
+                placeholder="Buscar N° factura o cliente..."
+                value={busquedaHistorial}
+                onChange={(e) => setBusquedaHistorial(e.target.value)}
+                style={{ ...inputStyle, paddingLeft: '2.5rem' }}
+              />
+            </div>
+
+            <select
+              value={filtroTipoFactura}
+              onChange={(e) => setFiltroTipoFactura(e.target.value)}
+              style={{ ...inputStyle, width: '180px' }}
+            >
+              <option value="TODAS">Todos los tipos</option>
+              <option value="A">Factura A</option>
+              <option value="B">Factura B</option>
             </select>
           </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.875rem', color: '#374151' }}>Depósito de Salida de Mercadería *</label>
-            <select
-              value={depositoSeleccionado}
-              onChange={(e) => setDepositoSeleccionado(e.target.value)}
-              style={inputStyle}
-              disabled={!sucursalSeleccionada}
-            >
-              <option value="">-- Seleccione Depósito --</option>
-              {depositosFiltrados.map(d => (
-                <option key={d.id_deposito} value={d.id_deposito}>{d.codigo} - {d.descripcion}</option>
-              ))}
-            </select>
+          {/* Tabla de Historial General */}
+          <div style={{ backgroundColor: '#fff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                <thead style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                  <tr>
+                    <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Comprobante</th>
+                    <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Fecha y Hora</th>
+                    <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Cliente / Receptor</th>
+                    <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Medio Pago</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Total</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ventasFiltradas.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '2.5rem', color: '#6b7280' }}>No se encontraron registros de ventas.</td>
+                    </tr>
+                  ) : (
+                    ventasFiltradas.map(v => (
+                      <tr key={v.id_venta} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                        <td style={{ padding: '0.85rem 1rem', fontWeight: '600', color: '#111827' }}>
+                          Factura {v.tipo_comprobante} 000{v.punto_venta}-{String(v.numero_comprobante).padStart(8, '0')}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', color: '#4b5563' }}>
+                          {new Date(v.fecha).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', color: '#374151' }}>
+                          {v.cliente ? v.cliente.nombre : 'Consumidor Final'}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', color: '#4b5563' }}>
+                          {v.medio_pago}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontWeight: '600', color: '#166534' }}>
+                          ${Number(v.importe_total).toFixed(2)}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => downloadComprobanteVentaPdf(v, v.detalle_venta || [], v.cliente, sucursales.find(s => s.id_sucursal === v.id_sucursal))}
+                            style={{ backgroundColor: '#f3f4f6', border: '1px solid #d1d5db', padding: '0.3rem 0.6rem', borderRadius: '0.3rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#374151' }}
+                            title="Descargar Comprobante PDF"
+                          >
+                            <Download size={13} /> PDF
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-
-          <button
-            type="button"
-            onClick={handleIniciarVenta}
-            disabled={!sucursalSeleccionada || !depositoSeleccionado || cargando}
-            style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.625rem 1.25rem', borderRadius: '0.5rem', fontWeight: '700', cursor: 'pointer', width: '100%' }}
-          >
-            {cargando ? 'Cargando stock...' : 'Continuar con la Venta'}
-          </button>
         </div>
       )}
 
-      {/* PASO 2 & 3: Carrito y Catálogo */}
-      {(paso === 2 || paso === 3) && (
+      {/* PASO 2: Selección de Sucursal y Depósito (Limpio, sin subtítulo innecesario ni recuadro redundante) */}
+      {paso === 2 && (
         <div>
-          <button
-            type="button"
-            onClick={() => setPaso(1)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'transparent', border: '1px solid #d1d5db', padding: '0.5rem 1rem', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', marginBottom: '1.5rem', color: '#374151' }}
-          >
-            <ArrowLeft size={16} /> Cambiar Sucursal / Depósito
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '700', color: '#111827' }}>
+              Nuevo Registro de Venta
+            </h1>
+            <button
+              type="button"
+              onClick={() => setPaso(1)}
+              style={{ backgroundColor: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem' }}
+            >
+              <ArrowLeft size={16} /> Volver atrás
+            </button>
+          </div>
+
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '2rem', width: '100%', maxWidth: '500px', margin: '2rem auto', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.8rem', textTransform: 'uppercase', color: '#4b5563' }}>Sucursal *</label>
+              <select
+                value={sucursalSeleccionada}
+                onChange={(e) => {
+                  setSucursalSeleccionada(e.target.value);
+                  setDepositoSeleccionado('');
+                }}
+                style={inputStyle}
+              >
+                <option value="">-- Seleccione Sucursal --</option>
+                {sucursales.map(s => (
+                  <option key={s.id_sucursal} value={s.id_sucursal}>{s.codigo} - {s.descripcion}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '1.75rem' }}>
+              <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.8rem', textTransform: 'uppercase', color: '#4b5563' }}>Depósito de Salida de Mercadería *</label>
+              <select
+                value={depositoSeleccionado}
+                onChange={(e) => setDepositoSeleccionado(e.target.value)}
+                style={inputStyle}
+                disabled={!sucursalSeleccionada}
+              >
+                <option value="">-- Seleccione Depósito --</option>
+                {depositosFiltrados.map(d => (
+                  <option key={d.id_deposito} value={d.id_deposito}>{d.codigo} - {d.descripcion}</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleIniciarVenta}
+              disabled={!sucursalSeleccionada || !depositoSeleccionado || cargando}
+              style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.625rem 1.25rem', borderRadius: '0.375rem', fontWeight: '700', cursor: (!sucursalSeleccionada || !depositoSeleccionado || cargando) ? 'not-allowed' : 'pointer', width: '100%' }}
+            >
+              {cargando ? 'Cargando stock...' : 'Continuar con la Venta'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* PASO 3: Carrito y Catálogo (POS) */}
+      {paso === 3 && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '700', color: '#111827' }}>
+              Terminal de Facturación
+            </h1>
+            <button
+              type="button"
+              onClick={() => setPaso(2)}
+              style={{ backgroundColor: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem' }}
+            >
+              <ArrowLeft size={16} /> Volver atrás
+            </button>
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.5rem' }}>
             <div>
               {/* Sección Cliente (HU37) */}
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '0.75rem', border: '1px solid #e5e7eb', padding: '1.25rem', marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '1.25rem', marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                   <h3 style={{ fontSize: '0.95rem', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#374151' }}>
                     <User size={16} /> Cliente: {clienteElegido ? clienteElegido.nombre : 'Consumidor Final'}
@@ -385,7 +555,7 @@ export default function RegistrarVenta() {
               </div>
 
               {/* Catálogo de Productos */}
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '0.75rem', border: '1px solid #e5e7eb', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                 <h3 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '0.75rem', color: '#374151' }}>Catálogo de Productos Disponibles</h3>
                 <input
                   type="text"
@@ -395,7 +565,7 @@ export default function RegistrarVenta() {
                   style={{ ...inputStyle, marginBottom: '1rem' }}
                 />
 
-                <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: '0.5rem' }}>
+                <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: '0.375rem' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                     <thead style={{ backgroundColor: '#f9fafb', position: 'sticky', top: 0, borderBottom: '1px solid #e5e7eb' }}>
                       <tr>
@@ -439,7 +609,7 @@ export default function RegistrarVenta() {
             </div>
 
             {/* Carrito */}
-            <div style={{ backgroundColor: '#ffffff', borderRadius: '0.75rem', border: '1px solid #e5e7eb', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', height: 'fit-content' }}>
+            <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', height: 'fit-content' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem', color: '#111827' }}>
                 Carrito de Venta
               </h3>
@@ -478,7 +648,7 @@ export default function RegistrarVenta() {
                 </div>
               )}
 
-              <div style={{ backgroundColor: '#f9fafb', padding: '0.75rem', borderRadius: '0.5rem', fontSize: '0.85rem', marginBottom: '1rem', border: '1px solid #e5e7eb' }}>
+              <div style={{ backgroundColor: '#f9fafb', padding: '0.75rem', borderRadius: '0.375rem', fontSize: '0.85rem', marginBottom: '1rem', border: '1px solid #e5e7eb' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
                   <span>Neto Gravado:</span>
                   <b>${(resumenImpuestos.neto_21 + resumenImpuestos.neto_105).toFixed(2)}</b>
@@ -542,7 +712,7 @@ export default function RegistrarVenta() {
                 type="button"
                 onClick={handleConfirmarVentaFinal}
                 disabled={carrito.length === 0 || cargando}
-                style={{ width: '100%', backgroundColor: '#166534', color: '#fff', border: 0, padding: '0.75rem', borderRadius: '0.5rem', fontWeight: '700', cursor: carrito.length === 0 ? 'not-allowed' : 'pointer' }}
+                style={{ width: '100%', backgroundColor: '#166534', color: '#fff', border: 0, padding: '0.75rem', borderRadius: '0.375rem', fontWeight: '700', cursor: carrito.length === 0 ? 'not-allowed' : 'pointer' }}
               >
                 {cargando ? 'Procesando...' : 'Confirmar Venta y Generar Factura'}
               </button>
@@ -553,7 +723,7 @@ export default function RegistrarVenta() {
 
       {/* PASO 4: Éxito y PDF */}
       {paso === 4 && ventaConfirmada && (
-        <div style={{ backgroundColor: '#ffffff', borderRadius: '0.75rem', border: '1px solid #e5e7eb', padding: '2.5rem', textAlign: 'center', maxWidth: '500px', margin: '2rem auto', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '2.5rem', textAlign: 'center', maxWidth: '500px', margin: '2rem auto', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
           <CheckCircle2 size={56} color="#166534" style={{ margin: '0 auto 1rem' }} />
           <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: '#111827', marginBottom: '0.5rem' }}>¡Venta Confirmada con Éxito!</h2>
           <p style={{ color: '#6b7280', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
@@ -564,7 +734,7 @@ export default function RegistrarVenta() {
             <button
               type="button"
               onClick={() => downloadComprobanteVentaPdf(ventaConfirmada, carrito, clienteElegido, sucursales.find(s => s.id_sucursal === sucursalSeleccionada))}
-              style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.75rem 1.25rem', borderRadius: '0.5rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
             >
               <Download size={18} /> Descargar Comprobante PDF
             </button>
@@ -576,22 +746,22 @@ export default function RegistrarVenta() {
                 setClienteElegido(null);
                 setPaso(1);
               }}
-              style={{ backgroundColor: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '0.75rem 1.25rem', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer' }}
+              style={{ backgroundColor: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer' }}
             >
-              Nueva Venta
+              Volver al Panel
             </button>
           </div>
         </div>
       )}
 
-      {/* Modal Alta Rápida de Cliente (DNI o CUIT inteligente) */}
+      {/* Modal Alta Rápida de Cliente */}
       {mostrarModalCliente && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: '#fff', padding: '2rem', borderRadius: '0.75rem', width: '450px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+          <div style={{ backgroundColor: '#fff', padding: '2rem', borderRadius: '0.5rem', width: '450px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1rem', color: '#111827' }}>Registro Rápido de Cliente</h3>
             <form onSubmit={handleGuardarCliente}>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.3rem', color: '#374151' }}>Nombre / Razón Social * <span style={{ fontWeight: 400, fontSize: '0.75rem', color: '#6b7280' }}>(Sin números)</span></label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.3rem', color: '#374151' }}>Nombre / Razón Social *</label>
                 <input
                   type="text"
                   value={tempCliente.nombre}
@@ -602,7 +772,7 @@ export default function RegistrarVenta() {
                 />
               </div>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.3rem', color: '#374151' }}>DNI o CUIT <span style={{ fontWeight: 400, fontSize: '0.75rem', color: '#6b7280' }}>(7-8 dígitos DNI u 11 CUIT)</span></label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.3rem', color: '#374151' }}>DNI o CUIT</label>
                 <input
                   type="text"
                   maxLength="11"
@@ -630,14 +800,14 @@ export default function RegistrarVenta() {
                 <button
                   type="button"
                   onClick={() => setMostrarModalCliente(false)}
-                  style={{ backgroundColor: '#fff', border: '1px solid #d1d5db', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '600', color: '#374151' }}
+                  style={{ backgroundColor: '#fff', border: '1px solid #d1d5db', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: '600', color: '#374151' }}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={cargando}
-                  style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.5rem 1rem', borderRadius: '0.5rem', fontWeight: '700', cursor: 'pointer' }}
+                  style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.5rem 1rem', borderRadius: '0.375rem', fontWeight: '700', cursor: 'pointer' }}
                 >
                   Guardar y Seleccionar
                 </button>

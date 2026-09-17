@@ -19,7 +19,7 @@ export async function getSucursalesYDepositos() {
 // 2. Buscar clientes por DNI, CUIT o Nombre (HU37)
 export async function buscarClientes(query = '') {
   let q = supabase.from('cliente').select('*');
-  if (query.trim()) {
+  if (query && query.trim()) {
     q = q.or(`nombre.ilike.%${query}%,cuit.ilike.%${query}%,dni.ilike.%${query}%`);
   }
   const { data, error } = await q.limit(20);
@@ -36,95 +36,118 @@ export async function crearCliente(clienteData) {
   return { data, error };
 }
 
-// 4. Obtener productos y calcular stock real dinámicamente desde movimientos (HU36)
+// 4. Obtener productos y calcular stock real aplicando Listas de Precios con vigencia temporal
 export async function getProductosConStock(idDeposito) {
-  // Traer los movimientos de stock para calcular la existencia real
-  const { data: movimientos, error: errMov } = await supabase
-    .from('movimiento_stock')
-    .select('*')
-    .eq('id_deposito', idDeposito);
-
-  if (errMov) {
-    console.error('Error al cargar movimientos de stock:', errMov);
-  }
-
-  const stockMap = new Map();
-
-  // Calcular stock acumulado por artículo (Ingresos - Egresos)
-  if (movimientos) {
-    movimientos.forEach(m => {
-      const artId = m.id_articulo;
-      const cant = Number(m.cantidad || 0);
-      const tipo = (m.tipo_movimiento || '').toLowerCase();
-
-      const current = stockMap.get(artId) || 0;
-      if (tipo.includes('ingreso') || tipo.includes('entrada') || tipo.includes('alta')) {
-        stockMap.set(artId, current + cant);
-      } else if (tipo.includes('egreso') || tipo.includes('salida') || tipo.includes('venta')) {
-        stockMap.set(artId, current - cant);
-      } else {
-        // Por defecto si el tipo es genérico
-        stockMap.set(artId, current + cant);
-      }
-    });
-  }
-
-  // Complementar con la tabla articulo_deposito por si hay registros base
-  const { data: stockData } = await supabase
-    .from('articulo_deposito')
-    .select('*')
-    .eq('id_deposito', idDeposito);
-
-  if (stockData) {
-    stockData.forEach(s => {
-      const artId = s.id_articulo;
-      if (!stockMap.has(artId) || stockMap.get(artId) === 0) {
-        const baseStock = Number(s.stock_actual ?? s.stock ?? s.cantidad ?? 0);
-        if (baseStock > 0) {
-          stockMap.set(artId, baseStock);
-        }
-      }
-    });
-  }
-
-  const idsArticulos = Array.from(stockMap.keys());
-  if (idsArticulos.length === 0) {
+  if (!idDeposito) {
     return { data: [], error: null };
   }
 
-  // Traer los datos de los artículos
-  const { data: articulos, error: errArt } = await supabase
-    .from('articulo')
-    .select('*')
-    .in('id_articulo', idsArticulos);
+  const { data: articulosDep, error: errDep } = await supabase
+    .from("articulo_deposito")
+    .select(`
+      id_articulo_deposito,
+      id_articulo,
+      stock_minimo,
+      articulo:id_articulo (
+        id_articulo,
+        codigo,
+        codigo_barras,
+        nombre,
+        descripcion,
+        precio_costo,
+        precio_venta,
+        rubro:id_rubro (nombre)
+      )
+    `)
+    .eq("id_deposito", idDeposito);
 
-  if (errArt) {
-    console.error('Error al cargar artículos:', errArt);
-    return { data: [], error: errArt };
+  if (errDep) {
+    console.error('Error al cargar inventario del depósito:', errDep);
+    return { data: [], error: errDep };
   }
 
-  const productosConStock = (articulos || []).map(art => {
-    const descripcion = art.descripcion || art.nombre || art.titulo || 'Artículo sin nombre';
-    const codigo = art.codigo || art.sku || 'S/C';
-    const precio_venta = Number(art.precio_venta || art.precio || art.monto || 0);
-    const iva_porcentaje = Number(art.iva_porcentaje || art.iva || 21);
-    const es_exento = Boolean(art.es_exento || art.exento || false);
+  if (!articulosDep || articulosDep.length === 0) {
+    return { data: [], error: null };
+  }
 
-    return {
-      ...art,
-      descripcion,
-      codigo,
-      precio_venta,
-      iva_porcentaje,
-      es_exento,
-      stock_actual: stockMap.get(art.id_articulo) || 0
-    };
-  });
+  const hoy = new Date().toISOString().split('T')[0];
+  const { data: listaVigente } = await supabase
+    .from("lista_precio")
+    .select("id_lista, nombre")
+    .eq("estado", true)
+    .lte("fecha_inicio", hoy)
+    .gte("fecha_fin", hoy)
+    .maybeSingle();
+
+  let preciosEspeciales = {};
+  if (listaVigente) {
+    const { data: detallesLista } = await supabase
+      .from("detalle_lista_precio")
+      .select("id_articulo, precio, porcentaje_descuento")
+      .eq("id_lista", listaVigente.id_lista);
+
+    if (detallesLista) {
+      detallesLista.forEach(d => {
+        preciosEspeciales[d.id_articulo] = {
+          precio: Number(d.precio || 0),
+          descuento: Number(d.porcentaje_descuento || 0)
+        };
+      });
+    }
+  }
+
+  const productosConStock = await Promise.all(
+    articulosDep.map(async (item) => {
+      const { data: movs } = await supabase
+        .from("movimiento_stock")
+        .select("cantidad, tipo_movimiento")
+        .eq("id_articulo_deposito", item.id_articulo_deposito);
+
+      const stockReal = (movs || []).reduce((sum, m) => {
+        const cant = Math.abs(Number(m.cantidad) || 0);
+        const tipoNorm = (m.tipo_movimiento || "").toUpperCase();
+        const esResta = tipoNorm.includes("EGRESO") || 
+                        tipoNorm.includes("MERMA") || 
+                        tipoNorm.includes("ROTURA") || 
+                        tipoNorm.includes("VENCIMIENTO") ||
+                        tipoNorm.includes("VENTA");
+        return esResta ? sum - cant : sum + cant;
+      }, 0);
+
+      const stockCalculado = Math.max(0, stockReal);
+      const art = item.articulo || {};
+      const descripcion = art.descripcion || art.nombre || 'Artículo sin nombre';
+      const nombre = art.nombre || descripcion;
+      const codigo = art.codigo || 'S/C';
+
+      let precioFinal = Number(art.precio_venta || 0);
+      if (preciosEspeciales[art.id_articulo]) {
+        const itemLista = preciosEspeciales[art.id_articulo];
+        precioFinal = itemLista.precio;
+        if (itemLista.descuento > 0) {
+          precioFinal = precioFinal * (1 - itemLista.descuento / 100);
+        }
+      }
+
+      return {
+        ...art,
+        id_articulo_deposito: item.id_articulo_deposito,
+        nombre,
+        descripcion,
+        codigo,
+        precio_venta: Number(precioFinal.toFixed(2)),
+        iva_porcentaje: 21,
+        es_exento: false,
+        stock_actual: stockCalculado,
+        stock: stockCalculado
+      };
+    })
+  );
 
   return { data: productosConStock, error: null };
 }
 
-// 5. Confirmar Venta Transaccional (HU39)
+// 5. Confirmar Venta Transaccional y descontar stock automáticamente (HU39)
 export async function confirmarVenta(ventaPayload) {
   const puntoVenta = 1;
   const { count } = await supabase.from('venta').select('*', { count: 'exact', head: true });
@@ -164,45 +187,68 @@ export async function confirmarVenta(ventaPayload) {
         id_venta: idVenta,
         id_articulo: item.id_articulo,
         cantidad: item.cantidad,
-        precio_unitario: item.precio_unitario,
+        precio_unitario: Number(item.precio_unitario || item.precio_venta || 0),
         subtotal: item.subtotal
       }]);
 
-    await supabase
-      .from('movimiento_stock')
-      .insert([{
-        id_articulo: item.id_articulo,
-        id_deposito: ventaPayload.id_deposito,
-        tipo_movimiento: 'Egreso',
-        cantidad: item.cantidad,
-        motivo: `Venta Comp. ${ventaPayload.tipo_comprobante} 000${puntoVenta}-${String(numeroFactura).padStart(8, '0')}`,
-        fecha: new Date().toISOString()
-      }]);
+    const idArticuloDeposito = item.id_articulo_deposito;
 
-    const { data: stockActualReg } = await supabase
-      .from('articulo_deposito')
-      .select('*')
-      .eq('id_articulo', item.id_articulo)
-      .eq('id_deposito', ventaPayload.id_deposito)
-      .maybeSingle();
-
-    if (stockActualReg) {
-      const stockActualVal = Number(stockActualReg.stock_actual ?? stockActualReg.stock ?? stockActualReg.cantidad ?? 0);
-      const nuevoStock = Math.max(0, stockActualVal - item.cantidad);
-      const campoStock = stockActualReg.stock_actual !== undefined ? 'stock_actual' : (stockActualReg.stock !== undefined ? 'stock' : 'cantidad');
-
+    if (idArticuloDeposito) {
       await supabase
+        .from('movimiento_stock')
+        .insert([{
+          id_articulo_deposito: idArticuloDeposito,
+          id_articulo: item.id_articulo,
+          id_deposito: ventaPayload.id_deposito,
+          tipo_movimiento: 'Egreso',
+          cantidad: item.cantidad,
+          motivo: `Venta Comp. ${ventaPayload.tipo_comprobante} 000${puntoVenta}-${String(numeroFactura).padStart(8, '0')}`,
+          fecha: new Date().toISOString()
+        }]);
+
+      const { data: artDepReg } = await supabase
         .from('articulo_deposito')
-        .update({ [campoStock]: nuevoStock })
-        .eq('id_articulo', item.id_articulo)
-        .eq('id_deposito', ventaPayload.id_deposito);
+        .select('stock_actual')
+        .eq('id_articulo_deposito', idArticuloDeposito)
+        .maybeSingle();
+
+      if (artDepReg) {
+        const stockActualVal = Number(artDepReg.stock_actual || 0);
+        const nuevoStock = Math.max(0, stockActualVal - item.cantidad);
+
+        await supabase
+          .from('articulo_deposito')
+          .update({ stock_actual: nuevoStock })
+          .eq('id_articulo_deposito', idArticuloDeposito);
+      }
     }
   }
 
   return { data: ventaIns, error: null };
 }
 
-// 6. Generar comprobante en PDF (HU40)
+// 6. Obtener Historial de Ventas con detalles y datos de cliente
+export async function getHistorialVentas() {
+  const { data, error } = await supabase
+    .from('venta')
+    .select(`
+      *,
+      cliente:id_cliente (id_cliente, nombre, cuit, dni, condicion_fiscal),
+      detalle_venta (
+        id_detalle_venta,
+        id_articulo,
+        cantidad,
+        precio_unitario,
+        subtotal,
+        articulo:id_articulo (nombre, descripcion)
+      )
+    `)
+    .order('fecha', { ascending: false });
+
+  return { data: data || [], error };
+}
+
+// 7. Generar comprobante en PDF con formato correcto (HU40)
 export function downloadComprobanteVentaPdf(venta, items, cliente, sucursal) {
   const pdf = new jsPDF();
   let y = 20;
@@ -241,9 +287,11 @@ export function downloadComprobanteVentaPdf(venta, items, cliente, sucursal) {
   y += 8;
 
   items.forEach(item => {
-    pdf.text(String(item.descripcion || 'Artículo'), 20, y);
+    const nombreArt = item.articulo?.descripcion || item.articulo?.nombre || item.descripcion || 'Artículo';
+    const precioUnit = Number(item.precio_unitario || item.precio_venta || 0);
+    pdf.text(String(nombreArt), 20, y);
     pdf.text(String(item.cantidad), 120, y);
-    pdf.text(`$${Number(item.precio_unitario).toFixed(2)}`, 145, y);
+    pdf.text(`$${precioUnit.toFixed(2)}`, 145, y);
     pdf.text(`$${Number(item.subtotal).toFixed(2)}`, 170, y);
     y += 6;
   });
