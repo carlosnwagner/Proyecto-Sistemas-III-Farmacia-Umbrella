@@ -14,12 +14,14 @@ import {
   ChevronUp,
   Receipt,
   FileText,
+  Tags,
 } from "lucide-react";
 
 export default function Sidebar() {
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
+  const [ventasOpen, setVentasOpen] = useState(false);
 
   const location = useLocation();
 
@@ -32,17 +34,22 @@ export default function Sidebar() {
     { key: "Notas", label: "Notas Crédito/Débito", path: "/notas-credito-debito", icon: FileText },
   ];
 
+  const ventasSubItems = [
+    { key: "Ventas", label: "Registrar ventas", path: "/ventas", icon: Globe },
+    { key: "ListasPrecios", label: "Listas de precios", path: "/listas-precios", icon: Tags },
+  ];
+
   // Elementos principales limpios (sin duplicar los submódulos de compras)
   const menuItems = [
     { key: "Inicio", label: "Inicio", path: "/inicio", icon: Home },
     { key: "Inventario", label: "Inventario", path: "/inventario", icon: Package },
     { key: "Sucursales", label: "Sucursales", path: "/sucursales", icon: MapPin },
     { key: "Depositos", label: "Depósitos", path: "/depositos", icon: Warehouse },
-    { key: "Ventas", label: "Ventas", path: "/ventas", icon: Globe },
     { key: "reportes", label: "Reportes", path: "/reportes", icon: BarChart3 },
   ];
 
   const isComprasActive = comprasSubItems.some((sub) => location.pathname === sub.path);
+  const isVentasActive = ventasSubItems.some((sub) => location.pathname === sub.path);
 
   return (
     <aside
@@ -257,8 +264,91 @@ export default function Sidebar() {
           )}
         </div>
 
-        {/* Resto de Secciones (Sucursales, Depósitos, Ventas, Reportes) */}
-        {menuItems.slice(2).map((item) => renderNavLink(item))}
+        {/* Sucursales y depósitos */}
+        {menuItems.slice(2, 4).map((item) => renderNavLink(item))}
+
+        {/* MÓDULO AGRUPADO: VENTAS */}
+        <div>
+          <button
+            onClick={() => {
+              if (isHovered) setVentasOpen(!ventasOpen);
+            }}
+            title={!isHovered ? "Ventas" : ""}
+            onMouseEnter={() => setHoveredButton("VentasGroup")}
+            onMouseLeave={() => setHoveredButton(null)}
+            style={{
+              width: "100%",
+              height: "44px",
+              borderRadius: "0.5rem",
+              border: "none",
+              backgroundColor: isVentasActive
+                ? "#4a3c32"
+                : hoveredButton === "VentasGroup"
+                ? "rgba(255, 255, 255, 0.08)"
+                : "transparent",
+              color: isVentasActive ? "#ffffff" : hoveredButton === "VentasGroup" ? "#e5e7eb" : "#9ca3af",
+              display: "flex",
+              alignItems: "center",
+              padding: "0 0.75rem",
+              justifyContent: "space-between",
+              cursor: "pointer",
+              position: "relative",
+              transition: "all 0.2s ease",
+              boxSizing: "border-box",
+            }}
+          >
+            {isVentasActive && (
+              <div style={{ position: "absolute", left: 0, top: "15%", height: "70%", width: "4px", backgroundColor: "#84cc16", borderRadius: "0 4px 4px 0" }} />
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+              <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: isVentasActive ? "#84cc16" : hoveredButton === "VentasGroup" ? "#ffffff" : "inherit" }}>
+                <Globe size={20} />
+              </div>
+              <span style={{ fontSize: "0.9rem", fontWeight: isVentasActive ? "600" : "400", whiteSpace: "nowrap", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease" }}>
+                Ventas
+              </span>
+            </div>
+            {isHovered && <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>{ventasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>}
+          </button>
+
+          {ventasOpen && isHovered && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "1.25rem", marginTop: "0.35rem" }}>
+              {ventasSubItems.map((sub) => {
+                const SubIcon = sub.icon;
+                const isSubActive = location.pathname === sub.path;
+                const isSubHovered = hoveredButton === sub.key;
+                return (
+                  <Link
+                    key={sub.key}
+                    to={sub.path}
+                    onMouseEnter={() => setHoveredButton(sub.key)}
+                    onMouseLeave={() => setHoveredButton(null)}
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      borderRadius: "0.375rem",
+                      textDecoration: "none",
+                      backgroundColor: isSubActive ? "rgba(132, 204, 22, 0.15)" : isSubHovered ? "rgba(255, 255, 255, 0.05)" : "transparent",
+                      color: isSubActive ? "#84cc16" : isSubHovered ? "#ffffff" : "#9ca3af",
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "0 0.6rem",
+                      gap: "0.65rem",
+                      transition: "all 0.2s ease",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <SubIcon size={16} />
+                    <span style={{ fontSize: "0.825rem", fontWeight: isSubActive ? "600" : "400", whiteSpace: "nowrap" }}>{sub.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Reportes */}
+        {menuItems.slice(4).map((item) => renderNavLink(item))}
       </nav>
 
       {/* Configuración */}

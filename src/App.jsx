@@ -9,6 +9,7 @@ import Depositos from "./pages/Depositos.jsx";
 import FacturasProveedores from "./pages/FacturasProveedores.jsx";
 import OrdenesCompra from "./pages/OrdenesCompraProv.jsx";
 import InventarioDeposito from "./pages/InventarioDeposito.jsx";
+import ListasPrecios from "./pages/ListasPrecios.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/depositos/:id/inventario" element={<InventarioDeposito />} />
           <Route path="/inventario-deposito" element={<InventarioDeposito />} />
           <Route path="/ventas" element={<PaginaEnConstruccion titulo="Ventas" />} />
+          <Route path="/listas-precios" element={<ListasPrecios />} />
           <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
           <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />
         </Route>
