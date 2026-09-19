@@ -21,7 +21,7 @@ export default function AjusteStockModal({ idDeposito, productosAsociados = [], 
 
   const productosSeleccionadosIds = filas.map(f => f.id_articulo).filter(Boolean);
   const puedeAgregarMas = filas.length < productosAsociados.length;
-  const esResta = ["EGRESO", "MERMA_ROTURA", "VENCIMIENTO"].includes(tipoOperacion);
+  const esResta = ["MERMA_ROTURA", "VENCIMIENTO"].includes(tipoOperacion);
 
   const handleSeleccionarProducto = (index, idArticuloStr) => {
     const artId = Number(idArticuloStr);
@@ -122,7 +122,6 @@ export default function AjusteStockModal({ idDeposito, productosAsociados = [], 
                 style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", backgroundColor: "#fff" }}
               >
                 <option value="INGRESO">Ingreso Manual (+)</option>
-                <option value="EGRESO">Egreso Manual (-)</option>
                 <option value="MERMA_ROTURA">Merma o Rotura (-)</option>
                 <option value="VENCIMIENTO">Vencimiento (-)</option>
               </select>

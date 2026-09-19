@@ -86,11 +86,10 @@ export default function RegistrarVenta() {
     setPaso(3);
   };
 
-  // Validación de Razón Social sin números e Identificación (DNI o CUIT)
   const handleGuardarCliente = async (e) => {
     e.preventDefault();
     const nombreTrim = tempCliente.nombre.trim();
-     
+    
     if (!nombreTrim) return showAlert.errorSave('El nombre o razón social es obligatorio.');
     if (/\d/.test(nombreTrim)) {
       return showAlert.errorSave('El nombre o razón social no puede contener números.');
@@ -119,7 +118,7 @@ export default function RegistrarVenta() {
     });
 
     if (error) {
-      showAlert.errorSave('Error al registrar cliente: ' + (error.message || error));
+      showAlert.errorSave('Error al registrar cliente: ' + (error.message || error.mensaje || error));
     } else {
       showAlert.successSave('Cliente registrado y seleccionado correctamente.');
       setClienteElegido(data);
@@ -128,6 +127,14 @@ export default function RegistrarVenta() {
     }
     setCargando(false);
   };
+
+  const tipoComprobanteActual = useMemo(() => {
+    const cond = clienteElegido?.condicion_fiscal || 'Consumidor Final';
+    if (cond === 'Responsable Inscripto' || cond === 'Monotributista') {
+      return 'A';
+    }
+    return 'B';
+  }, [clienteElegido]);
 
   const resumenImpuestos = useMemo(() => {
     let neto_21 = 0;
@@ -140,17 +147,33 @@ export default function RegistrarVenta() {
     carrito.forEach(item => {
       const sub = Number(item.subtotal);
       total += sub;
+      const alicuota = Number(item.iva_porcentaje || 21);
 
-      if (item.es_exento) {
-        exento += sub;
-      } else if (Number(item.iva_porcentaje) === 10.5) {
-        const neto = sub / 1.105;
-        neto_105 += neto;
-        iva_105 += sub - neto;
+      if (tipoComprobanteActual === 'A') {
+        if (item.es_exento) {
+          exento += sub;
+        } else if (alicuota === 10.5) {
+          const neto = sub / 1.105;
+          neto_105 += neto;
+          iva_105 += sub - neto;
+        } else {
+          const neto = sub / 1.21;
+          neto_21 += neto;
+          iva_21 += sub - neto;
+        }
       } else {
-        const neto = sub / 1.21;
-        neto_21 += neto;
-        iva_21 += sub - neto;
+        if (item.es_exento) {
+          exento += sub;
+        } else {
+          const neto = sub / (alicuota === 10.5 ? 1.105 : 1.21);
+          if (alicuota === 10.5) {
+            neto_105 += neto;
+            iva_105 += sub - neto;
+          } else {
+            neto_21 += neto;
+            iva_21 += sub - neto;
+          }
+        }
       }
     });
 
@@ -162,7 +185,7 @@ export default function RegistrarVenta() {
       exento: Number(exento.toFixed(2)),
       total: Number(total.toFixed(2))
     };
-  }, [carrito]);
+  }, [carrito, tipoComprobanteActual]);
 
   const agregarAlCarrito = (prod) => {
     if (prod.stock_actual <= 0) {
@@ -212,8 +235,9 @@ export default function RegistrarVenta() {
   };
 
   const handleConfirmarVentaFinal = async () => {
+    if (cargando) return; // Previene doble clic concurrente
     if (carrito.length === 0) return showAlert.errorSave('El carrito está vacío.');
-     
+    
     const totalVenta = resumenImpuestos.total;
     if (medioPago === 'Efectivo') {
       const recibido = Number(montoRecibido);
@@ -226,15 +250,12 @@ export default function RegistrarVenta() {
       }
     }
 
-    const condicionCliente = clienteElegido?.condicion_fiscal || 'Consumidor Final';
-    const tipoComprobante = (condicionCliente === 'Responsable Inscripto' || condicionCliente === 'Monotributista') ? 'A' : 'B';
-
     setCargando(true);
     const payload = {
       id_sucursal: sucursalSeleccionada,
       id_deposito: depositoSeleccionado,
       id_cliente: clienteElegido ? clienteElegido.id_cliente : null,
-      tipo_comprobante: tipoComprobante,
+      tipo_comprobante: tipoComprobanteActual,
       items: carrito,
       medio_pago: medioPago,
       ...resumenImpuestos,
@@ -243,18 +264,18 @@ export default function RegistrarVenta() {
 
     const { data, error } = await confirmarVenta(payload);
     if (error) {
-      showAlert.errorSave('Error al confirmar venta: ' + error.message);
+      showAlert.errorSave('Error al confirmar venta: ' + (error.message || error));
+      setCargando(false);
     } else {
       showAlert.successSave('¡Venta confirmada y stock actualizado con éxito!');
       setVentaConfirmada(data);
       const hist = await getHistorialVentas();
       setHistorialVentas(hist.data || []);
+      setCargando(false);
       setPaso(4);
     }
-    setCargando(false);
   };
 
-  // Filtrado de ventas para el historial
   const ventasFiltradas = useMemo(() => {
     return historialVentas.filter(v => {
       const matchTipo = filtroTipoFactura === 'TODAS' || v.tipo_comprobante === filtroTipoFactura;
@@ -265,7 +286,6 @@ export default function RegistrarVenta() {
     });
   }, [historialVentas, filtroTipoFactura, busquedaHistorial]);
 
-  // Historial Semanal (últimos 7 días)
   const estadisticasSemanales = useMemo(() => {
     const ahora = new Date();
     const hace7Dias = new Date();
@@ -294,10 +314,9 @@ export default function RegistrarVenta() {
   return (
     <div style={{ padding: '1.5rem', width: '100%', boxSizing: 'border-box' }}>
       
-      {/* PASO 1: Panel Principal / Historial a ancho completo */}
+      {/* PASO 1: Panel Principal / Historial */}
       {paso === 1 && (
         <div>
-          {/* Cabecera y Botón Nuevo Registro a la derecha */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
             <div>
               <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '700', color: '#111827' }}>
@@ -316,7 +335,6 @@ export default function RegistrarVenta() {
             </button>
           </div>
 
-          {/* Tarjetas de Métricas Semanales */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
             <div style={{ backgroundColor: '#fff', padding: '1rem 1.25rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <div style={{ padding: '0.75rem', backgroundColor: '#eff6ff', color: '#2563eb', borderRadius: '0.5rem' }}>
@@ -339,7 +357,6 @@ export default function RegistrarVenta() {
             </div>
           </div>
 
-          {/* Buscador y Filtro Integrados a ancho completo */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
               <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: '#9ca3af' }} />
@@ -363,7 +380,6 @@ export default function RegistrarVenta() {
             </select>
           </div>
 
-          {/* Tabla de Historial General */}
           <div style={{ backgroundColor: '#fff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
@@ -420,7 +436,7 @@ export default function RegistrarVenta() {
         </div>
       )}
 
-      {/* PASO 2: Selección de Sucursal y Depósito (Limpio, sin subtítulo innecesario ni recuadro redundante) */}
+      {/* PASO 2: Selección de Sucursal y Depósito */}
       {paso === 2 && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -485,9 +501,14 @@ export default function RegistrarVenta() {
       {paso === 3 && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '700', color: '#111827' }}>
-              Terminal de Facturación
-            </h1>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '700', color: '#111827' }}>
+                Terminal de Facturación {clienteElegido ? `(Factura ${tipoComprobanteActual})` : '(Factura B)'}
+              </h1>
+              <p style={{ color: '#6b7280', margin: '0.2rem 0 0', fontSize: '0.875rem' }}>
+                Condición fiscal del receptor: <b>{clienteElegido ? clienteElegido.condicion_fiscal : 'Consumidor Final'}</b>
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => setPaso(2)}
@@ -503,7 +524,7 @@ export default function RegistrarVenta() {
               <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '1.25rem', marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                   <h3 style={{ fontSize: '0.95rem', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#374151' }}>
-                    <User size={16} /> Cliente: {clienteElegido ? clienteElegido.nombre : 'Consumidor Final'}
+                    <User size={16} /> Cliente: {clienteElegido ? `${clienteElegido.nombre} (${clienteElegido.condicion_fiscal})` : 'Consumidor Final'}
                   </h3>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     {clienteElegido && (
@@ -611,7 +632,7 @@ export default function RegistrarVenta() {
             {/* Carrito */}
             <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', height: 'fit-content' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem', color: '#111827' }}>
-                Carrito de Venta
+                Carrito de Venta {clienteElegido ? `(Factura ${tipoComprobanteActual})` : '(Factura B)'}
               </h3>
 
               {carrito.length === 0 ? (
@@ -649,14 +670,47 @@ export default function RegistrarVenta() {
               )}
 
               <div style={{ backgroundColor: '#f9fafb', padding: '0.75rem', borderRadius: '0.375rem', fontSize: '0.85rem', marginBottom: '1rem', border: '1px solid #e5e7eb' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
-                  <span>Neto Gravado:</span>
-                  <b>${(resumenImpuestos.neto_21 + resumenImpuestos.neto_105).toFixed(2)}</b>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
-                  <span>IVA Total:</span>
-                  <b>${(resumenImpuestos.iva_21 + resumenImpuestos.iva_105).toFixed(2)}</b>
-                </div>
+                {tipoComprobanteActual === 'A' ? (
+                  <>
+                    {resumenImpuestos.neto_21 > 0 && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
+                          <span>Neto Gravado 21%:</span>
+                          <b>${resumenImpuestos.neto_21.toFixed(2)}</b>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
+                          <span>IVA 21%:</span>
+                          <b>${resumenImpuestos.iva_21.toFixed(2)}</b>
+                        </div>
+                      </>
+                    )}
+                    {resumenImpuestos.neto_105 > 0 && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
+                          <span>Neto Gravado 10.5%:</span>
+                          <b>${resumenImpuestos.neto_105.toFixed(2)}</b>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
+                          <span>IVA 10.5%:</span>
+                          <b>${resumenImpuestos.iva_105.toFixed(2)}</b>
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
+                      <span>Subtotal Operación:</span>
+                      <b>${resumenImpuestos.total.toFixed(2)}</b>
+                    </div>
+                    {resumenImpuestos.exento > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
+                        <span>Importe Exento / No Gravado:</span>
+                        <b>${resumenImpuestos.exento.toFixed(2)}</b>
+                      </div>
+                    )}
+                  </>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: '700', borderTop: '1px solid #d1d5db', paddingTop: '0.4rem', marginTop: '0.3rem', color: '#111827' }}>
                   <span>Total a Cobrar:</span>
                   <span style={{ color: '#166534' }}>${resumenImpuestos.total.toFixed(2)}</span>
@@ -712,9 +766,18 @@ export default function RegistrarVenta() {
                 type="button"
                 onClick={handleConfirmarVentaFinal}
                 disabled={carrito.length === 0 || cargando}
-                style={{ width: '100%', backgroundColor: '#166534', color: '#fff', border: 0, padding: '0.75rem', borderRadius: '0.375rem', fontWeight: '700', cursor: carrito.length === 0 ? 'not-allowed' : 'pointer' }}
+                style={{ 
+                  width: '100%', 
+                  backgroundColor: (carrito.length === 0 || cargando) ? '#9ca3af' : '#166534', 
+                  color: '#fff', 
+                  border: 0, 
+                  padding: '0.75rem', 
+                  borderRadius: '0.375rem', 
+                  fontWeight: '700', 
+                  cursor: (carrito.length === 0 || cargando) ? 'not-allowed' : 'pointer' 
+                }}
               >
-                {cargando ? 'Procesando...' : 'Confirmar Venta y Generar Factura'}
+                {cargando ? 'Procesando Venta y Stock...' : 'Confirmar Venta y Generar Factura'}
               </button>
             </div>
           </div>
@@ -756,7 +819,7 @@ export default function RegistrarVenta() {
 
       {/* Modal Alta Rápida de Cliente */}
       {mostrarModalCliente && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '100' }}>
           <div style={{ backgroundColor: '#fff', padding: '2rem', borderRadius: '0.5rem', width: '450px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1rem', color: '#111827' }}>Registro Rápido de Cliente</h3>
             <form onSubmit={handleGuardarCliente}>
