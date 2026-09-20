@@ -37,4 +37,25 @@ export const showAlert = {
       timer: 6000,
     });
   },
+
+  confirmAction: async ({
+    title = '¿Desea continuar?',
+    text = '',
+    confirmButtonText = 'Confirmar',
+  } = {}) => {
+    const result = await Swal.fire({
+      position: 'center',
+      icon: 'question',
+      title,
+      text,
+      showCancelButton: true,
+      confirmButtonText,
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#65482b',
+      cancelButtonColor: '#6b7280',
+      reverseButtons: true,
+    });
+
+    return result.isConfirmed;
+  },
 };

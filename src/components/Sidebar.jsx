@@ -35,7 +35,6 @@ export default function Sidebar() {
   ];
 
   const ventasSubItems = [
-    { key: "Ventas", label: "Registrar ventas", path: "/ventas", icon: Globe },
     { key: "ListasPrecios", label: "Listas de precios", path: "/listas-precios", icon: Tags },
   ];
 

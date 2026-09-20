@@ -1,60 +1,79 @@
-# HU36 - Matriz de trazabilidad
+# HU36 - Matriz de trazabilidad de listas de precios
 
-Esta matriz relaciona los criterios de aceptacion con reglas, escenarios, componentes previstos y pruebas. Los nombres de archivos de implementacion son propuestas y pueden actualizarse cuando se defina la estructura definitiva del modulo de ventas.
+## Relación entre criterios e implementación
 
-| Criterio | Reglas | Escenarios principales | Implementacion prevista | Pruebas previstas |
+| Criterio | Reglas | Escenarios principales | Implementación | Verificación |
 | --- | --- | --- | --- | --- |
-| CA01 | RN01 | Busqueda por nombre, codigo y barras; exclusion de inactivos | `src/services/ventas.js`, buscador de productos | Busqueda por cada campo y filtro por estado |
-| CA02 | RN02, RN05-RN11 | Consulta de precio y stock | Servicio de disponibilidad comercial | Stock del deposito y precio vigente correctos |
-| CA03 | RN04, RN18 | Agregar, modificar y quitar | Pagina o componente de venta | Cambios del detalle sin impacto de stock |
-| CA04 | RN03 | Cantidad cero, negativa, superior e igual al stock | Validador del detalle | Limites y mensajes de validacion |
-| CA05 | RN05-RN10 | Lista vigente, abierta, futura, vencida e inactiva | Funcion/RPC de resolucion de precio | Casos de frontera de las fechas |
-| CA06 | RN12-RN15 | Sin ajuste, descuento y recargo | Calculador de precios | Formulas y redondeo a dos decimales |
-| CA07 | RN10 | Producto sin detalle de precio | Servicio y pantalla de venta | Bloqueo y mensaje de error |
-| CA08 | RN16-RN17 | IVA 21 %, IVA 10,5 %, exento y percepciones | Calculador impositivo | Resultado por tratamiento fiscal |
-| CA09 | RN18 | Cambio de cantidad y eliminacion | Calculador de totales | Recalculo de renglon y cabecera |
-| CA10 | RN19-RN20 | Cambio posterior de la lista | Confirmacion de venta y persistencia | Inmutabilidad de la venta confirmada |
+| CA01 | RN01-RN03 | Lista abierta y rango inválido | `ListasPrecios.jsx`, restricciones de `lista_precio` | Crear con y sin fecha final; invertir fechas |
+| CA02 | RN04, RN07 | Alta inactiva y carga automática | RPC `crear_lista_precio_con_productos` | Comparar artículos agregados y omitidos |
+| CA03 | RN08-RN10 | Editar, quitar y reincorporar | Pantalla y servicio de listas; RPC de productos faltantes | Comprobar unicidad y selector filtrado |
+| CA04 | RN11-RN13 | Sin ajuste, descuento y recargo | Columnas derivadas y formulario de detalle | Validar las tres fórmulas |
+| CA05 | RN05 | Programada, vigente, vencida e inactiva | Estado calculado en `ListasPrecios.jsx` | Probar límites de inicio y final |
+| CA06 | RN14-RN15 | Lista vacía y producto sin IVA | Validación de servicio y trigger de activación | Intentar activar en ambos casos |
+| CA07 | RN06 | Períodos superpuestos | Trigger `lista_precio_vigencia_unica` | Probar rangos abiertos y cerrados |
+| CA08 | RN09, RN12-RN13 | Valores inválidos | Restricciones de `detalle_lista_precio` y formulario | Cero, negativos, 100 % y ajustes simultáneos |
+| CA09 | RN20 | Consulta histórica | Filtros de pantalla y ausencia de eliminación de cabecera | Consultar vencidas e inactivas |
+| CA10 | RN16-RN19 | IVA informativo incluido | `articulo.alicuota_iva` y detalle de lista | Mostrar 21 %, 10,5 %, exento y sin definir |
 
-## Modelo de datos previsto
+## Modelo de datos
 
-| Entidad | Responsabilidad minima |
+| Entidad | Responsabilidad en HU36 |
 | --- | --- |
-| `lista_precio` | Nombre, inicio de vigencia, finalizacion opcional y estado. |
-| `detalle_lista_precio` | Producto, precio base, tipo de ajuste y valor del ajuste. |
-| `venta` | Fecha, sucursal, deposito, empleado, estado y totales. |
-| `detalle_venta` | Producto, cantidad e instantanea completa del precio e impuestos aplicados. |
+| `lista_precio` | Nombre, descripción, inicio, final opcional y habilitación administrativa. |
+| `detalle_lista_precio` | Artículo, precio base al público, descuento, recargo y precio final derivado. |
+| `articulo` | Estado, precio de venta inicial y tratamiento de IVA; la lista solo consulta estos datos. |
 
-## Cobertura minima para dar la HU por terminada
+## Componentes
 
-- Cada criterio CA01-CA10 posee al menos una prueba verificable.
-- RN05-RN10 se validan tambien en la base de datos o en una funcion transaccional, no solamente en la interfaz.
-- RN19-RN20 se comprueban modificando una lista despues de confirmar una venta.
-- Las pruebas incluyen fechas iguales a `fecha_desde` y `fecha_hasta`.
-- Se prueba una lista con `fecha_hasta = null`.
-- Se prueba un producto sin stock y otro sin precio vigente.
-- Se prueban los tres tratamientos impositivos y los tres tipos de ajuste.
-- Los importes se redondean consistentemente a dos decimales.
+| Archivo | Responsabilidad |
+| --- | --- |
+| `src/pages/ListasPrecios.jsx` | Administración, estados temporales, detalle de productos y ajustes. |
+| `src/services/listasPrecios.js` | Operaciones con listas y detalles. |
+| `src/pages/InventarioProductos.jsx` | Clasificación fiscal del artículo. |
+| `supabase/migrations/202609170001_listas_precios.sql` | Integridad, precio final, vigencias y consulta de precio aplicable. |
+| `supabase/migrations/202609180001_permisos_listas_precios.sql` | Permisos requeridos por la pantalla. |
+| `supabase/migrations/202609180002_crear_lista_con_productos.sql` | Creación atómica con productos activos. |
+| `supabase/migrations/202609190001_agregar_productos_activos_lista.sql` | Reincorporación masiva de productos faltantes. |
+| `supabase/migrations/202609190002_alicuota_iva_articulos.sql` | Clasificación fiscal y bloqueo de activación incompleta. |
 
-## Secuencia de implementacion
+## Estado actual
 
-1. Aprobar `specification.md` y `rules.md` con el equipo.
-2. Crear migraciones para `lista_precio` y `detalle_lista_precio`.
-3. Cargar una lista general de prueba a partir de los precios actuales de los articulos.
-4. Implementar y probar la resolucion del precio vigente.
-5. Implementar y probar ajustes, impuestos y redondeo.
-6. Crear las entidades de venta y detalle de venta.
-7. Construir el buscador y el detalle editable de la venta.
-8. Guardar la instantanea comercial al confirmar.
-9. Ejecutar todos los escenarios y registrar su resultado.
+| Criterio | Estado de desarrollo | Prueba pendiente |
+| --- | --- | --- |
+| CA01 | Implementado | Ejecución funcional con Supabase |
+| CA02 | Implementado | Validar conteos agregados y omitidos |
+| CA03 | Implementado | Quitar y reincorporar varios artículos |
+| CA04 | Implementado | Verificar redondeo y los tres ajustes |
+| CA05 | Implementado | Probar fechas de frontera |
+| CA06 | Implementado en código y migración | Ejecutar migración y probar activación |
+| CA07 | Implementado | Probar superposición abierta y cerrada |
+| CA08 | Implementado | Probar restricciones desde interfaz y SQL |
+| CA09 | Implementado | Consultar una lista vencida real |
+| CA10 | Implementado en código y migración | Clasificar artículos y verificar presentación |
+
+## Cobertura mínima para finalizar la HU
+
+- Ejecutar las migraciones pendientes en Supabase.
+- Verificar que los artículos `MED` existentes se inicialicen en 10,5 %.
+- Verificar que los demás artículos se inicialicen en 21 %.
+- Probar una lista con fecha final nula.
+- Probar fechas exactamente iguales al inicio y al final.
+- Probar períodos superpuestos.
+- Probar una lista vacía y otra con IVA sin definir.
+- Probar sin ajuste, descuento y recargo.
+- Verificar que los precios mostrados no adicionen nuevamente el IVA.
+- Registrar el resultado de cada escenario de `scenarios.md`.
 
 ## Decisiones adoptadas
 
-Las siguientes decisiones definen el alcance inicial de la HU36:
-
-| ID | Decision | Definicion adoptada |
+| ID | Decisión | Definición |
 | --- | --- | --- |
-| DP01 | ¿El precio de la lista incluye IVA? | Si, precio final al publico; el sistema obtiene el desglose para el comprobante. |
-| DP02 | ¿Puede haber mas de una lista general vigente? | No. |
-| DP03 | ¿La lista puede depender de la sucursal? | No, en todas las sucursales se manejan los mismos precios. |
-| DP04 | ¿Como se cargaran las listas? | La migracion adapta las tablas existentes y se utiliza una pantalla administrativa minima para gestionar las listas. |
-| DP05 | ¿Que regla exacta activa las percepciones? | Las percepciones de IVA e IIBB serán ingresadas manualmente por un usuario autorizado. Los importes deben ser mayores o iguales a cero y se incorporarán al total de la venta. El sistema no determinará automáticamente si corresponden ni calculará sus porcentajes durante este sprint. |
+| DP01 | Alcance de HU36 | Se limita a administrar listas de precios; ventas, stock, clientes, pagos y comprobantes pertenecen a otras HU. |
+| DP02 | Significado del precio | El precio base y final son precios al público con IVA incluido. |
+| DP03 | Fecha final | Es opcional y su valor es inclusivo. |
+| DP04 | Listas generales | La lista no depende de una sucursal. |
+| DP05 | Vigencia única | No se permiten períodos activos superpuestos. |
+| DP06 | Carga de productos | Una lista nueva incorpora automáticamente todos los artículos activos con precio positivo. |
+| DP07 | Tratamiento de IVA | Se configura en el artículo y se muestra como solo lectura en la lista. |
+| DP08 | Medicamentos | Como regla simplificada del proyecto, los códigos `MED-*` se inicializan en 10,5 % y admiten corrección manual a 21 % o exento. |
+| DP09 | Rubros no medicinales | Se inicializan con la tasa general del 21 %. |

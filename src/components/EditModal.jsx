@@ -1,16 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 
 export default function EditModal({ isOpen, onClose, onSave, title, fields, initialData }) {
-  const [formData, setFormData] = useState({});
-
-  useEffect(() => {
-    if (isOpen) {
-      setFormData(initialData || {});
-    }
-  }, [isOpen, initialData]);
-
   if (!isOpen) return null;
+
+  return <EditModalContent onClose={onClose} onSave={onSave} title={title} fields={fields} initialData={initialData} />;
+}
+
+function EditModalContent({ onClose, onSave, title, fields, initialData }) {
+  const [formData, setFormData] = useState(initialData || {});
 
   const handleChange = (key, value) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
@@ -65,6 +63,7 @@ export default function EditModal({ isOpen, onClose, onSave, title, fields, init
                       }
                     }}
                     disabled={field.readOnly}
+                    required={field.required}
                     style={{ ...commonInputStyle(field.readOnly), cursor: field.readOnly ? "not-allowed" : "pointer" }}
                   >
                     <option value="" disabled>Seleccione una opción...</option>

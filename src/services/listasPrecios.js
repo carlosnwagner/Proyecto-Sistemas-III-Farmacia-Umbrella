@@ -78,7 +78,7 @@ export async function setListaPrecioActiva(idLista, activa) {
 export async function getArticulosActivos() {
   const { data, error } = await supabase
     .from("articulo")
-    .select("id_articulo, codigo, codigo_barras, nombre, precio_venta, estado")
+    .select("id_articulo, codigo, codigo_barras, nombre, precio_venta, alicuota_iva, estado")
     .eq("estado", true)
     .order("nombre", { ascending: true });
 
@@ -97,12 +97,18 @@ export async function getDetallesLista(idLista) {
       porcentaje_recargo,
       tipo_ajuste,
       precio_final,
-      articulo:id_articulo (id_articulo, codigo, nombre)
+      articulo:id_articulo (id_articulo, codigo, nombre, alicuota_iva)
     `)
     .eq("id_lista", idLista)
     .order("id_detalle_lista", { ascending: true });
 
   return { data: data || [], error };
+}
+
+export async function addArticulosActivosToLista(idLista) {
+  return supabase
+    .rpc("agregar_productos_activos_lista", { p_id_lista: Number(idLista) })
+    .single();
 }
 
 export async function saveDetalleLista(payload) {

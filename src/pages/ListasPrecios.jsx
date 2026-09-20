@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, Edit2, Percent, Plus, Search, Tag, Trash2, X } from "lucide-react";
 import { showAlert } from "../lib/alerts.js";
 import {
+  addArticulosActivosToLista,
   createListaPrecio,
   deleteDetalleLista,
   getArticulosActivos,
@@ -12,9 +13,36 @@ import {
   updateListaPrecio,
 } from "../services/listasPrecios.js";
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+const hoy = () => {
+  const fecha = new Date();
+  const anio = fecha.getFullYear();
+  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+  const dia = String(fecha.getDate()).padStart(2, "0");
+  return `${anio}-${mes}-${dia}`;
+};
+
+const obtenerEstadoLista = (lista) => {
+  if (!lista.estado) return "Inactiva";
+
+  const fechaActual = hoy();
+  if (lista.fecha_inicio > fechaActual) return "Programada";
+  if (lista.fecha_fin && lista.fecha_fin < fechaActual) return "Vencida";
+  return "Vigente";
+};
+
+const estilosEstadoLista = {
+  Vigente: { color: "#166534", background: "#dcfce7" },
+  Programada: { color: "#1d4ed8", background: "#dbeafe" },
+  Vencida: { color: "#9a3412", background: "#ffedd5" },
+  Inactiva: { color: "#6b7280", background: "#f3f4f6" },
+};
 const money = (value) =>
   Number(value || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" });
+
+const ivaLabel = (value) => {
+  if (value === null || value === undefined) return "Sin definir";
+  return Number(value) === 0 ? "Exento" : `${Number(value)} %`;
+};
 
 const inputStyle = {
   width: "100%",
@@ -67,6 +95,8 @@ export default function ListasPrecios() {
   const [detalles, setDetalles] = useState([]);
   const [detalleForm, setDetalleForm] = useState(emptyDetalleForm());
   const [saving, setSaving] = useState(false);
+  const [addingAll, setAddingAll] = useState(false);
+  const [mostrarCargaIndividual, setMostrarCargaIndividual] = useState(false);
 
   const cargarListas = useCallback(async () => {
     setLoading(true);
@@ -102,6 +132,7 @@ export default function ListasPrecios() {
     setListaSeleccionada(lista);
     setDetalles(data);
     setDetalleForm(emptyDetalleForm());
+    setMostrarCargaIndividual(false);
   };
 
   const abrirNuevaLista = () => {
@@ -160,6 +191,15 @@ export default function ListasPrecios() {
     return precio;
   }, [detalleForm]);
 
+  const articulosNoIncluidos = useMemo(() => {
+    const idsIncluidos = new Set(detalles.map((detalle) => String(detalle.id_articulo)));
+    return articulos.filter((articulo) => !idsIncluidos.has(String(articulo.id_articulo)));
+  }, [articulos, detalles]);
+
+  const articulosParaSeleccionar = detalleForm.id_detalle_lista
+    ? articulos
+    : articulosNoIncluidos;
+
   const guardarDetalle = async (event) => {
     event.preventDefault();
     const precio = Number(detalleForm.precio);
@@ -184,7 +224,29 @@ export default function ListasPrecios() {
     await cargarListas();
   };
 
+  const agregarTodosLosProductos = async () => {
+    const confirmado = await showAlert.confirmAction({
+      title: "Agregar todos los productos",
+      text: "Se agregarán todos los productos activos que todavía no estén incluidos.",
+      confirmButtonText: "Agregar productos",
+    });
+    if (!confirmado) return;
+    setAddingAll(true);
+    const { data, error } = await addArticulosActivosToLista(listaSeleccionada.id_lista);
+    setAddingAll(false);
+    if (error) return showAlert.errorSave(error.message);
+
+    showAlert.successSave(
+      data.productos_agregados > 0
+        ? `Se agregaron ${data.productos_agregados} producto(s)`
+        : "Todos los productos activos ya estaban incluidos"
+    );
+    await cargarDetalles(listaSeleccionada);
+    await cargarListas();
+  };
+
   const editarDetalle = (detalle) => {
+    setMostrarCargaIndividual(true);
     setDetalleForm({
       id_detalle_lista: detalle.id_detalle_lista,
       id_articulo: String(detalle.id_articulo),
@@ -201,7 +263,12 @@ export default function ListasPrecios() {
   };
 
   const eliminarDetalle = async (detalle) => {
-    if (!window.confirm(`¿Quitar ${detalle.articulo?.nombre || "el producto"} de la lista?`)) return;
+    const confirmado = await showAlert.confirmAction({
+      title: "Quitar producto",
+      text: `¿Desea quitar ${detalle.articulo?.nombre || "el producto"} de la lista?`,
+      confirmButtonText: "Quitar",
+    });
+    if (!confirmado) return;
     const { error } = await deleteDetalleLista(detalle.id_detalle_lista);
     if (error) return showAlert.errorSave(error.message);
     showAlert.successSave("Producto quitado de la lista");
@@ -212,8 +279,7 @@ export default function ListasPrecios() {
   const listasFiltradas = useMemo(() => listas.filter((lista) => {
     const term = search.toLowerCase();
     const coincide = lista.nombre?.toLowerCase().includes(term) || lista.descripcion?.toLowerCase().includes(term);
-    if (filtro === "Activas") return coincide && lista.estado;
-    if (filtro === "Inactivas") return coincide && !lista.estado;
+    if (filtro !== "Todas") return coincide && obtenerEstadoLista(lista) === filtro;
     return coincide;
   }), [listas, search, filtro]);
 
@@ -235,7 +301,11 @@ export default function ListasPrecios() {
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar lista..." style={{ ...inputStyle, paddingLeft: "2.4rem" }} />
         </div>
         <select value={filtro} onChange={(e) => setFiltro(e.target.value)} style={{ ...inputStyle, width: "180px" }}>
-          <option>Todas</option><option>Activas</option><option>Inactivas</option>
+          <option value="Todas">Todas</option>
+          <option value="Vigente">Vigentes</option>
+          <option value="Programada">Programadas</option>
+          <option value="Vencida">Vencidas</option>
+          <option value="Inactiva">Inactivas</option>
         </select>
       </div>
 
@@ -247,19 +317,22 @@ export default function ListasPrecios() {
           <tbody>
             {loading ? <tr><td colSpan="5" style={{ padding: "2rem", textAlign: "center", color: "#6b7280" }}>Cargando listas...</td></tr> : listasFiltradas.length === 0 ? (
               <tr><td colSpan="5" style={{ padding: "2.5rem", textAlign: "center", color: "#6b7280" }}><Tag size={30} style={{ marginBottom: ".5rem" }} /><br />No hay listas de precios cargadas.</td></tr>
-            ) : listasFiltradas.map((lista) => (
-              <tr key={lista.id_lista} style={{ borderTop: "1px solid #e5e7eb" }}>
+            ) : listasFiltradas.map((lista) => {
+              const estadoLista = obtenerEstadoLista(lista);
+              const estiloEstado = estilosEstadoLista[estadoLista];
+
+              return <tr key={lista.id_lista} style={{ borderTop: "1px solid #e5e7eb" }}>
                 <td style={{ padding: "0.85rem 1rem" }}><b>{lista.nombre}</b><div style={{ color: "#6b7280", fontSize: ".8rem" }}>{lista.descripcion || "Sin descripción"}</div></td>
                 <td style={{ padding: "0.85rem 1rem" }}><CalendarDays size={15} style={{ verticalAlign: "middle", marginRight: 6 }} />{lista.fecha_inicio} — {lista.fecha_fin || "Sin fecha final"}</td>
                 <td style={{ padding: "0.85rem 1rem" }}>{lista.cantidad_productos}</td>
-                <td style={{ padding: "0.85rem 1rem" }}><span style={{ padding: ".2rem .55rem", borderRadius: "999px", fontSize: ".75rem", fontWeight: 700, color: lista.estado ? "#166534" : "#6b7280", background: lista.estado ? "#dcfce7" : "#f3f4f6" }}>{lista.estado ? "ACTIVA" : "INACTIVA"}</span></td>
+                <td style={{ padding: "0.85rem 1rem" }}><span style={{ padding: ".2rem .55rem", borderRadius: "999px", fontSize: ".75rem", fontWeight: 700, color: estiloEstado.color, background: estiloEstado.background }}>{estadoLista.toUpperCase()}</span></td>
                 <td style={{ padding: "0.85rem 1rem", textAlign: "center", whiteSpace: "nowrap" }}>
                   <button onClick={() => cargarDetalles(lista)} style={{ marginRight: 6, border: 0, borderRadius: 6, padding: ".45rem .65rem", cursor: "pointer", background: "#f3ede7", color: "#65482b", fontWeight: 600 }}>Gestionar precios</button>
                   <button onClick={() => abrirEdicionLista(lista)} title="Editar" style={{ marginRight: 6, border: "1px solid #d1d5db", borderRadius: 6, padding: ".4rem", cursor: "pointer", background: "#fff" }}><Edit2 size={16} /></button>
                   <button onClick={() => cambiarEstado(lista)} style={{ border: 0, borderRadius: 6, padding: ".45rem .65rem", cursor: "pointer", color: "#fff", background: lista.estado ? "#b91c1c" : "#166534" }}>{lista.estado ? "Desactivar" : "Activar"}</button>
                 </td>
               </tr>
-            ))}
+            })}
           </tbody>
         </table>
       </div>
@@ -282,16 +355,23 @@ export default function ListasPrecios() {
       {listaSeleccionada && (
         <Modal title={`Precios — ${listaSeleccionada.nombre}`} onClose={() => setListaSeleccionada(null)} width="1050px">
           <div style={{ padding: "1.25rem" }}>
-            <form onSubmit={guardarDetalle} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto", gap: ".65rem", alignItems: "end", padding: "1rem", background: "#f9fafb", borderRadius: 10, marginBottom: "1rem" }}>
-              <label>Producto *<select value={detalleForm.id_articulo} disabled={!!detalleForm.id_detalle_lista} onChange={(e) => { const articulo = articulos.find((a) => String(a.id_articulo) === e.target.value); setDetalleForm({ ...detalleForm, id_articulo: e.target.value, precio: articulo?.precio_venta ? String(articulo.precio_venta) : detalleForm.precio }); }} style={inputStyle}><option value="">Seleccionar...</option>{articulos.map((a) => <option key={a.id_articulo} value={a.id_articulo}>{a.codigo} — {a.nombre}</option>)}</select></label>
-              <label>Precio base *<input type="number" min="0.01" step="0.01" value={detalleForm.precio} onChange={(e) => setDetalleForm({ ...detalleForm, precio: e.target.value })} style={inputStyle} /></label>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+              <div><b>{detalles.length} producto(s) incluidos</b><div style={{ color: "#6b7280", fontSize: ".82rem" }}>Agregá todos y eliminá únicamente las excepciones.</div></div>
+              <div style={{ display: "flex", gap: ".65rem", flexWrap: "wrap" }}>
+                <button type="button" disabled={addingAll} onClick={agregarTodosLosProductos} style={{ border: 0, background: "#166534", color: "#fff", borderRadius: 8, padding: ".65rem .9rem", cursor: "pointer", fontWeight: 600 }}><Plus size={16} style={{ verticalAlign: "middle", marginRight: 5 }} />{addingAll ? "Agregando..." : "Agregar todos los productos activos"}</button>
+                {(mostrarCargaIndividual || articulosNoIncluidos.length > 0) && <button type="button" onClick={() => { setMostrarCargaIndividual(!mostrarCargaIndividual); setDetalleForm(emptyDetalleForm()); }} style={{ border: "1px solid #d1d5db", background: "#fff", color: "#374151", borderRadius: 8, padding: ".65rem .9rem", cursor: "pointer" }}>{mostrarCargaIndividual ? "Ocultar carga individual" : `Agregar producto no incluido (${articulosNoIncluidos.length})`}</button>}
+              </div>
+            </div>
+            {mostrarCargaIndividual && <form onSubmit={guardarDetalle} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto", gap: ".65rem", alignItems: "end", padding: "1rem", background: "#f9fafb", borderRadius: 10, marginBottom: "1rem" }}>
+              <label>Producto *<select value={detalleForm.id_articulo} disabled={!!detalleForm.id_detalle_lista} onChange={(e) => { const articulo = articulos.find((a) => String(a.id_articulo) === e.target.value); setDetalleForm({ ...detalleForm, id_articulo: e.target.value, precio: articulo?.precio_venta ? String(articulo.precio_venta) : detalleForm.precio }); }} style={inputStyle}><option value="">Seleccionar...</option>{articulosParaSeleccionar.map((a) => <option key={a.id_articulo} value={a.id_articulo}>{a.codigo} — {a.nombre}</option>)}</select></label>
+              <label>Precio base al público *<input type="number" min="0.01" step="0.01" value={detalleForm.precio} onChange={(e) => setDetalleForm({ ...detalleForm, precio: e.target.value })} style={inputStyle} /></label>
               <label>Ajuste<select value={detalleForm.tipo_ajuste} onChange={(e) => setDetalleForm({ ...detalleForm, tipo_ajuste: e.target.value, porcentaje_ajuste: "0" })} style={inputStyle}><option>Sin ajuste</option><option>Descuento</option><option>Recargo</option></select></label>
               <label>Porcentaje<input type="number" min="0" step="0.01" disabled={detalleForm.tipo_ajuste === "Sin ajuste"} value={detalleForm.porcentaje_ajuste} onChange={(e) => setDetalleForm({ ...detalleForm, porcentaje_ajuste: e.target.value })} style={inputStyle} /></label>
-              <div><span style={{ display: "block", fontSize: ".85rem" }}>Precio final</span><b style={{ display: "block", padding: ".65rem 0", color: "#166534" }}>{money(precioFinalPreview)}</b></div>
+              <div><span style={{ display: "block", fontSize: ".85rem" }}>Precio final al público</span><b style={{ display: "block", padding: ".65rem 0", color: "#166534" }}>{money(precioFinalPreview)}</b></div>
               <button disabled={saving} style={{ border: 0, background: "#65482b", color: "#fff", borderRadius: 8, padding: ".7rem", cursor: "pointer" }}>{detalleForm.id_detalle_lista ? "Actualizar" : "Agregar"}</button>
-            </form>
+            </form>}
             {detalleForm.id_detalle_lista && <button onClick={() => setDetalleForm(emptyDetalleForm())} style={{ marginBottom: ".75rem", border: 0, background: "transparent", color: "#65482b", cursor: "pointer" }}>Cancelar edición</button>}
-            <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".88rem" }}><thead style={{ background: "#f9fafb" }}><tr>{["Producto", "Precio base", "Ajuste", "Precio final", "Acciones"].map((h) => <th key={h} style={{ padding: ".7rem", textAlign: h === "Acciones" ? "center" : "left" }}>{h}</th>)}</tr></thead><tbody>{detalles.length === 0 ? <tr><td colSpan="5" style={{ padding: "2rem", textAlign: "center", color: "#6b7280" }}>Agregá al menos un producto para poder activar la lista.</td></tr> : detalles.map((d) => <tr key={d.id_detalle_lista} style={{ borderTop: "1px solid #e5e7eb" }}><td style={{ padding: ".7rem" }}><b>{d.articulo?.nombre}</b><div style={{ color: "#6b7280" }}>{d.articulo?.codigo}</div></td><td style={{ padding: ".7rem" }}>{money(d.precio)}</td><td style={{ padding: ".7rem" }}><Percent size={14} style={{ verticalAlign: "middle", marginRight: 4 }} />{d.tipo_ajuste}{d.tipo_ajuste !== "Sin ajuste" ? ` ${d.tipo_ajuste === "Descuento" ? d.porcentaje_descuento : d.porcentaje_recargo}%` : ""}</td><td style={{ padding: ".7rem", fontWeight: 700, color: "#166534" }}>{money(d.precio_final)}</td><td style={{ padding: ".7rem", textAlign: "center" }}><button onClick={() => editarDetalle(d)} title="Editar" style={{ marginRight: 6, border: "1px solid #d1d5db", background: "#fff", borderRadius: 6, padding: ".4rem", cursor: "pointer" }}><Edit2 size={15} /></button><button onClick={() => eliminarDetalle(d)} title="Quitar" style={{ border: "1px solid #fecaca", color: "#b91c1c", background: "#fff", borderRadius: 6, padding: ".4rem", cursor: "pointer" }}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".88rem" }}><thead style={{ background: "#f9fafb" }}><tr>{["Producto", "Precio base al público", "IVA incluido", "Ajuste", "Precio final al público", "Acciones"].map((h) => <th key={h} style={{ padding: ".7rem", textAlign: h === "Acciones" ? "center" : "left" }}>{h}</th>)}</tr></thead><tbody>{detalles.length === 0 ? <tr><td colSpan="6" style={{ padding: "2rem", textAlign: "center", color: "#6b7280" }}>La lista está vacía. Usá “Agregar todos los productos activos”.</td></tr> : detalles.map((d) => <tr key={d.id_detalle_lista} style={{ borderTop: "1px solid #e5e7eb" }}><td style={{ padding: ".7rem" }}><b>{d.articulo?.nombre}</b><div style={{ color: "#6b7280" }}>{d.articulo?.codigo}</div></td><td style={{ padding: ".7rem" }}>{money(d.precio)}</td><td style={{ padding: ".7rem", color: d.articulo?.alicuota_iva === null ? "#b91c1c" : "#4b5563", fontWeight: 600 }}>{ivaLabel(d.articulo?.alicuota_iva)}</td><td style={{ padding: ".7rem" }}><Percent size={14} style={{ verticalAlign: "middle", marginRight: 4 }} />{d.tipo_ajuste}{d.tipo_ajuste !== "Sin ajuste" ? ` ${d.tipo_ajuste === "Descuento" ? d.porcentaje_descuento : d.porcentaje_recargo}%` : ""}</td><td style={{ padding: ".7rem", fontWeight: 700, color: "#166534" }}>{money(d.precio_final)}</td><td style={{ padding: ".7rem", textAlign: "center" }}><button onClick={() => editarDetalle(d)} title="Editar" style={{ marginRight: 6, border: "1px solid #d1d5db", background: "#fff", borderRadius: 6, padding: ".4rem", cursor: "pointer" }}><Edit2 size={15} /></button><button onClick={() => eliminarDetalle(d)} title="Quitar" style={{ border: "1px solid #fecaca", color: "#b91c1c", background: "#fff", borderRadius: 6, padding: ".4rem", cursor: "pointer" }}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>
           </div>
         </Modal>
       )}

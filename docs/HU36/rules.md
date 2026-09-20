@@ -1,131 +1,117 @@
-# HU36 - Reglas de negocio
+# HU36 - Reglas de negocio de listas de precios
 
-## Productos y stock
+## Cabecera y vigencia
 
-### RN01 - Productos habilitados
+### RN01 - Nombre obligatorio
 
-Solo pueden buscarse y agregarse articulos cuyo estado sea activo.
+Toda lista debe poseer un nombre no vacío.
 
-### RN02 - Deposito de consulta
+### RN02 - Inicio obligatorio
 
-El stock se consulta en el deposito de salida asociado a la venta, no como existencia global del articulo.
+La fecha de inicio es obligatoria.
 
-### RN03 - Cantidad valida
+### RN03 - Finalización opcional
 
-La cantidad debe ser mayor que cero y menor o igual al stock disponible.
+La fecha final puede ser nula. Cuando se informa, debe ser igual o posterior a la fecha de inicio.
 
-### RN04 - Momento del egreso
+### RN04 - Estado inicial
 
-Agregar un producto a una venta en borrador no modifica el stock. El egreso se genera al confirmar la venta.
+Toda lista nueva se crea inactiva para permitir su revisión antes de utilizarla.
 
-## Listas de precios
+### RN05 - Estado temporal mostrado
 
-### RN05 - Estado de la lista
+El estado visible se determina de la siguiente manera:
 
-Solo se consideran listas con estado `Activa`.
+- `Inactiva`: `estado = false`.
+- `Programada`: está activa y la fecha actual es anterior al inicio.
+- `Vigente`: está activa y la fecha actual pertenece al período.
+- `Vencida`: está activa y la fecha actual es posterior a la fecha final.
 
-### RN06 - Inicio de vigencia
+La fecha final es inclusiva.
 
-`fecha_desde` es obligatoria y la lista solo puede aplicarse cuando:
+### RN06 - Vigencia activa no superpuesta
 
-```text
-fecha_desde <= fecha_venta
-```
+No pueden existir dos listas activas cuyos períodos compartan al menos una fecha. Una fecha final nula representa un período abierto.
 
-### RN07 - Finalizacion opcional
+## Productos de la lista
 
-`fecha_hasta` es opcional. Cuando esta informada, la lista es aplicable si:
+### RN07 - Carga inicial
 
-```text
-fecha_venta <= fecha_hasta
-```
+Al crear la lista se incorporan todos los artículos que cumplan simultáneamente:
 
-Cuando es nula, la lista permanece vigente desde `fecha_desde` mientras este activa.
+- `estado = true`.
+- `precio_venta` no nulo.
+- `precio_venta > 0`.
 
-### RN08 - Coherencia de fechas
+### RN08 - Producto único
 
-Si `fecha_hasta` esta informada, debe ser igual o posterior a `fecha_desde`.
+Un artículo solo puede aparecer una vez dentro de una misma lista.
 
-### RN09 - Lista aplicable unica
+### RN09 - Precio base al público
 
-Para el alcance inicial debe existir una unica lista general aplicable a una fecha. No se permiten vigencias activas ambiguas. Si en el futuro se agregan listas por sucursal o canal, debe definirse expresamente su prioridad.
+El precio base debe ser mayor que cero y representa un precio al público con IVA incluido.
 
-### RN10 - Producto incluido
+### RN10 - Productos no incluidos
 
-El articulo debe poseer un detalle dentro de la lista aplicable. En caso contrario, no tiene precio vigente y no puede incorporarse a la venta.
+La carga individual solo ofrece artículos que no pertenezcan actualmente a la lista. Un artículo retirado puede reincorporarse.
 
-### RN11 - Precio base
+## Ajustes comerciales
 
-El precio base debe ser mayor que cero.
+### RN11 - Tipos admitidos
 
-## Ajustes
+Los ajustes posibles son `Sin ajuste`, `Descuento` y `Recargo`.
 
-### RN12 - Tipos de ajuste
+### RN12 - Porcentajes válidos
 
-Los tipos admitidos son:
+- Los porcentajes no pueden ser negativos.
+- `Sin ajuste` exige descuento y recargo iguales a cero.
+- No pueden coexistir descuento y recargo.
+- El descuento debe ser menor que 100 %.
 
-- `Sin ajuste`.
-- `Descuento`.
-- `Recargo`.
-
-### RN13 - Valor del ajuste
-
-El valor porcentual del ajuste debe ser mayor o igual a cero. Para `Sin ajuste`, el valor debe ser cero.
-
-### RN14 - Calculo del precio final
+### RN13 - Precio final
 
 ```text
 Sin ajuste: precio_final = precio_base
-Descuento:  precio_final = precio_base * (1 - valor_ajuste / 100)
-Recargo:    precio_final = precio_base * (1 + valor_ajuste / 100)
+Descuento:  precio_final = precio_base × (1 - descuento / 100)
+Recargo:    precio_final = precio_base × (1 + recargo / 100)
 ```
 
-El precio final debe ser mayor que cero.
+El precio final se redondea a dos decimales y debe ser mayor que cero.
 
-### RN15 - Redondeo
+## Activación
 
-Todos los importes monetarios se redondean a dos decimales. El mismo mecanismo de redondeo debe utilizarse en interfaz, servicios y base de datos.
+### RN14 - Lista no vacía
 
-## Impuestos y totales
+Una lista vacía no puede activarse.
 
-### RN16 - Tratamientos admitidos
+### RN15 - Clasificación fiscal completa
 
-Cada articulo debe indicar uno de los tratamientos previstos por la HU:
+Antes de activar una lista, todos sus artículos deben poseer una alícuota configurada entre `21`, `10.5` y `0` para exento en reventa. La clasificación se administra en el artículo, no en la lista.
 
-- Gravado al 21 %.
-- Gravado al 10,5 %.
-- Exento, con alicuota 0 %.
+## IVA y precio al público
 
-### RN17 - Percepciones
+### RN16 - IVA incluido
 
-Las percepciones de IVA e IIBB serán ingresadas manualmente por un usuario autorizado. Los importes deben ser mayores o iguales a cero y se incorporarán al total de la venta. El sistema no determinará automáticamente si corresponden ni calculará sus porcentajes durante este sprint.
+El precio base y el precio final de la lista incluyen el IVA que corresponda. El módulo no adiciona nuevamente la alícuota.
 
-### RN18 - Recalculo
+### RN17 - Alícuota informativa
 
-Todo cambio de producto o cantidad debe recalcular el subtotal del renglon y los totales de la venta.
+La lista muestra la alícuota del artículo como información de solo lectura. El desglose de neto e IVA pertenece al proceso de venta.
 
-## Conservacion historica
+### RN18 - Medicamentos
 
-### RN19 - Instantanea comercial
+Como regla simplificada del proyecto, los artículos cuyo código comienza con `MED-` se inicializan con IVA 10,5 %. Un empleado autorizado puede corregir la clasificación a IVA 21 % o exento en reventa cuando el caso particular lo requiera.
 
-Al confirmar la venta, cada renglon conserva como datos propios:
+### RN19 - Rubros no medicinales
 
-- Identificador de la lista aplicada.
-- Precio base.
-- Tipo y valor del ajuste.
-- Precio unitario final.
-- Alicuota.
-- Importes neto, impositivo y subtotal.
+Los artículos de perfumería, cosmética, higiene personal, accesorios y demás códigos que no comiencen con `MED-` se inicializan con la alícuota general del 21 %, sin impedir una corrección autorizada del maestro de artículos.
 
-### RN20 - Inmutabilidad historica
+## Conservación
 
-Una modificacion posterior de la lista o del articulo no debe cambiar los importes de una venta confirmada.
+### RN20 - Baja lógica
 
-## Restricciones de integridad sugeridas
+Las listas no se eliminan desde la pantalla. Se desactivan y permanecen disponibles para consulta.
 
-- Combinacion unica de lista y articulo en el detalle de precios.
-- `precio_base > 0`.
-- `valor_ajuste >= 0`.
-- `fecha_hasta is null or fecha_hasta >= fecha_desde`.
-- Alicuota limitada a `0`, `10.5` o `21` para esta HU.
-- Cantidad de venta mayor que cero.
+### RN21 - Uso externo
+
+Otros módulos deben consultar solamente listas activas cuya vigencia incluya la fecha solicitada. La confirmación de una venta y la conservación de su precio histórico pertenecen a otras historias de usuario.

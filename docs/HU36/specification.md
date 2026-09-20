@@ -1,96 +1,119 @@
-# HU36 - Cargar productos y calcular importes
+# HU36 - Gestionar listas de precios
 
 ## Historia de usuario
 
-**Como** empleado o cajero,
-**para** registrar los articulos solicitados y determinar correctamente el importe a cobrar,
-**necesito** buscar productos, agregarlos a la venta y calcular sus importes e impuestos segun la lista de precios vigente.
+**Como** empleado autorizado de la farmacia,
+**para** mantener precios de venta consistentes y temporalmente vigentes,
+**necesito** crear y administrar listas de precios con productos, descuentos y recargos.
 
 ## Objetivo
 
-Permitir la construccion del detalle de una venta presencial utilizando productos activos, stock disponible y precios temporalmente vigentes, con sus ajustes e impuestos correspondientes.
+Disponer de una lista general de precios al público que pueda prepararse, revisarse y activarse para un período determinado. La lista proporciona a otros módulos el precio comercial aplicable, pero no registra ventas ni calcula impuestos de una operación.
+
+## Definición del precio
+
+- `precio_base` es el precio al público antes del descuento o recargo de la lista.
+- `precio_final` es el precio al público después del ajuste.
+- Ambos importes incluyen el IVA correspondiente al artículo.
+- La lista no agrega IVA sobre esos importes ni modifica la alícuota del artículo.
+- El artículo debe indicar su tratamiento fiscal: IVA 21 %, IVA 10,5 % o exento en reventa.
+- Como valor inicial del proyecto, los códigos `MED-*` reciben 10,5 % y los demás códigos reciben 21 %; la clasificación puede corregirse manualmente.
+- El desglose entre neto e IVA corresponde al proceso de venta, fuera de esta HU.
 
 ## Alcance
 
 La HU comprende:
 
-- Busqueda de productos por nombre, codigo interno o codigo de barras.
-- Consulta del stock disponible en el deposito de salida.
-- Resolucion automatica de la lista de precios aplicable.
-- Aplicacion de descuentos o recargos definidos en la lista.
-- Alta, modificacion y eliminacion de renglones del detalle de venta.
-- Calculo de subtotales, impuestos, percepciones y total.
-- Conservacion de los valores comerciales e impositivos al confirmar la venta.
-
-La administracion completa de listas de precios no forma parte de la interaccion del cajero. Para ejecutar esta HU debe existir al menos una lista cargada y activa.
+- Crear y editar la cabecera de una lista.
+- Definir fecha de inicio y fecha final opcional.
+- Incorporar automáticamente los artículos activos con precio de venta válido.
+- Agregar nuevamente artículos que hayan sido retirados.
+- Quitar artículos de una lista en preparación.
+- Editar el precio base al público.
+- Configurar descuentos o recargos porcentuales.
+- Calcular y mostrar el precio final al público.
+- Activar y desactivar listas.
+- Identificar listas programadas, vigentes, vencidas e inactivas.
+- Evitar períodos activos superpuestos.
+- Conservar listas anteriores para consulta.
+- Mostrar el tratamiento de IVA del artículo como información no editable.
 
 ## Precondiciones
 
-- Existe una venta en estado `Borrador`.
-- La venta esta asociada a una sucursal y a un deposito de salida.
-- El empleado se encuentra habilitado para operar en esa sucursal.
-- Existen articulos activos asociados al deposito.
-- Existe una lista de precios activa aplicable a la fecha de la venta.
-- Los articulos vendibles poseen tratamiento impositivo configurado.
+- El empleado posee autorización para administrar precios.
+- Existen artículos registrados.
+- Los artículos que se incorporen automáticamente están activos y poseen `precio_venta > 0`.
+- Antes de activar una lista, todos sus artículos poseen tratamiento de IVA definido.
 
 ## Flujo principal
 
-1. El empleado busca un producto por nombre, codigo interno o codigo de barras.
-2. El sistema muestra solamente productos activos que coinciden con la busqueda.
-3. El sistema muestra el stock disponible y el precio vigente del producto.
-4. El empleado selecciona el producto e indica una cantidad.
-5. El sistema valida que la cantidad sea mayor que cero y no supere el stock disponible.
-6. El sistema obtiene el precio desde la lista activa vigente para la fecha de la venta.
-7. El sistema aplica el descuento o recargo configurado y calcula el precio final.
-8. El sistema calcula el subtotal y los importes impositivos del renglon.
-9. El producto se agrega al detalle de la venta.
-10. Al modificar cantidades o productos, el sistema recalcula los importes y el total.
-11. Al confirmar la venta, se conservan la lista, los precios, los ajustes y las alicuotas utilizados.
+1. El empleado selecciona **Nueva lista**.
+2. Informa nombre, descripción, fecha de inicio y, opcionalmente, fecha final.
+3. El sistema valida las fechas y crea la lista en estado inactivo.
+4. El sistema incorpora automáticamente los artículos activos con precio de venta mayor que cero.
+5. El empleado revisa los precios base al público y la condición de IVA mostrada.
+6. Puede quitar productos, reincorporar productos faltantes o modificar precios.
+7. Puede definir para cada artículo un descuento, un recargo o ningún ajuste.
+8. El sistema calcula y muestra el precio final al público.
+9. El empleado activa la lista.
+10. El sistema comprueba que tenga productos, que todos posean tratamiento de IVA y que no se superponga con otra lista activa.
 
 ## Flujos alternativos
 
-### Producto sin stock suficiente
+### Fecha final vacía
 
-El sistema rechaza la cantidad, informa el stock disponible y no modifica el detalle.
+La lista queda vigente desde su fecha de inicio hasta que sea desactivada o se establezca una fecha final.
 
-### Producto sin precio vigente
+### Fechas inválidas
 
-El sistema informa que el producto no posee un precio vigente y no permite incorporarlo.
+Si la fecha final es anterior a la inicial, el sistema informa el error y no guarda la lista.
 
-### Lista futura, vencida o inactiva
+### Lista vacía
 
-La lista no se considera aplicable. Si no existe otra lista valida, el producto se trata como producto sin precio vigente.
+La lista puede permanecer inactiva, pero no puede activarse hasta contener al menos un producto.
 
-### Lista sin fecha de finalizacion
+### Producto sin tratamiento de IVA
 
-Una lista con `fecha_hasta = null` permanece temporalmente vigente desde `fecha_desde`, mientras conserve estado `Activa` y no exista una regla de reemplazo que determine otra lista aplicable.
+El sistema lo identifica como `Sin definir`. La lista puede guardarse en preparación, pero no puede activarse hasta que el artículo sea clasificado desde la administración de productos.
 
-## Criterios de aceptacion
+### Vigencia superpuesta
+
+Si la lista que se intenta activar comparte alguna fecha con otra lista activa, el sistema rechaza la activación.
+
+### Producto quitado
+
+El empleado puede reincorporarlo mediante la opción de productos no incluidos. El selector solo ofrece artículos que no estén actualmente en la lista.
+
+## Criterios de aceptación
 
 | ID | Criterio |
 | --- | --- |
-| CA01 | Permite buscar productos por nombre, codigo interno o codigo de barras y muestra unicamente productos activos. |
-| CA02 | Para cada producto muestra el precio vigente y el stock disponible en el deposito correspondiente. |
-| CA03 | Permite agregar y quitar productos, ademas de modificar sus cantidades antes de confirmar la venta. |
-| CA04 | Solo admite cantidades mayores que cero y que no superen el stock disponible. |
-| CA05 | El precio se obtiene de una lista de precios activa y vigente para la fecha de la venta; la fecha de finalizacion puede ser opcional. |
-| CA06 | La lista puede definir descuentos o recargos, y el sistema calcula y muestra el precio final resultante. |
-| CA07 | Si el producto no posee un precio vigente, el sistema informa la situacion y no permite incorporarlo a la venta. |
-| CA08 | El sistema calcula los subtotales, el IVA del 21 % o 10,5 %, los importes exentos y las percepciones cuando correspondan. |
-| CA09 | El sistema calcula el total de la venta y recalcula automaticamente los importes al modificar productos o cantidades. |
-| CA10 | La venta confirmada conserva la lista de precios, el precio base, el ajuste, el precio final y la alicuota aplicados, aunque posteriormente se modifique la lista. |
+| CA01 | Permite crear una lista con nombre, fecha de inicio obligatoria y fecha final opcional; la fecha final no puede ser anterior a la inicial. |
+| CA02 | Toda lista nueva se crea inactiva e incorpora automáticamente los artículos activos que posean precio de venta mayor que cero. |
+| CA03 | Permite editar el precio base al público, quitar productos y reincorporar únicamente productos no incluidos. |
+| CA04 | Permite definir `Sin ajuste`, `Descuento` o `Recargo`, valida el porcentaje y calcula el precio final al público. |
+| CA05 | Distingue visualmente listas inactivas, programadas, vigentes y vencidas según su estado y período. |
+| CA06 | Solo permite activar una lista que contenga al menos un producto y cuyos artículos posean tratamiento de IVA definido. |
+| CA07 | Impide que existan dos listas activas con períodos de vigencia superpuestos. |
+| CA08 | El precio base y el precio final son mayores que cero; un descuento no puede alcanzar o superar el 100 % y no pueden coexistir descuento y recargo. |
+| CA09 | Las listas desactivadas o vencidas permanecen disponibles para consulta y no se eliminan desde la pantalla. |
+| CA10 | Muestra el tratamiento de IVA del artículo como dato informativo y considera que los precios de la lista son precios al público con IVA incluido, sin volver a adicionar el impuesto. |
 
 ## Postcondiciones
 
-- El detalle de la venta en borrador refleja los productos y cantidades seleccionados.
-- Los importes mostrados corresponden a la lista vigente y al tratamiento impositivo aplicable.
-- Agregar o modificar productos no descuenta stock; el egreso se realiza al confirmar la venta.
-- Una venta confirmada no depende de los valores actuales de la lista para reconstruir sus importes historicos.
+- La lista queda almacenada con su período, estado y detalle de productos.
+- Cada detalle conserva precio base, ajuste y precio final.
+- Como máximo existe una lista activa aplicable a una fecha determinada.
+- Las listas históricas permanecen consultables.
+- Otros módulos pueden consultar el precio final de una lista vigente.
 
 ## Fuera de alcance
 
-- Combinacion de varias listas en un mismo renglon.
-- Cupones personalizados.
-- Precios negociados manualmente por el cajero.
-- Descuentos de obras sociales o recetas.
-- Modificacion retroactiva de ventas confirmadas.
+- Crear ventas o administrar su estado.
+- Buscar productos para una venta.
+- Consultar o descontar stock.
+- Calcular neto, IVA, percepciones o total de una venta.
+- Registrar clientes o medios de pago.
+- Confirmar ventas o emitir comprobantes.
+- Modificar la alícuota de IVA desde la lista de precios.
+- Mantener un historial de cada edición individual realizada sobre una misma lista.

@@ -13,6 +13,7 @@ export const getArticulos = async () => {
       id_unidad,
       precio_costo,
       precio_venta,
+      alicuota_iva,
       estado,
       rubro:id_rubro (nombre),
       unidad_medida:id_unidad (nombre)

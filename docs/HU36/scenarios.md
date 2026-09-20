@@ -1,202 +1,190 @@
-# HU36 - Escenarios de aceptacion
+# HU36 - Escenarios de aceptación de listas de precios
 
-Los escenarios utilizan formato Gherkin y constituyen la base de las pruebas funcionales y automatizadas.
+## CA01 - Crear una lista
 
-## CA01 - Buscar productos activos
+### Escenario: fecha final opcional
 
 ```gherkin
-Escenario: Buscar un producto activo por nombre
-  Dado que existe un articulo activo llamado "Ibuprofeno 400 mg"
-  Cuando el empleado busca "Ibuprofeno"
-  Entonces el sistema muestra el articulo
-
-Esquema del escenario: Buscar por identificador
-  Dado que existe un articulo activo con <campo> igual a <valor>
-  Cuando el empleado busca <valor>
-  Entonces el sistema muestra el articulo
-
-  Ejemplos:
-    | campo            | valor         |
-    | codigo interno   | IBU-400       |
-    | codigo de barras | 7790000000001 |
-
-Escenario: No mostrar un producto inactivo
-  Dado que existe un articulo inactivo que coincide con la busqueda
-  Cuando el empleado realiza la busqueda
-  Entonces el sistema no muestra el articulo
+Dado que el empleado abre una nueva lista
+Cuando informa nombre "Lista octubre", inicio 01/10/2026 y deja vacía la fecha final
+Entonces el sistema guarda la lista con fecha final nula
+Y la lista queda inactiva
 ```
 
-## CA02 - Mostrar precio y stock
+### Escenario: rango inválido
 
 ```gherkin
-Escenario: Consultar disponibilidad comercial
-  Dado un articulo activo asociado al deposito de salida
-  Y que posee 12 unidades disponibles
-  Y que posee un precio vigente de $5.000
-  Cuando el empleado selecciona el articulo
-  Entonces el sistema muestra un stock disponible de 12 unidades
-  Y muestra un precio de $5.000
+Dado que el inicio informado es 01/10/2026
+Cuando informa como fecha final 30/09/2026
+Entonces el sistema rechaza la operación
+Y muestra que la fecha final no puede ser anterior al inicio
 ```
 
-## CA03 - Gestionar el detalle
+## CA02 - Carga automática
 
 ```gherkin
-Escenario: Agregar, modificar y quitar un producto
-  Dada una venta en estado Borrador
-  Cuando el empleado agrega un producto con cantidad 1
-  Entonces el producto aparece en el detalle
-  Cuando modifica su cantidad a 2
-  Entonces el detalle muestra cantidad 2
-  Cuando quita el producto
-  Entonces el producto deja de aparecer en el detalle
+Dado que existen artículos activos con precio de venta positivo
+Y también existen artículos inactivos o sin precio válido
+Cuando el empleado crea una lista
+Entonces el sistema incorpora todos los artículos activos con precio positivo
+Y omite los artículos inactivos o sin precio válido
+Y mantiene la lista inactiva
 ```
 
-## CA04 - Validar cantidades
+## CA03 - Administrar productos incluidos
+
+### Escenario: quitar y reincorporar
 
 ```gherkin
-Esquema del escenario: Rechazar una cantidad invalida
-  Dado un articulo con 10 unidades disponibles
-  Cuando el empleado ingresa la cantidad <cantidad>
-  Entonces el sistema rechaza la cantidad
-  Y no modifica el detalle de la venta
-
-  Ejemplos:
-    | cantidad |
-    | 0        |
-    | -1       |
-    | 11       |
-
-Escenario: Aceptar una cantidad disponible
-  Dado un articulo con 10 unidades disponibles
-  Cuando el empleado ingresa la cantidad 10
-  Entonces el sistema agrega el producto con cantidad 10
+Dado que un artículo pertenece a la lista
+Cuando el empleado lo quita
+Entonces deja de aparecer en el detalle
+Y aparece entre los productos no incluidos
+Cuando el empleado lo selecciona nuevamente
+Entonces se reincorpora una sola vez
 ```
 
-## CA05 - Resolver la vigencia
+### Escenario: edición de precio base
 
 ```gherkin
-Escenario: Aplicar una lista dentro de su vigencia
-  Dada una lista activa vigente desde el 01/09/2026 hasta el 30/09/2026
-  Y una venta con fecha 17/09/2026
-  Cuando el sistema determina el precio
-  Entonces utiliza esa lista
-
-Escenario: Aplicar una lista sin fecha de finalizacion
-  Dada una lista activa vigente desde el 01/09/2026
-  Y sin fecha de finalizacion
-  Y una venta con fecha 17/10/2026
-  Cuando el sistema determina el precio
-  Entonces utiliza esa lista
-
-Esquema del escenario: Ignorar una lista no aplicable
-  Dada una lista con <condicion>
-  Y una venta con fecha 17/09/2026
-  Cuando el sistema determina el precio
-  Entonces no utiliza esa lista
-
-  Ejemplos:
-    | condicion                              |
-    | estado Inactiva                        |
-    | fecha de inicio posterior a la venta   |
-    | fecha de finalizacion anterior         |
+Dado un artículo con precio base al público de $5.000
+Cuando el empleado actualiza el precio base a $5.500
+Entonces la lista conserva $5.500 como precio base
+Y recalcula su precio final
 ```
 
-## CA06 - Aplicar descuentos y recargos
+## CA04 - Descuentos y recargos
+
+### Esquema del escenario
 
 ```gherkin
-Esquema del escenario: Calcular un ajuste porcentual
-  Dado un producto con precio base de $10.000
-  Y un <tipo> del <porcentaje> por ciento
-  Cuando el sistema calcula el precio final
-  Entonces obtiene <precio_final>
-
-  Ejemplos:
-    | tipo      | porcentaje | precio_final |
-    | Descuento | 10         | $9.000       |
-    | Recargo   | 5          | $10.500      |
-    | Sin ajuste| 0          | $10.000      |
+Dado un precio base al público de $10.000
+Cuando el empleado configura <tipo> por <porcentaje>
+Entonces el precio final al público es <precio_final>
 ```
 
-## CA07 - Producto sin precio vigente
+| tipo | porcentaje | precio_final |
+| --- | ---: | ---: |
+| Sin ajuste | 0 % | $10.000 |
+| Descuento | 10 % | $9.000 |
+| Recargo | 10 % | $11.000 |
+
+## CA05 - Estado temporal
+
+### Esquema del escenario
 
 ```gherkin
-Escenario: Impedir agregar un producto sin precio
-  Dado un producto activo con stock disponible
-  Pero sin un detalle en una lista vigente
-  Cuando el empleado intenta agregarlo
-  Entonces el sistema informa "El producto no posee un precio vigente"
-  Y no incorpora el producto a la venta
+Dada una lista habilitada desde 01/10/2026 hasta 31/10/2026
+Cuando la fecha actual es <fecha>
+Entonces la pantalla muestra <estado>
 ```
 
-## CA08 - Calcular impuestos
+| fecha | estado |
+| --- | --- |
+| 30/09/2026 | PROGRAMADA |
+| 01/10/2026 | VIGENTE |
+| 31/10/2026 | VIGENTE |
+| 01/11/2026 | VENCIDA |
+
+### Escenario: desactivación manual
 
 ```gherkin
-Esquema del escenario: Aplicar el tratamiento impositivo
-  Dado un producto con precio final de $1.000
-  Y tratamiento impositivo <tratamiento>
-  Cuando el sistema calcula el renglon
-  Entonces aplica la alicuota <alicuota>
-
-  Ejemplos:
-    | tratamiento       | alicuota |
-    | Gravado general   | 21       |
-    | Gravado reducido  | 10.5     |
-    | Exento            | 0        |
-
-Escenario: Incorporar percepciones ingresadas manualmente
-  Dado que un usuario autorizado ingresa $100 de percepcion de IVA
-  Y $50 de percepcion de IIBB
-  Cuando el sistema calcula la venta
-  Entonces agrega $150 al total
-
-Escenario: Rechazar una percepcion negativa
-  Cuando un usuario autorizado ingresa una percepcion menor que cero
-  Entonces el sistema rechaza el importe
+Dada una lista cuya fecha pertenece al período de vigencia
+Cuando el empleado la desactiva
+Entonces la pantalla muestra INACTIVA
+Y deja de ser aplicable
 ```
 
-## CA09 - Calcular y recalcular totales
+## CA06 - Requisitos de activación
+
+### Escenario: lista vacía
 
 ```gherkin
-Escenario: Recalcular al modificar la cantidad
-  Dado un producto agregado con precio final de $2.000 y cantidad 1
-  Cuando el empleado modifica la cantidad a 3
-  Entonces el subtotal del renglon es $6.000
-  Y el total de la venta se recalcula
-
-Escenario: Recalcular al quitar un producto
-  Dada una venta con dos productos
-  Cuando el empleado quita uno de ellos
-  Entonces el total deja de incluir el subtotal del producto eliminado
+Dada una lista sin productos
+Cuando el empleado intenta activarla
+Entonces el sistema rechaza la activación
 ```
 
-## CA10 - Conservar los valores aplicados
+### Escenario: producto sin IVA definido
 
 ```gherkin
-Escenario: Conservar el precio historico
-  Dada una venta confirmada con precio base de $10.000
-  Y un descuento del 10 por ciento
-  Y un precio final de $9.000
-  Cuando posteriormente el precio de la lista cambia a $12.000
-  Entonces la venta conserva el precio base de $10.000
-  Y conserva el descuento del 10 por ciento
-  Y conserva el precio final de $9.000
-  Y conserva la alicuota aplicada
+Dada una lista con al menos un artículo sin tratamiento de IVA
+Cuando el empleado intenta activarla
+Entonces el sistema rechaza la activación
+Y solicita clasificar los artículos pendientes
 ```
 
-## Escenarios tecnicos complementarios
+### Escenario: activación válida
 
 ```gherkin
-Escenario: No descontar stock en un borrador
-  Dado un producto agregado a una venta en estado Borrador
-  Cuando se consulta el stock del deposito
-  Entonces el stock fisico no fue modificado
+Dada una lista con productos
+Y todos poseen tratamiento de IVA definido
+Y no existe otra lista activa con vigencia superpuesta
+Cuando el empleado la activa
+Entonces la lista queda habilitada
+```
 
-Escenario: Rechazar una vigencia incoherente
-  Cuando se intenta guardar una lista cuya fecha de finalizacion es anterior a la fecha de inicio
-  Entonces el sistema rechaza la operacion
+## CA07 - Vigencia única
 
-Escenario: Evitar precios duplicados en la misma lista
-  Dado un producto incluido en una lista
-  Cuando se intenta incluir nuevamente el mismo producto en esa lista
-  Entonces el sistema rechaza la operacion
+```gherkin
+Dada una lista activa desde 01/10/2026 hasta 31/10/2026
+Cuando el empleado intenta activar otra lista desde 15/10/2026
+Entonces el sistema rechaza la activación
+Y comunica que ya existe una vigencia activa superpuesta
+```
+
+## CA08 - Integridad de precios y ajustes
+
+### Esquema del escenario
+
+```gherkin
+Dado el formulario de precio de un artículo
+Cuando el empleado intenta guardar <dato_invalido>
+Entonces el sistema rechaza la operación
+```
+
+| dato_invalido |
+| --- |
+| precio base igual a cero |
+| precio base negativo |
+| porcentaje negativo |
+| descuento igual o superior a 100 % |
+| descuento y recargo simultáneos |
+
+## CA09 - Conservación de listas
+
+```gherkin
+Dada una lista vencida o desactivada
+Cuando el empleado consulta todas las listas
+Entonces la lista continúa disponible con su detalle
+Y puede filtrarse por su estado
+Y no existe una acción para eliminarla definitivamente
+```
+
+## CA10 - IVA incluido e informativo
+
+```gherkin
+Dado un artículo clasificado con IVA 21 %
+Y un precio base al público de $1.950
+Cuando se aplica un descuento del 10 %
+Entonces la lista muestra un precio final al público de $1.755
+Y muestra "21 %" como IVA incluido
+Y no adiciona nuevamente el 21 % al precio final
+```
+
+### Escenario: medicamento inicializado
+
+```gherkin
+Dado un artículo nuevo cuyo código comienza con "MED-"
+Cuando el sistema inicializa su tratamiento fiscal
+Entonces asigna IVA 10,5 %
+Y permite que un empleado autorizado lo corrija a exento o 21 % cuando corresponda
+```
+
+### Escenario: producto no medicinal
+
+```gherkin
+Dado un artículo nuevo cuyo código no comienza con "MED-"
+Cuando el sistema inicializa su tratamiento fiscal
+Entonces asigna IVA 21 %
 ```

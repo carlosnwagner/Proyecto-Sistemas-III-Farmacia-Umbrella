@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DataTable from "../components/DataTable.jsx";
 import EditModal from "../components/EditModal.jsx";
-import { Search, Plus } from "lucide-react";
+import { Search } from "lucide-react";
 import { supabase } from '../lib/supabase.js';
 import { showAlert } from "../lib/alerts.js";
 
 // Servicios backend
-import { createArticulo, updateArticulo } from '../services/articulos.js';
+import { createArticulo, getArticulos, updateArticulo } from '../services/articulos.js';
 import { getRubros, getUnidadesMedida } from '../services/catalogos.js';
 
 const PREFIJOS_OPCIONES = [
@@ -52,33 +52,33 @@ function StatCard({ title, value, subtitle }) {
 export default function InventarioProductos() {
   const [products, setProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("Todas");
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [initialFormData, setInitialFormData] = useState(null);
   const [rubros, setRubros] = useState([]);
   const [unidades, setUnidades] = useState([]);
 
-  useEffect(() => {
-    fetchProducts();
-    cargarCatalogos();
+  const fetchProducts = useCallback(async () => {
+    const { data } = await getArticulos();
+    if (data) setProducts(data);
   }, []);
 
-  const fetchProducts = async () => {
-    const { data } = await supabase
-      .from('articulo')
-      .select('id_articulo, codigo, codigo_barras, nombre, descripcion, id_rubro, id_unidad, precio_costo, precio_venta, estado')
-      .order('id_articulo', { ascending: false });
-    if (data) setProducts(data);
-  };
+  useEffect(() => {
+    let activo = true;
 
-  const cargarCatalogos = async () => {
-    const { data: dRubros } = await getRubros();
-    const { data: dUnidades } = await getUnidadesMedida();
-    setRubros(dRubros || []);
-    setUnidades(dUnidades || []);
-  };
+    Promise.all([getArticulos(), getRubros(), getUnidadesMedida()]).then(
+      ([articulosResult, rubrosResult, unidadesResult]) => {
+        if (!activo) return;
+        setProducts(articulosResult.data || []);
+        setRubros(rubrosResult.data || []);
+        setUnidades(unidadesResult.data || []);
+      }
+    );
+
+    return () => {
+      activo = false;
+    };
+  }, []);
 
   const getSiguienteCodigo = async (pref) => {
     const { data } = await supabase.from('articulo').select('codigo').ilike('codigo', `${pref}-%`);
@@ -104,7 +104,8 @@ export default function InventarioProductos() {
         { key: "id_rubro", label: "Categoría", type: "select", options: rubros.map(r => ({ value: r.id_rubro, label: r.nombre })) },
         { key: "id_unidad", label: "Unidad", type: "select", options: unidades.map(u => ({ value: u.id_unidad, label: u.nombre })) },
         { key: "precio_costo", label: "Costo ($)", type: "number" },
-        { key: "precio_venta", label: "Precio de Venta ($)", type: "number" },
+        { key: "precio_venta", label: "Precio al público con IVA ($)", type: "number" },
+        { key: "alicuota_iva", label: "Tratamiento de IVA *", type: "select", required: true, options: [{ value: 21, label: "IVA 21 %" }, { value: 10.5, label: "IVA 10,5 %" }, { value: 0, label: "Exento en reventa (0 %)" }] },
         { key: "estado", label: "Estado", type: "select", options: [{ value: true, label: "Activo" }, { value: false, label: "Inactivo" }] }
       ];
     }
@@ -114,7 +115,7 @@ export default function InventarioProductos() {
         key: "prefijo", label: "Prefijo de Rubro *", type: "select", options: PREFIJOS_OPCIONES,
         onChangeCustom: async (nuevoPref, setForm) => {
           const nuevoCodigo = await getSiguienteCodigo(nuevoPref);
-          setForm(prev => ({ ...prev, prefijo: nuevoPref, codigo: nuevoCodigo }));
+          setForm(prev => ({ ...prev, prefijo: nuevoPref, codigo: nuevoCodigo, alicuota_iva: nuevoPref === "MED" ? 10.5 : 21 }));
         }
       },
       { key: "codigo", label: "Código Interno (Auto)", readOnly: true },
@@ -124,7 +125,8 @@ export default function InventarioProductos() {
       { key: "id_rubro", label: "Categoría", type: "select", options: rubros.map(r => ({ value: r.id_rubro, label: r.nombre })) },
       { key: "id_unidad", label: "Unidad", type: "select", options: unidades.map(u => ({ value: u.id_unidad, label: u.nombre })) },
       { key: "precio_costo", label: "Costo ($)", type: "number" },
-      { key: "precio_venta", label: "Precio de Venta ($)", type: "number" }
+      { key: "precio_venta", label: "Precio al público con IVA ($)", type: "number" },
+      { key: "alicuota_iva", label: "Tratamiento de IVA *", type: "select", required: true, options: [{ value: 21, label: "IVA 21 %" }, { value: 10.5, label: "IVA 10,5 %" }, { value: 0, label: "Exento en reventa (0 %)" }] }
     ];
   }, [rubros, unidades, selectedProduct]);
 
@@ -140,7 +142,8 @@ export default function InventarioProductos() {
       id_rubro: rubros[0]?.id_rubro || 1,
       id_unidad: unidades[0]?.id_unidad || 1,
       precio_costo: 0,
-      precio_venta: 0
+      precio_venta: 0,
+      alicuota_iva: 10.5
     });
     setIsModalOpen(true);
   };
@@ -164,20 +167,13 @@ export default function InventarioProductos() {
       return;
     }
 
-    // Evaluación del estado proveniente del modal
-    let estadoBoolean = true;
-    if (selectedProduct) {
-      if (
-        formData.estado === false || 
-        formData.estado === "false" || 
-        formData.estado === "Inactivo" || 
-        formData.estado === 0 || 
-        formData.estado === "0"
-      ) {
-        estadoBoolean = false;
-      }
-    }
     if (!formData.nombre?.trim()) return alert("El nombre del producto es obligatorio.");
+
+    const alicuotaIva = Number(formData.alicuota_iva);
+    if (![0, 10.5, 21].includes(alicuotaIva)) {
+      showAlert.errorSave("Seleccione el tratamiento de IVA del producto.");
+      return false;
+    }
 
     const payload = {
       id_rubro: Number(formData.id_rubro) || (rubros[0]?.id_rubro ?? 1),
@@ -188,6 +184,7 @@ export default function InventarioProductos() {
       descripcion: formData.descripcion ? formData.descripcion.trim() : null,
       precio_costo: Number(formData.precio_costo) || 0,
       precio_venta: Number(formData.precio_venta) || 0,
+      alicuota_iva: alicuotaIva,
       estado: selectedProduct ? (String(formData.estado) === "true") : true
     };
 
@@ -229,7 +226,8 @@ export default function InventarioProductos() {
     { header: "C. BARRAS", accessor: "codigo_barras" },
     { header: "NOMBRE", render: (p) => <b>{p.nombre}</b> },
     { header: "COSTO", render: (p) => `$${p.precio_costo}` },
-    { header: "PRECIO VENTA", render: (p) => <b style={{ color: "#166534" }}>${p.precio_venta}</b> },
+    { header: "PRECIO PÚBLICO", render: (p) => <b style={{ color: "#166534" }}>${p.precio_venta}</b> },
+    { header: "IVA INCLUIDO", render: (p) => p.alicuota_iva === null ? <Badge variant="danger">SIN DEFINIR</Badge> : <Badge>{Number(p.alicuota_iva) === 0 ? "EXENTO" : `${Number(p.alicuota_iva)} %`}</Badge> },
     { header: "ESTADO", render: (p) => <Badge variant={p.estado ? "success" : "danger"}>{p.estado ? "ACTIVO" : "INACTIVO"}</Badge> },
   ];
 
