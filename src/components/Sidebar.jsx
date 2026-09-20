@@ -15,13 +15,16 @@ import {
   Receipt,
   FileText,
   Tags,
+  ShoppingCart,
 } from "lucide-react";
 
 export default function Sidebar() {
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
-  const [ventasOpen, setVentasOpen] = useState(false);
+  const [ventasOpen, setVentasOpen] = useState(() =>
+    ["/ventas", "/listas-precios"].includes(window.location.pathname)
+  );
 
   const location = useLocation();
 
@@ -35,6 +38,7 @@ export default function Sidebar() {
   ];
 
   const ventasSubItems = [
+    { key: "RegistroVentas", label: "Registro de ventas", path: "/ventas", icon: ShoppingCart },
     { key: "ListasPrecios", label: "Listas de precios", path: "/listas-precios", icon: Tags },
   ];
 
