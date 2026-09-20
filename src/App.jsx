@@ -9,6 +9,7 @@ import Depositos from "./pages/Depositos.jsx";
 import FacturasProveedores from "./pages/FacturasProveedores.jsx";
 import OrdenesCompra from "./pages/OrdenesCompraProv.jsx";
 import InventarioDeposito from "./pages/InventarioDeposito.jsx";
+import RegistrarVenta from "./pages/RegistrarVenta.jsx"; // <-- ¡Importamos el nuevo módulo de ventas del Sprint 3!
 import ListasPrecios from "./pages/ListasPrecios.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
@@ -42,7 +43,10 @@ export default function App() {
           {/* Soportamos ambos formatos para que nunca falle la ruta */}
           <Route path="/depositos/:id/inventario" element={<InventarioDeposito />} />
           <Route path="/inventario-deposito" element={<InventarioDeposito />} />
-          <Route path="/ventas" element={<PaginaEnConstruccion titulo="Ventas" />} />
+          
+          {/* AQUÍ ESTABA EL CAMBIO CLAVE */}
+          <Route path="/ventas" element={<RegistrarVenta />} /> 
+
           <Route path="/listas-precios" element={<ListasPrecios />} />
           <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
           <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />
