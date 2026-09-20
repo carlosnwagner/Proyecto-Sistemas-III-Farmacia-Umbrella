@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { jsPDF } from 'jspdf';
+import { generateStandardPDF } from '../components/pdfGenerador.jsx';
 
 export async function getSucursalesYDepositos() {
   const { data: sucursales } = await supabase
@@ -16,11 +16,22 @@ export async function getSucursalesYDepositos() {
 }
 
 export async function buscarClientes(query = '') {
-  let q = supabase.from('cliente').select('*');
+  let q = supabase.from('cliente').select('*').eq('estado', true);
   if (query && query.trim()) {
-    q = q.or(`nombre.ilike.%${query}%,cuit.ilike.%${query}%,dni.ilike.%${query}%`);
+    const termino = query.trim().replace(/[,%()]/g, '');
+    q = q.or(`nombre.ilike.%${termino}%,cuit.ilike.%${termino}%,dni.ilike.%${termino}%,telefono.ilike.%${termino}%`);
   }
   const { data, error } = await q.limit(20);
+  return { data: data || [], error };
+}
+
+export async function getMediosPagoActivos() {
+  const { data, error } = await supabase
+    .from('medio_pago')
+    .select('id_medio_pago, codigo, nombre, descripcion')
+    .eq('estado', true)
+    .order('nombre', { ascending: true });
+
   return { data: data || [], error };
 }
 
@@ -64,6 +75,24 @@ export async function crearCliente(clienteData) {
     }
   }
 
+  const identificadores = [];
+  if (clienteData.dni) identificadores.push(`dni.eq.${clienteData.dni}`);
+  if (clienteData.cuit) identificadores.push(`cuit.eq.${clienteData.cuit}`);
+
+  if (identificadores.length > 0) {
+    const { data: existente, error: errorBusqueda } = await supabase
+      .from('cliente')
+      .select('id_cliente')
+      .or(identificadores.join(','))
+      .limit(1)
+      .maybeSingle();
+
+    if (errorBusqueda) return { data: null, error: errorBusqueda };
+    if (existente) {
+      return { data: null, error: { message: 'Ya existe un cliente registrado con el mismo DNI o CUIT.' } };
+    }
+  }
+
   const { data, error } = await supabase
     .from('cliente')
     .insert([clienteData])
@@ -94,37 +123,47 @@ export async function getProductosConStock(idDeposito) {
   }
 
   if (!articulosDep || articulosDep.length === 0) {
-    return { data: [], error: null };
+    return { data: [], error: { message: 'El depósito seleccionado no posee productos asociados.' } };
   }
 
   const hoy = new Date().toISOString().split('T')[0];
-  const { data: listaVigente } = await supabase
+  const { data: listaVigente, error: errLista } = await supabase
     .from("lista_precio")
     .select("id_lista, nombre")
     .eq("estado", true)
     .lte("fecha_inicio", hoy)
-    .gte("fecha_fin", hoy)
+    .or(`fecha_fin.is.null,fecha_fin.gte.${hoy}`)
     .maybeSingle();
 
-  let preciosEspeciales = {};
-  if (listaVigente) {
-    const { data: detallesLista } = await supabase
-      .from("detalle_lista_precio")
-      .select("id_articulo, precio, porcentaje_descuento")
-      .eq("id_lista", listaVigente.id_lista);
+  if (errLista) return { data: [], error: errLista };
+  if (!listaVigente) {
+    return { data: [], error: { message: 'No existe una lista de precios activa y vigente para la fecha actual.' } };
+  }
 
-    if (detallesLista) {
-      detallesLista.forEach(d => {
-        preciosEspeciales[d.id_articulo] = {
-          precio: Number(d.precio || 0),
-          descuento: Number(d.porcentaje_descuento || 0)
-        };
-      });
-    }
+  const { data: detallesLista, error: errDetalles } = await supabase
+    .from("detalle_lista_precio")
+    .select("id_articulo, precio_final")
+    .eq("id_lista", listaVigente.id_lista);
+
+  if (errDetalles) return { data: [], error: errDetalles };
+
+  const preciosVigentes = new Map(
+    (detallesLista || []).map((detalle) => [Number(detalle.id_articulo), Number(detalle.precio_final || 0)])
+  );
+
+  const inventarioIncluidoEnLista = articulosDep.filter((item) =>
+    preciosVigentes.has(Number(item.id_articulo))
+  );
+
+  if (inventarioIncluidoEnLista.length === 0) {
+    return {
+      data: [],
+      error: { message: 'El depósito no posee productos incluidos en la lista de precios vigente.' }
+    };
   }
 
   const productosConStock = await Promise.all(
-    articulosDep.map(async (item) => {
+    inventarioIncluidoEnLista.map(async (item) => {
       const { data: movs } = await supabase
         .from("movimiento_stock")
         .select("cantidad, tipo_movimiento")
@@ -147,22 +186,8 @@ export async function getProductosConStock(idDeposito) {
       const nombre = art.nombre || descripcion;
       const codigo = art.codigo || 'S/C';
 
-      let precioFinal = Number(art.precio_venta || 0);
-      if (preciosEspeciales[art.id_articulo]) {
-        const itemLista = preciosEspeciales[art.id_articulo];
-        precioFinal = itemLista.precio;
-        if (itemLista.descuento > 0) {
-          precioFinal = precioFinal * (1 - itemLista.descuento / 100);
-        }
-      }
-
-      // Lectura robusta de la alícuota de IVA individual del artículo
-      const alicuotaIva = Number(
-        art.iva_porcentaje !== undefined && art.iva_porcentaje !== null ? art.iva_porcentaje : 
-        (art.iva !== undefined && art.iva !== null ? art.iva : 
-        (art.alicuota !== undefined && art.alicuota !== null ? art.alicuota : 
-        (art.porcentaje_iva !== undefined && art.porcentaje_iva !== null ? art.porcentaje_iva : 21)))
-      );
+      const precioFinal = Number(preciosVigentes.get(Number(art.id_articulo)) || 0);
+      const alicuotaIva = Number(art.alicuota_iva);
 
       return {
         ...art,
@@ -170,130 +195,45 @@ export async function getProductosConStock(idDeposito) {
         nombre,
         descripcion,
         codigo,
+        id_lista: listaVigente.id_lista,
+        nombre_lista: listaVigente.nombre,
         precio_venta: Number(precioFinal.toFixed(2)),
         iva_porcentaje: alicuotaIva,
-        es_exento: Boolean(art.es_exento),
+        es_exento: alicuotaIva === 0,
         stock_actual: stockCalculado,
         stock: stockCalculado
       };
     })
   );
 
-  return { data: productosConStock, error: null };
+  return { data: productosConStock.filter((producto) => producto.precio_venta > 0), error: null };
 }
 
 export async function confirmarVenta(ventaPayload) {
-  const puntoVenta = 1;
-  const { count } = await supabase.from('venta').select('*', { count: 'exact', head: true });
-  const numeroFactura = (count || 0) + 1;
+  const items = ventaPayload.items.map((item) => ({
+    id_articulo: Number(item.id_articulo),
+    id_articulo_deposito: Number(item.id_articulo_deposito),
+    cantidad: Number(item.cantidad)
+  }));
 
-  for (const item of ventaPayload.items) {
-    let stockDisponible = Number(item.stock_actual !== undefined ? item.stock_actual : (item.stock !== undefined ? item.stock : 9999));
-
-    let idArticuloDeposito = item.id_articulo_deposito;
-    if (!idArticuloDeposito) {
-      const { data: depFind } = await supabase
-        .from('articulo_deposito')
-        .select('id_articulo_deposito, stock_actual')
-        .eq('id_deposito', Number(ventaPayload.id_deposito))
-        .eq('id_articulo', Number(item.id_articulo))
-        .maybeSingle();
-      if (depFind) {
-        idArticuloDeposito = depFind.id_articulo_deposito;
-        if (depFind.stock_actual !== undefined) {
-          stockDisponible = Number(depFind.stock_actual);
-        }
-      }
-    }
-
-    if (stockDisponible < Number(item.cantidad)) {
-      return { 
-        data: null, 
-        error: { message: `Stock insuficiente para el artículo: ${item.descripcion || item.nombre}. Stock disponible: ${stockDisponible}` } 
-      };
-    }
-  }
-
-  const { data: ventaIns, error: errVenta } = await supabase
-    .from('venta')
-    .insert([{
-      id_sucursal: Number(ventaPayload.id_sucursal),
-      id_deposito: Number(ventaPayload.id_deposito),
-      id_cliente: ventaPayload.id_cliente ? Number(ventaPayload.id_cliente) : null,
-      tipo_comprobante: String(ventaPayload.tipo_comprobante),
-      punto_venta: puntoVenta,
-      numero_comprobante: Number(numeroFactura),
-      fecha: new Date().toISOString(),
-      medio_pago: String(ventaPayload.medio_pago),
-      neto_21: Number(ventaPayload.neto_21 || 0),
-      iva_21: Number(ventaPayload.iva_21 || 0),
-      neto_105: Number(ventaPayload.neto_105 || 0),
-      iva_105: Number(ventaPayload.iva_105 || 0),
-      exento: Number(ventaPayload.exento || 0),
-      percepciones: Number(ventaPayload.percepciones || 0),
-      importe_total: Number(ventaPayload.total || 0),
-      estado: 'Confirmada'
-    }])
-    .select()
+  const { data, error } = await supabase
+    .rpc('confirmar_venta_transaccional', {
+      p_idempotency_key: ventaPayload.idempotency_key,
+      p_id_sucursal: Number(ventaPayload.id_sucursal),
+      p_id_deposito: Number(ventaPayload.id_deposito),
+      p_id_cliente: ventaPayload.id_cliente ? Number(ventaPayload.id_cliente) : null,
+      p_tipo_comprobante: String(ventaPayload.tipo_comprobante),
+      p_id_lista: Number(ventaPayload.id_lista),
+      p_items: items,
+      p_id_medio_pago: Number(ventaPayload.id_medio_pago),
+      p_importe_pagado: Number(ventaPayload.importe_pagado),
+      p_referencia_pago: ventaPayload.referencia_pago?.trim() || null,
+      p_percepcion_iva: Number(ventaPayload.percepcion_iva || 0),
+      p_percepcion_iibb: Number(ventaPayload.percepcion_iibb || 0)
+    })
     .single();
 
-  if (errVenta) {
-    return { data: null, error: errVenta };
-  }
-
-  const idVenta = ventaIns.id_venta;
-
-  for (const item of ventaPayload.items) {
-    await supabase
-      .from('detalle_venta')
-      .insert([{
-        id_venta: Number(idVenta),
-        id_articulo: Number(item.id_articulo),
-        cantidad: Number(item.cantidad),
-        precio_unitario: Number(item.precio_unitario || item.precio_venta || 0),
-        subtotal: Number(item.subtotal)
-      }]);
-
-    let idArticuloDeposito = item.id_articulo_deposito;
-    if (!idArticuloDeposito) {
-      const { data: depFind } = await supabase
-        .from('articulo_deposito')
-        .select('id_articulo_deposito')
-        .eq('id_deposito', Number(ventaPayload.id_deposito))
-        .eq('id_articulo', Number(item.id_articulo))
-        .maybeSingle();
-      if (depFind) idArticuloDeposito = depFind.id_articulo_deposito;
-    }
-
-    if (idArticuloDeposito) {
-      await supabase
-        .from('movimiento_stock')
-        .insert([{
-          id_deposito: Number(ventaPayload.id_deposito),
-          id_articulo_deposito: Number(idArticuloDeposito),
-          tipo_movimiento: 'EGRESO',
-          cantidad: Number(item.cantidad)
-        }]);
-
-      const { data: artDepReg } = await supabase
-        .from('articulo_deposito')
-        .select('stock_actual')
-        .eq('id_articulo_deposito', Number(idArticuloDeposito))
-        .maybeSingle();
-
-      if (artDepReg) {
-        const stockActualVal = Number(artDepReg.stock_actual || 0);
-        const nuevoStock = Math.max(0, stockActualVal - Number(item.cantidad));
-
-        await supabase
-          .from('articulo_deposito')
-          .update({ stock_actual: Number(nuevoStock) })
-          .eq('id_articulo_deposito', Number(idArticuloDeposito));
-      }
-    }
-  }
-
-  return { data: ventaIns, error: null };
+  return { data, error };
 }
 
 export async function getHistorialVentas() {
@@ -302,6 +242,12 @@ export async function getHistorialVentas() {
     .select(`
       *,
       cliente:id_cliente (id_cliente, nombre, cuit, dni, condicion_fiscal),
+      pago_venta (
+        id_pago_venta,
+        importe,
+        referencia,
+        medio_pago:id_medio_pago (id_medio_pago, codigo, nombre)
+      ),
       detalle_venta (
         id_detalle_venta,
         id_articulo,
@@ -316,81 +262,59 @@ export async function getHistorialVentas() {
   return { data: data || [], error };
 }
 
-export function downloadComprobanteVentaPdf(venta, items, cliente, sucursal) {
-  const pdf = new jsPDF();
-  let y = 20;
+export async function downloadComprobanteVentaPdf(venta, items, cliente, sucursal) {
+  const tipo = venta.tipo_comprobante || 'B';
+  const puntoVenta = String(venta.punto_venta || 1).padStart(4, '0');
+  const numero = String(venta.numero_comprobante || 0).padStart(8, '0');
+  const moneda = (valor) => `$${Number(valor || 0).toFixed(2)}`;
 
-  pdf.setFontSize(16);
-  pdf.text(`FACTURA ${venta.tipo_comprobante}`, 20, y);
-  y += 10;
-  
-  pdf.setFontSize(10);
-  pdf.text(`Punto de Venta: ${String(venta.punto_venta).padStart(4, '0')}  Comp. N°: ${String(venta.numero_comprobante).padStart(8, '0')}`, 20, y);
-  y += 6;
-  pdf.text(`Fecha: ${new Date(venta.fecha).toLocaleString()}`, 20, y);
-  y += 6;
-  pdf.text(`Sucursal: ${sucursal?.descripcion || 'Principal'}`, 20, y);
-  y += 10;
+  const infoData = [
+    { label: 'Comprobante', value: `${tipo} ${puntoVenta}-${numero}` },
+    { label: 'Fecha', value: new Date(venta.fecha || Date.now()).toLocaleString('es-AR') },
+    { label: 'Sucursal', value: sucursal?.descripcion || sucursal?.nombre || 'Principal' },
+    { label: 'Cliente', value: cliente?.nombre || 'Consumidor Final' },
+    { label: 'Condición fiscal', value: cliente?.condicion_fiscal || 'Consumidor Final' },
+    { label: 'CUIT / DNI', value: cliente?.cuit || cliente?.dni || 'No informado' },
+    { label: 'Medio de pago', value: venta.medio_pago || 'No informado' },
+  ];
 
-  pdf.line(20, y, 190, y);
-  y += 8;
+  const rows = (items || []).map((item) => [
+    item.articulo?.nombre || item.articulo?.descripcion || item.nombre || item.descripcion || 'Artículo',
+    String(item.cantidad || 0),
+    moneda(item.precio_unitario ?? item.precio_venta),
+    moneda(item.subtotal),
+  ]);
 
-  pdf.text(`Cliente / Receptor: ${cliente ? cliente.nombre : 'Consumidor Final'} (${cliente?.condicion_fiscal || 'Consumidor Final'})`, 20, y);
-  if (cliente?.cuit || cliente?.dni) {
-    y += 6;
-    pdf.text(`CUIT / DNI: ${cliente.cuit || cliente.dni}`, 20, y);
-  }
-  y += 12;
-
-  pdf.line(20, y, 190, y);
-  y += 8;
-
-  pdf.text('Artículo', 20, y);
-  pdf.text('Cant.', 120, y);
-  pdf.text('P. Unit', 145, y);
-  pdf.text('Subtotal', 170, y);
-  y += 6;
-  pdf.line(20, y, 190, y);
-  y += 8;
-
-  items.forEach(item => {
-    const nombreArt = item.articulo?.descripcion || item.articulo?.nombre || item.descripcion || 'Artículo';
-    const precioUnit = Number(item.precio_unitario || item.precio_venta || 0);
-    pdf.text(String(nombreArt), 20, y);
-    pdf.text(String(item.cantidad), 120, y);
-    pdf.text(`$${precioUnit.toFixed(2)}`, 145, y);
-    pdf.text(`$${Number(item.subtotal).toFixed(2)}`, 170, y);
-    y += 6;
-  });
-
-  y += 10;
-  pdf.line(20, y, 190, y);
-  y += 8;
-
-  if (venta.tipo_comprobante === 'A') {
+  const summaryData = [];
+  if (tipo === 'A') {
     if (Number(venta.neto_21 || 0) > 0) {
-      pdf.text(`Neto Gravado 21%: $${Number(venta.neto_21).toFixed(2)}`, 110, y); y += 6;
-      pdf.text(`IVA 21%: $${Number(venta.iva_21).toFixed(2)}`, 110, y); y += 6;
+      summaryData.push({ label: 'Neto gravado 21%', value: moneda(venta.neto_21) });
+      summaryData.push({ label: 'IVA 21%', value: moneda(venta.iva_21) });
     }
     if (Number(venta.neto_105 || 0) > 0) {
-      pdf.text(`Neto Gravado 10.5%: $${Number(venta.neto_105).toFixed(2)}`, 110, y); y += 6;
-      pdf.text(`IVA 10.5%: $${Number(venta.iva_105).toFixed(2)}`, 110, y); y += 6;
+      summaryData.push({ label: 'Neto gravado 10,5%', value: moneda(venta.neto_105) });
+      summaryData.push({ label: 'IVA 10,5%', value: moneda(venta.iva_105) });
     }
     if (Number(venta.exento || 0) > 0) {
-      pdf.text(`Importe Exento: $${Number(venta.exento).toFixed(2)}`, 110, y); y += 6;
+      summaryData.push({ label: 'Importe exento', value: moneda(venta.exento) });
     }
-    if (Number(venta.percepciones || 0) > 0) {
-      pdf.text(`Percepciones: $${Number(venta.percepciones).toFixed(2)}`, 110, y); y += 6;
+    if (Number(venta.percepcion_iva || 0) > 0) {
+      summaryData.push({ label: 'Percepción IVA', value: moneda(venta.percepcion_iva) });
     }
-  } else {
-    if (Number(venta.exento || 0) > 0) {
-      pdf.text(`Importe Exento: $${Number(venta.exento).toFixed(2)}`, 110, y); y += 6;
+    if (Number(venta.percepcion_iibb || 0) > 0) {
+      summaryData.push({ label: 'Percepción IIBB', value: moneda(venta.percepcion_iibb) });
     }
-    pdf.text(`Subtotal Operación: $${Number(venta.importe_total || 0).toFixed(2)}`, 110, y); y += 6;
   }
-  
-  pdf.setFontSize(12);
-  pdf.text(`Total: $${Number(venta.importe_total || 0).toFixed(2)}`, 110, y + 4);
+  summaryData.push({ label: 'TOTAL', value: moneda(venta.importe_total), emphasis: true });
 
-  pdf.save(`factura_${venta.tipo_comprobante}_${String(venta.numero_comprobante).padStart(8, '0')}.pdf`);
+  return generateStandardPDF({
+    title: `FACTURA ${tipo}`,
+    subtitle: `${puntoVenta}-${numero}`,
+    infoData,
+    columns: ['ARTÍCULO', 'CANTIDAD', 'PRECIO UNITARIO', 'SUBTOTAL'],
+    rows,
+    summaryData,
+    footerNote: 'Comprobante generado por el Sistema de Gestión de Farmacia Umbrella',
+    fileName: `factura_${tipo}_${numero}.pdf`,
+  });
 }

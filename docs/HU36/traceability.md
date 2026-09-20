@@ -64,6 +64,18 @@
 - Verificar que los precios mostrados no adicionen nuevamente el IVA.
 - Registrar el resultado de cada escenario de `scenarios.md`.
 
+## Integración con ventas
+
+Aunque el cálculo y registro de la venta permanecen fuera del alcance funcional de HU36, el módulo de ventas consume su resultado respetando estas reglas:
+
+- Utiliza la única lista global activa cuya vigencia incluya la fecha de venta.
+- Admite una fecha final nula como vigencia abierta.
+- Solo ofrece productos que estén simultáneamente en la lista vigente y asociados al depósito seleccionado.
+- Usa `detalle_lista_precio.precio_final`, que ya incluye descuentos, recargos e IVA.
+- Lee la clasificación desde `articulo.alicuota_iva` sin solicitarla manualmente en la venta.
+- Conserva en la venta la lista utilizada y en cada detalle la alícuota aplicada.
+- Las percepciones de IVA e IIBB se ingresan manualmente en ventas y no modifican el precio definido por HU36.
+
 ## Decisiones adoptadas
 
 | ID | Decisión | Definición |

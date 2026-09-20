@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   getSucursalesYDepositos, 
+  getMediosPagoActivos,
   buscarClientes, 
   crearCliente, 
   getProductosConStock, 
@@ -9,7 +10,7 @@ import {
   downloadComprobanteVentaPdf 
 } from '../services/ventas';
 import { showAlert } from '../lib/alerts.js';
-import { ShoppingCart, User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText } from 'lucide-react';
+import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X } from 'lucide-react';
 import '../App.css';
 
 export default function RegistrarVenta() {
@@ -25,24 +26,33 @@ export default function RegistrarVenta() {
   // Historial y Métricas
   const [historialVentas, setHistorialVentas] = useState([]);
   const [filtroTipoFactura, setFiltroTipoFactura] = useState('TODAS');
-  const [busquedaHistorial, setBusquedaHistorial] = useState('');
+  const [filtroNumero, setFiltroNumero] = useState('');
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [filtroSucursal, setFiltroSucursal] = useState('TODAS');
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState('');
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState('');
+  const [ventaDetalle, setVentaDetalle] = useState(null);
 
   // Cliente (HU37)
   const [busquedaCliente, setBusquedaCliente] = useState('');
   const [listaClientes, setListaClientes] = useState([]);
   const [clienteElegido, setClienteElegido] = useState(null);
   const [mostrarModalCliente, setMostrarModalCliente] = useState(false);
-  const [tempCliente, setTempCliente] = useState({ nombre: '', identificacion: '', condicion: 'Consumidor Final' });
+  const [tempCliente, setTempCliente] = useState({ nombre: '', identificacion: '', telefono: '', condicion: 'Consumidor Final' });
 
   // Productos y Carrito
   const [productosDisponibles, setProductosDisponibles] = useState([]);
   const [filtroProducto, setFiltroProducto] = useState('');
   const [carrito, setCarrito] = useState([]);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   // Pago
-  const [medioPago, setMedioPago] = useState('Efectivo');
+  const [mediosPago, setMediosPago] = useState([]);
+  const [idMedioPago, setIdMedioPago] = useState('');
   const [montoRecibido, setMontoRecibido] = useState('');
   const [referenciaPago, setReferenciaPago] = useState('');
+  const [percepcionIva, setPercepcionIva] = useState('');
+  const [percepcionIibb, setPercepcionIibb] = useState('');
 
   // Venta confirmada para PDF
   const [ventaConfirmada, setVentaConfirmada] = useState(null);
@@ -57,6 +67,10 @@ export default function RegistrarVenta() {
       }
       const hist = await getHistorialVentas();
       setHistorialVentas(hist.data || []);
+      const medios = await getMediosPagoActivos();
+      setMediosPago(medios.data || []);
+      const efectivo = (medios.data || []).find((medio) => medio.codigo === 'EFECTIVO');
+      setIdMedioPago(String(efectivo?.id_medio_pago || medios.data?.[0]?.id_medio_pago || ''));
       setCargando(false);
     }
     init();
@@ -80,8 +94,13 @@ export default function RegistrarVenta() {
       return showAlert.errorSave('Debe seleccionar la sucursal y el depósito de salida.');
     }
     setCargando(true);
-    const { data } = await getProductosConStock(depositoSeleccionado);
+    const { data, error } = await getProductosConStock(depositoSeleccionado);
+    if (error) {
+      setCargando(false);
+      return showAlert.errorSave(error.message || 'No se pudieron cargar los productos disponibles.');
+    }
     setProductosDisponibles(data || []);
+    setIdempotencyKey(crypto.randomUUID());
     setCargando(false);
     setPaso(3);
   };
@@ -114,6 +133,7 @@ export default function RegistrarVenta() {
       nombre: nombreTrim,
       dni: dniFinal,
       cuit: cuitFinal,
+      telefono: tempCliente.telefono.trim() || null,
       condicion_fiscal: tempCliente.condicion
     });
 
@@ -123,7 +143,7 @@ export default function RegistrarVenta() {
       showAlert.successSave('Cliente registrado y seleccionado correctamente.');
       setClienteElegido(data);
       setMostrarModalCliente(false);
-      setTempCliente({ nombre: '', identificacion: '', condicion: 'Consumidor Final' });
+      setTempCliente({ nombre: '', identificacion: '', telefono: '', condicion: 'Consumidor Final' });
     }
     setCargando(false);
   };
@@ -136,6 +156,13 @@ export default function RegistrarVenta() {
     return 'B';
   }, [clienteElegido]);
 
+  const medioPagoSeleccionado = useMemo(
+    () => mediosPago.find((medio) => String(medio.id_medio_pago) === String(idMedioPago)) || null,
+    [mediosPago, idMedioPago]
+  );
+
+  const esEfectivo = medioPagoSeleccionado?.codigo === 'EFECTIVO';
+
   const resumenImpuestos = useMemo(() => {
     let neto_21 = 0;
     let iva_21 = 0;
@@ -147,7 +174,7 @@ export default function RegistrarVenta() {
     carrito.forEach(item => {
       const sub = Number(item.subtotal);
       total += sub;
-      const alicuota = Number(item.iva_porcentaje || 21);
+      const alicuota = Number(item.iva_porcentaje ?? 21);
 
       if (tipoComprobanteActual === 'A') {
         if (item.es_exento) {
@@ -177,15 +204,21 @@ export default function RegistrarVenta() {
       }
     });
 
+    const percepcion_iva = Number(percepcionIva || 0);
+    const percepcion_iibb = Number(percepcionIibb || 0);
+
     return {
       neto_21: Number(neto_21.toFixed(2)),
       iva_21: Number(iva_21.toFixed(2)),
       neto_105: Number(neto_105.toFixed(2)),
       iva_105: Number(iva_105.toFixed(2)),
       exento: Number(exento.toFixed(2)),
-      total: Number(total.toFixed(2))
+      subtotal_productos: Number(total.toFixed(2)),
+      percepcion_iva: Number(percepcion_iva.toFixed(2)),
+      percepcion_iibb: Number(percepcion_iibb.toFixed(2)),
+      total: Number((total + percepcion_iva + percepcion_iibb).toFixed(2))
     };
-  }, [carrito, tipoComprobanteActual]);
+  }, [carrito, tipoComprobanteActual, percepcionIva, percepcionIibb]);
 
   const agregarAlCarrito = (prod) => {
     if (prod.stock_actual <= 0) {
@@ -237,17 +270,20 @@ export default function RegistrarVenta() {
   const handleConfirmarVentaFinal = async () => {
     if (cargando) return; // Previene doble clic concurrente
     if (carrito.length === 0) return showAlert.errorSave('El carrito está vacío.');
+    if (Number(percepcionIva || 0) < 0 || Number(percepcionIibb || 0) < 0) {
+      return showAlert.errorSave('Las percepciones no pueden tener importes negativos.');
+    }
     
     const totalVenta = resumenImpuestos.total;
-    if (medioPago === 'Efectivo') {
-      const recibido = Number(montoRecibido);
-      if (!montoRecibido || recibido < totalVenta) {
-        return showAlert.errorSave(`El monto recibido ($${recibido || 0}) no cubre el total de la venta ($${totalVenta}).`);
-      }
-    } else {
-      if (!referenciaPago.trim()) {
-        return showAlert.errorSave('El número de referencia u operación es obligatorio.');
-      }
+    if (!medioPagoSeleccionado) {
+      return showAlert.errorSave('Debe seleccionar un medio de pago activo.');
+    }
+    const importePagado = Number(montoRecibido);
+    if (!montoRecibido || !Number.isFinite(importePagado) || importePagado < totalVenta) {
+      return showAlert.errorSave(`El importe ingresado ($${importePagado || 0}) no cubre el total de la venta ($${totalVenta}).`);
+    }
+    if (!esEfectivo && !referenciaPago.trim()) {
+      return showAlert.errorSave('El número de referencia u operación es obligatorio.');
     }
 
     setCargando(true);
@@ -257,9 +293,13 @@ export default function RegistrarVenta() {
       id_cliente: clienteElegido ? clienteElegido.id_cliente : null,
       tipo_comprobante: tipoComprobanteActual,
       items: carrito,
-      medio_pago: medioPago,
+      id_medio_pago: idMedioPago,
+      medio_pago: medioPagoSeleccionado.nombre,
+      importe_pagado: importePagado,
+      referencia_pago: referenciaPago,
+      idempotency_key: idempotencyKey,
       ...resumenImpuestos,
-      percepciones: 0
+      id_lista: carrito[0]?.id_lista || null
     };
 
     const { data, error } = await confirmarVenta(payload);
@@ -279,12 +319,16 @@ export default function RegistrarVenta() {
   const ventasFiltradas = useMemo(() => {
     return historialVentas.filter(v => {
       const matchTipo = filtroTipoFactura === 'TODAS' || v.tipo_comprobante === filtroTipoFactura;
-      const matchBusqueda = !busquedaHistorial || 
-        String(v.numero_comprobante).includes(busquedaHistorial) || 
-        (v.cliente?.nombre || 'Consumidor Final').toLowerCase().includes(busquedaHistorial.toLowerCase());
-      return matchTipo && matchBusqueda;
+      const matchNumero = !filtroNumero || String(v.numero_comprobante).includes(filtroNumero.trim());
+      const matchCliente = !filtroCliente ||
+        (v.cliente?.nombre || 'Consumidor Final').toLowerCase().includes(filtroCliente.trim().toLowerCase());
+      const matchSucursal = filtroSucursal === 'TODAS' || String(v.id_sucursal) === filtroSucursal;
+      const fechaVenta = new Date(v.fecha);
+      const matchDesde = !filtroFechaDesde || fechaVenta >= new Date(`${filtroFechaDesde}T00:00:00`);
+      const matchHasta = !filtroFechaHasta || fechaVenta <= new Date(`${filtroFechaHasta}T23:59:59.999`);
+      return matchTipo && matchNumero && matchCliente && matchSucursal && matchDesde && matchHasta;
     });
-  }, [historialVentas, filtroTipoFactura, busquedaHistorial]);
+  }, [historialVentas, filtroTipoFactura, filtroNumero, filtroCliente, filtroSucursal, filtroFechaDesde, filtroFechaHasta]);
 
   const estadisticasSemanales = useMemo(() => {
     const ahora = new Date();
@@ -357,27 +401,38 @@ export default function RegistrarVenta() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
-              <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: '#9ca3af' }} />
-              <input
-                type="text"
-                placeholder="Buscar N° factura o cliente..."
-                value={busquedaHistorial}
-                onChange={(e) => setBusquedaHistorial(e.target.value)}
-                style={{ ...inputStyle, paddingLeft: '2.5rem' }}
-              />
-            </div>
-
-            <select
-              value={filtroTipoFactura}
-              onChange={(e) => setFiltroTipoFactura(e.target.value)}
-              style={{ ...inputStyle, width: '180px' }}
-            >
-              <option value="TODAS">Todos los tipos</option>
-              <option value="A">Factura A</option>
-              <option value="B">Factura B</option>
-            </select>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', marginBottom: '1rem', gap: '0.75rem', alignItems: 'end' }}>
+            <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>Número
+              <div style={{ position: 'relative', marginTop: '0.3rem' }}>
+                <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: '#9ca3af' }} />
+                <input type="text" placeholder="N° comprobante" value={filtroNumero} onChange={(e) => setFiltroNumero(e.target.value.replace(/\D/g, ''))} style={{ ...inputStyle, paddingLeft: '2.5rem' }} />
+              </div>
+            </label>
+            <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>Cliente
+              <input type="text" placeholder="Nombre o apellido" value={filtroCliente} onChange={(e) => setFiltroCliente(e.target.value)} style={{ ...inputStyle, marginTop: '0.3rem' }} />
+            </label>
+            <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>Sucursal
+              <select value={filtroSucursal} onChange={(e) => setFiltroSucursal(e.target.value)} style={{ ...inputStyle, marginTop: '0.3rem' }}>
+                <option value="TODAS">Todas</option>
+                {sucursales.map((sucursal) => <option key={sucursal.id_sucursal} value={sucursal.id_sucursal}>{sucursal.descripcion || sucursal.nombre || sucursal.codigo}</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>Desde
+              <input type="date" value={filtroFechaDesde} onChange={(e) => setFiltroFechaDesde(e.target.value)} style={{ ...inputStyle, marginTop: '0.3rem' }} />
+            </label>
+            <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>Hasta
+              <input type="date" value={filtroFechaHasta} min={filtroFechaDesde || undefined} onChange={(e) => setFiltroFechaHasta(e.target.value)} style={{ ...inputStyle, marginTop: '0.3rem' }} />
+            </label>
+            <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>Tipo
+              <select value={filtroTipoFactura} onChange={(e) => setFiltroTipoFactura(e.target.value)} style={{ ...inputStyle, marginTop: '0.3rem' }}>
+                <option value="TODAS">Todos</option>
+                <option value="A">Factura A</option>
+                <option value="B">Factura B</option>
+              </select>
+            </label>
+            <button type="button" onClick={() => { setFiltroNumero(''); setFiltroCliente(''); setFiltroSucursal('TODAS'); setFiltroFechaDesde(''); setFiltroFechaHasta(''); setFiltroTipoFactura('TODAS'); }} style={{ ...inputStyle, cursor: 'pointer', color: '#374151', fontWeight: 600 }}>
+              Limpiar filtros
+            </button>
           </div>
 
           <div style={{ backgroundColor: '#fff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
@@ -388,6 +443,7 @@ export default function RegistrarVenta() {
                     <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Comprobante</th>
                     <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Fecha y Hora</th>
                     <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Cliente / Receptor</th>
+                    <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Sucursal</th>
                     <th style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Medio Pago</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Total</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'center', color: '#6b7280', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: '600' }}>Acciones</th>
@@ -396,13 +452,13 @@ export default function RegistrarVenta() {
                 <tbody>
                   {ventasFiltradas.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '2.5rem', color: '#6b7280' }}>No se encontraron registros de ventas.</td>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '2.5rem', color: '#6b7280' }}>No se encontraron registros de ventas.</td>
                     </tr>
                   ) : (
                     ventasFiltradas.map(v => (
                       <tr key={v.id_venta} style={{ borderBottom: '1px solid #e5e7eb' }}>
                         <td style={{ padding: '0.85rem 1rem', fontWeight: '600', color: '#111827' }}>
-                          Factura {v.tipo_comprobante} 000{v.punto_venta}-{String(v.numero_comprobante).padStart(8, '0')}
+                          Factura {v.tipo_comprobante} {String(v.punto_venta).padStart(4, '0')}-{String(v.numero_comprobante).padStart(8, '0')}
                         </td>
                         <td style={{ padding: '0.85rem 1rem', color: '#4b5563' }}>
                           {new Date(v.fecha).toLocaleString()}
@@ -411,7 +467,10 @@ export default function RegistrarVenta() {
                           {v.cliente ? v.cliente.nombre : 'Consumidor Final'}
                         </td>
                         <td style={{ padding: '0.85rem 1rem', color: '#4b5563' }}>
-                          {v.medio_pago}
+                          {sucursales.find((s) => String(s.id_sucursal) === String(v.id_sucursal))?.descripcion || 'Sin identificar'}
+                        </td>
+                        <td style={{ padding: '0.85rem 1rem', color: '#4b5563' }}>
+                          {v.pago_venta?.[0]?.medio_pago?.nombre || v.medio_pago}
                         </td>
                         <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontWeight: '600', color: '#166534' }}>
                           ${Number(v.importe_total).toFixed(2)}
@@ -419,7 +478,15 @@ export default function RegistrarVenta() {
                         <td style={{ padding: '0.85rem 1rem', textAlign: 'center' }}>
                           <button
                             type="button"
-                            onClick={() => downloadComprobanteVentaPdf(v, v.detalle_venta || [], v.cliente, sucursales.find(s => s.id_sucursal === v.id_sucursal))}
+                            onClick={() => setVentaDetalle(v)}
+                            style={{ backgroundColor: '#fff', border: '1px solid #d1d5db', padding: '0.3rem 0.6rem', borderRadius: '0.3rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#374151', marginRight: '0.35rem' }}
+                            title="Ver detalle"
+                          >
+                            <Eye size={13} /> Detalle
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => downloadComprobanteVentaPdf(v, v.detalle_venta || [], v.cliente, sucursales.find(s => String(s.id_sucursal) === String(v.id_sucursal)))}
                             style={{ backgroundColor: '#f3f4f6', border: '1px solid #d1d5db', padding: '0.3rem 0.6rem', borderRadius: '0.3rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: '#374151' }}
                             title="Descargar Comprobante PDF"
                           >
@@ -465,7 +532,7 @@ export default function RegistrarVenta() {
               >
                 <option value="">-- Seleccione Sucursal --</option>
                 {sucursales.map(s => (
-                  <option key={s.id_sucursal} value={s.id_sucursal}>{s.codigo} - {s.descripcion}</option>
+                  <option key={s.id_sucursal} value={s.id_sucursal}>{s.codigo} - {s.descripcion} (PV {String(s.punto_venta || s.id_sucursal).padStart(4, '0')})</option>
                 ))}
               </select>
             </div>
@@ -550,7 +617,7 @@ export default function RegistrarVenta() {
                   <div style={{ position: 'relative' }}>
                     <input
                       type="text"
-                      placeholder="Buscar cliente por DNI, CUIT o Nombre..."
+                      placeholder="Buscar por DNI, CUIT, nombre, apellido o teléfono..."
                       value={busquedaCliente}
                       onChange={(e) => setBusquedaCliente(e.target.value)}
                       style={inputStyle}
@@ -566,7 +633,7 @@ export default function RegistrarVenta() {
                             }}
                             style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', fontSize: '0.85rem' }}
                           >
-                            <b>{c.nombre}</b> — CUIT/DNI: {c.cuit || c.dni || 'Sin ID'} ({c.condicion_fiscal})
+                            <b>{c.nombre}</b> — CUIT/DNI: {c.cuit || c.dni || 'Sin ID'}{c.telefono ? ` — Tel: ${c.telefono}` : ''} ({c.condicion_fiscal})
                           </div>
                         ))}
                       </div>
@@ -696,12 +763,24 @@ export default function RegistrarVenta() {
                         </div>
                       </>
                     )}
+                    {resumenImpuestos.percepcion_iva > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
+                        <span>Percepción IVA:</span>
+                        <b>${resumenImpuestos.percepcion_iva.toFixed(2)}</b>
+                      </div>
+                    )}
+                    {resumenImpuestos.percepcion_iibb > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
+                        <span>Percepción IIBB:</span>
+                        <b>${resumenImpuestos.percepcion_iibb.toFixed(2)}</b>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
-                      <span>Subtotal Operación:</span>
-                      <b>${resumenImpuestos.total.toFixed(2)}</b>
+                          <span>Subtotal Operación:</span>
+                          <b>${resumenImpuestos.subtotal_productos.toFixed(2)}</b>
                     </div>
                     {resumenImpuestos.exento > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem', color: '#4b5563' }}>
@@ -717,39 +796,76 @@ export default function RegistrarVenta() {
                 </div>
               </div>
 
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '0.375rem' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.8rem', color: '#374151', marginBottom: '0.6rem' }}>
+                  Percepciones manuales
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>
+                    Percepción IVA $
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={percepcionIva}
+                      onChange={(e) => setPercepcionIva(e.target.value)}
+                      style={{ ...inputStyle, marginTop: '0.3rem' }}
+                      placeholder="0.00"
+                    />
+                  </label>
+                  <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>
+                    Percepción IIBB $
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={percepcionIibb}
+                      onChange={(e) => setPercepcionIibb(e.target.value)}
+                      style={{ ...inputStyle, marginTop: '0.3rem' }}
+                      placeholder="0.00"
+                    />
+                  </label>
+                </div>
+                {tipoComprobanteActual === 'B' && (
+                  <small style={{ display: 'block', color: '#6b7280', marginTop: '0.5rem' }}>
+                    Se suman al total, pero no se discriminan en la Factura B.
+                  </small>
+                )}
+              </div>
+
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.8rem', color: '#374151' }}>Medio de Pago *</label>
                 <select
-                  value={medioPago}
-                  onChange={(e) => setMedioPago(e.target.value)}
+                  value={idMedioPago}
+                  onChange={(e) => setIdMedioPago(e.target.value)}
                   style={inputStyle}
                 >
-                  <option value="Efectivo">Efectivo</option>
-                  <option value="Tarjeta">Tarjeta</option>
-                  <option value="Transferencia">Transferencia</option>
+                  <option value="">Seleccionar...</option>
+                  {mediosPago.map((medio) => (
+                    <option key={medio.id_medio_pago} value={medio.id_medio_pago}>{medio.nombre}</option>
+                  ))}
                 </select>
               </div>
 
-              {medioPago === 'Efectivo' && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.8rem', color: '#374151' }}>Monto Recibido $ *</label>
+              <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.8rem', color: '#374151' }}>{esEfectivo ? 'Monto recibido' : 'Importe pagado'} $ *</label>
                   <input
                     type="number"
+                    min="0"
                     step="0.01"
                     value={montoRecibido}
                     onChange={(e) => setMontoRecibido(e.target.value)}
                     style={inputStyle}
                     placeholder="0.00"
                   />
-                  {Number(montoRecibido) >= resumenImpuestos.total && (
+                  {esEfectivo && Number(montoRecibido) >= resumenImpuestos.total && (
                     <small style={{ color: '#166534', fontWeight: '700', display: 'block', marginTop: '0.3rem' }}>
                       Vuelto: ${(Number(montoRecibido) - resumenImpuestos.total).toFixed(2)}
                     </small>
                   )}
                 </div>
-              )}
 
-              {medioPago !== 'Efectivo' && (
+              {!esEfectivo && idMedioPago && (
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.8rem', color: '#374151' }}>Nº de Referencia / Operación *</label>
                   <input
@@ -790,7 +906,7 @@ export default function RegistrarVenta() {
           <CheckCircle2 size={56} color="#166534" style={{ margin: '0 auto 1rem' }} />
           <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: '#111827', marginBottom: '0.5rem' }}>¡Venta Confirmada con Éxito!</h2>
           <p style={{ color: '#6b7280', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-            Se generó el comprobante <b>Factura {ventaConfirmada.tipo_comprobante} 000{ventaConfirmada.punto_venta}-{String(ventaConfirmada.numero_comprobante).padStart(8, '0')}</b> y se descontó el stock del depósito.
+            Se generó el comprobante <b>Factura {ventaConfirmada.tipo_comprobante} {String(ventaConfirmada.punto_venta).padStart(4, '0')}-{String(ventaConfirmada.numero_comprobante).padStart(8, '0')}</b> y se descontó el stock del depósito.
           </p>
 
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
@@ -807,12 +923,51 @@ export default function RegistrarVenta() {
                 setVentaConfirmada(null);
                 setCarrito([]);
                 setClienteElegido(null);
+                setPercepcionIva('');
+                setPercepcionIibb('');
+                setMontoRecibido('');
+                setReferenciaPago('');
+                setIdempotencyKey(crypto.randomUUID());
                 setPaso(1);
               }}
               style={{ backgroundColor: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer' }}
             >
               Volver al Panel
             </button>
+          </div>
+        </div>
+      )}
+
+      {ventaDetalle && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: '#fff', width: 'min(850px, 92vw)', maxHeight: '88vh', overflowY: 'auto', borderRadius: '0.6rem', padding: '1.5rem', boxShadow: '0 20px 30px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Detalle de Factura {ventaDetalle.tipo_comprobante}</h2>
+                <span style={{ color: '#6b7280', fontSize: '0.85rem' }}>{String(ventaDetalle.punto_venta).padStart(4, '0')}-{String(ventaDetalle.numero_comprobante).padStart(8, '0')}</span>
+              </div>
+              <button type="button" onClick={() => setVentaDetalle(null)} style={{ border: 0, background: 'transparent', cursor: 'pointer', color: '#6b7280' }}><X size={22} /></button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.4rem', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              <div><span style={{ color: '#6b7280' }}>Fecha</span><br /><b>{new Date(ventaDetalle.fecha).toLocaleString()}</b></div>
+              <div><span style={{ color: '#6b7280' }}>Cliente</span><br /><b>{ventaDetalle.cliente?.nombre || 'Consumidor Final'}</b></div>
+              <div><span style={{ color: '#6b7280' }}>Sucursal</span><br /><b>{sucursales.find((s) => String(s.id_sucursal) === String(ventaDetalle.id_sucursal))?.descripcion || 'Sin identificar'}</b></div>
+              <div><span style={{ color: '#6b7280' }}>Medio de pago</span><br /><b>{ventaDetalle.pago_venta?.[0]?.medio_pago?.nombre || ventaDetalle.medio_pago}</b></div>
+              <div><span style={{ color: '#6b7280' }}>Estado</span><br /><b>{ventaDetalle.estado}</b></div>
+              <div><span style={{ color: '#6b7280' }}>Total</span><br /><b style={{ color: '#166534' }}>${Number(ventaDetalle.importe_total).toFixed(2)}</b></div>
+            </div>
+
+            <div style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead style={{ backgroundColor: '#2d241e', color: '#fff' }}><tr><th style={{ padding: '0.65rem', textAlign: 'left' }}>Producto</th><th>Cantidad</th><th>Precio unitario</th><th>Subtotal</th></tr></thead>
+                <tbody>{(ventaDetalle.detalle_venta || []).map((item) => <tr key={item.id_detalle_venta} style={{ borderBottom: '1px solid #e5e7eb' }}><td style={{ padding: '0.65rem' }}>{item.articulo?.nombre || item.articulo?.descripcion || 'Artículo'}</td><td style={{ textAlign: 'center' }}>{item.cantidad}</td><td style={{ textAlign: 'right' }}>${Number(item.precio_unitario).toFixed(2)}</td><td style={{ textAlign: 'right', fontWeight: 600 }}>${Number(item.subtotal).toFixed(2)}</td></tr>)}</tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button type="button" onClick={() => downloadComprobanteVentaPdf(ventaDetalle, ventaDetalle.detalle_venta || [], ventaDetalle.cliente, sucursales.find((s) => String(s.id_sucursal) === String(ventaDetalle.id_sucursal)))} style={{ border: 0, background: '#65482b', color: '#fff', padding: '0.55rem 0.8rem', borderRadius: '0.35rem', cursor: 'pointer', fontWeight: 600 }}><Download size={15} style={{ verticalAlign: 'middle', marginRight: 5 }} />Descargar</button>
+            </div>
           </div>
         </div>
       )}
@@ -824,7 +979,7 @@ export default function RegistrarVenta() {
             <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1rem', color: '#111827' }}>Registro Rápido de Cliente</h3>
             <form onSubmit={handleGuardarCliente}>
               <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.3rem', color: '#374151' }}>Nombre / Razón Social *</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.3rem', color: '#374151' }}>Nombre y apellido / Razón Social *</label>
                 <input
                   type="text"
                   value={tempCliente.nombre}
@@ -843,6 +998,16 @@ export default function RegistrarVenta() {
                   onChange={(e) => setTempCliente({ ...tempCliente, identificacion: e.target.value.replace(/\D/g, '') })}
                   style={inputStyle}
                   placeholder="Ej: 35123456 o 20351234567"
+                />
+              </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.3rem', color: '#374151' }}>Teléfono</label>
+                <input
+                  type="tel"
+                  value={tempCliente.telefono}
+                  onChange={(e) => setTempCliente({ ...tempCliente, telefono: e.target.value })}
+                  style={inputStyle}
+                  placeholder="Ej: 3815551234"
                 />
               </div>
               <div style={{ marginBottom: '1.5rem' }}>

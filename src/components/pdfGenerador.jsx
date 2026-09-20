@@ -24,6 +24,8 @@ export const generateStandardPDF = async ({
   infoData = [],
   columns = [],
   rows = [],
+  summaryData = [],
+  footerNote = "",
   fileName = "documento.pdf"
 }) => {
   const doc = new jsPDF();
@@ -127,11 +129,44 @@ export const generateStandardPDF = async ({
     }
   });
 
-  // 5. Franja decorativa inferior (Marrón: #65482b / RGB: 101, 72, 43)
+  // 5. Resumen de importes opcional
+  if (summaryData.length > 0) {
+    let summaryY = doc.lastAutoTable.finalY + 10;
+    const summaryHeight = summaryData.length * 7 + 11;
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    if (summaryY + summaryHeight > pageHeight - 16) {
+      doc.addPage();
+      summaryY = 18;
+    }
+
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(105, summaryY, 91, summaryHeight, 3, 3, "F");
+
+    summaryData.forEach((item, index) => {
+      const y = summaryY + 8 + index * 7;
+      const isTotal = item.emphasis === true;
+
+      doc.setFont("helvetica", isTotal ? "bold" : "normal");
+      doc.setFontSize(isTotal ? 11 : 9);
+      doc.setTextColor(isTotal ? 0 : 70, isTotal ? 105 : 70, isTotal ? 45 : 70);
+      doc.text(String(item.label), 111, y);
+      doc.text(String(item.value), 190, y, { align: "right" });
+    });
+  }
+
+  if (footerNote) {
+    const pageHeight = doc.internal.pageSize.getHeight();
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(110, 110, 110);
+    doc.text(footerNote, 105, pageHeight - 11, { align: "center" });
+  }
+
+  // 6. Franja decorativa inferior (Marrón: #65482b / RGB: 101, 72, 43)
   const pageHeight = doc.internal.pageSize.getHeight();
   doc.setFillColor(101, 72, 43);
   doc.rect(0, pageHeight - 8, 210, 8, "F");
 
-  // Guardar/Descargar el PDF
   doc.save(fileName);
 };
