@@ -54,7 +54,7 @@ export default function OrdenesCompraProv() {
     const { data: arts } = await supabase.from('articulo').select('id_articulo, nombre, precio_costo').eq('estado', true);
     setArticulos(arts || []);
 
-    const { data: deps } = await supabase.from('deposito').select('id_deposito, codigo, descripcion').eq('estado', true);
+    const { data: deps } = await supabase.from('deposito').select('id_deposito, codigo, descripcion, rubros_permitidos').eq('estado', true);
     setDepositos(deps || []);
   };
 
@@ -236,6 +236,21 @@ export default function OrdenesCompraProv() {
 
   const commonInputStyle = { padding: "0.5rem 0.75rem", borderRadius: "0.375rem", border: "1px solid #d1d5db", fontSize: "0.875rem", outline: "none", width: "100%", boxSizing: "border-box" };
 
+  const depositosCompatibles = depositos.filter((deposito) => {
+    const permitidos = (deposito.rubros_permitidos || '')
+      .split(',')
+      .map((rubro) => rubro.trim().toUpperCase())
+      .filter(Boolean);
+    if (permitidos.length === 0) return true;
+
+    return detallesSeguimiento
+      .filter((detalle) => Number(detalle.input_recepcion || 0) > 0)
+      .every((detalle) => {
+        const prefijo = (detalle.articulo?.codigo || '').split('-')[0].trim().toUpperCase();
+        return permitidos.includes(prefijo);
+      });
+  });
+
   const ordenesFiltradas = ordenes.filter(o => {
     const coincideTexto = o.numero_orden?.toLowerCase().includes(searchTerm.toLowerCase()) || o.proveedor?.razon_social?.toLowerCase().includes(searchTerm.toLowerCase());
     const coincideEstado = filtroEstado === "TODOS" || o.estado === filtroEstado;
@@ -386,8 +401,11 @@ export default function OrdenesCompraProv() {
                 <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#166534", marginBottom: "0.4rem" }}>Depósito receptor *</label>
                 <select value={depositoRecepcion} onChange={(e) => setDepositoRecepcion(e.target.value)} style={commonInputStyle}>
                   <option value="">Seleccione el depósito donde ingresa la mercadería...</option>
-                  {depositos.map((deposito) => <option key={deposito.id_deposito} value={deposito.id_deposito}>{deposito.codigo} - {deposito.descripcion}</option>)}
+                  {depositosCompatibles.map((deposito) => <option key={deposito.id_deposito} value={deposito.id_deposito}>{deposito.codigo} - {deposito.descripcion} ({deposito.rubros_permitidos || 'Todos los rubros'})</option>)}
                 </select>
+                {depositosCompatibles.length === 0 && (
+                  <small style={{ display: 'block', color: '#b91c1c', marginTop: '0.4rem' }}>No existe un depósito compatible con todos los productos seleccionados. Recibilos por grupos de rubro.</small>
+                )}
               </div>
             )}
 
