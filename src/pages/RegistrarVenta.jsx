@@ -7,10 +7,13 @@ import {
   getProductosConStock, 
   confirmarVenta, 
   getHistorialVentas,
+  getBorradoresVenta,
+  guardarVentaBorrador,
+  cancelarVentaBorrador,
   downloadComprobanteVentaPdf 
 } from '../services/ventas';
 import { showAlert } from '../lib/alerts.js';
-import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X } from 'lucide-react';
+import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle } from 'lucide-react';
 import '../App.css';
 
 export default function RegistrarVenta() {
@@ -20,8 +23,10 @@ export default function RegistrarVenta() {
   // Contexto
   const [sucursales, setSucursales] = useState([]);
   const [depositos, setDepositos] = useState([]);
+  const [borradores, setBorradores] = useState([]);
   const [sucursalSeleccionada, setSucursalSeleccionada] = useState('');
   const [depositoSeleccionado, setDepositoSeleccionado] = useState('');
+  const [idBorrador, setIdBorrador] = useState(null);
 
   // Historial y Métricas
   const [historialVentas, setHistorialVentas] = useState([]);
@@ -67,6 +72,8 @@ export default function RegistrarVenta() {
       }
       const hist = await getHistorialVentas();
       setHistorialVentas(hist.data || []);
+      const borr = await getBorradoresVenta();
+      setBorradores(borr.data || []);
       const medios = await getMediosPagoActivos();
       setMediosPago(medios.data || []);
       const efectivo = (medios.data || []).find((medio) => medio.codigo === 'EFECTIVO');
@@ -99,10 +106,125 @@ export default function RegistrarVenta() {
       setCargando(false);
       return showAlert.errorSave(error.message || 'No se pudieron cargar los productos disponibles.');
     }
+    const nuevaClave = crypto.randomUUID();
+    const { data: borrador, error: errorBorrador } = await guardarVentaBorrador({
+      id_sucursal: sucursalSeleccionada,
+      id_deposito: depositoSeleccionado,
+      id_lista: data?.[0]?.id_lista || null,
+      items: [],
+      idempotency_key: nuevaClave
+    });
+    if (errorBorrador) {
+      setCargando(false);
+      return showAlert.errorSave('No se pudo iniciar el borrador: ' + errorBorrador.message);
+    }
     setProductosDisponibles(data || []);
-    setIdempotencyKey(crypto.randomUUID());
+    setIdBorrador(borrador.id_borrador);
+    setIdempotencyKey(borrador.idempotency_key || nuevaClave);
     setCargando(false);
     setPaso(3);
+  };
+
+  const limpiarVentaActual = () => {
+    setIdBorrador(null);
+    setCarrito([]);
+    setClienteElegido(null);
+    setBusquedaCliente('');
+    setPercepcionIva('');
+    setPercepcionIibb('');
+    setMontoRecibido('');
+    setReferenciaPago('');
+    setFiltroProducto('');
+    setIdempotencyKey(crypto.randomUUID());
+  };
+
+  const recargarBorradores = async () => {
+    const { data } = await getBorradoresVenta();
+    setBorradores(data || []);
+  };
+
+  const payloadBorradorActual = () => ({
+    id_borrador: idBorrador,
+    id_sucursal: sucursalSeleccionada,
+    id_deposito: depositoSeleccionado,
+    id_cliente: clienteElegido?.id_cliente || null,
+    id_lista: carrito[0]?.id_lista || productosDisponibles[0]?.id_lista || null,
+    items: carrito,
+    id_medio_pago: idMedioPago || null,
+    importe_pagado: montoRecibido,
+    referencia_pago: referenciaPago,
+    percepcion_iva: percepcionIva,
+    percepcion_iibb: percepcionIibb,
+    idempotency_key: idempotencyKey
+  });
+
+  const handleSuspenderVenta = async () => {
+    setCargando(true);
+    const { error } = await guardarVentaBorrador(payloadBorradorActual());
+    if (error) {
+      setCargando(false);
+      return showAlert.errorSave('No se pudo guardar el borrador: ' + error.message);
+    }
+    await recargarBorradores();
+    limpiarVentaActual();
+    setCargando(false);
+    setPaso(1);
+    showAlert.successSave('Venta suspendida y guardada como borrador.');
+  };
+
+  const handleRetomarBorrador = async (borrador) => {
+    setCargando(true);
+    const { data: productos, error } = await getProductosConStock(borrador.id_deposito);
+    if (error) {
+      setCargando(false);
+      return showAlert.errorSave(error.message || 'No se pudo recuperar el catálogo del borrador.');
+    }
+
+    const detalles = borrador.detalle_venta_borrador || [];
+    const carritoRecuperado = detalles.map((detalle) => {
+      const producto = (productos || []).find((p) =>
+        Number(p.id_articulo_deposito) === Number(detalle.id_articulo_deposito)
+      );
+      if (!producto) return null;
+      const cantidad = Math.min(Number(detalle.cantidad), Number(producto.stock_actual));
+      if (cantidad <= 0) return null;
+      return { ...producto, cantidad, subtotal: cantidad * Number(producto.precio_venta) };
+    }).filter(Boolean);
+
+    setIdBorrador(borrador.id_borrador);
+    setSucursalSeleccionada(String(borrador.id_sucursal));
+    setDepositoSeleccionado(String(borrador.id_deposito));
+    setClienteElegido(borrador.cliente || null);
+    setProductosDisponibles(productos || []);
+    setCarrito(carritoRecuperado);
+    setIdMedioPago(borrador.id_medio_pago ? String(borrador.id_medio_pago) : idMedioPago);
+    setMontoRecibido(borrador.importe_pagado == null ? '' : String(borrador.importe_pagado));
+    setReferenciaPago(borrador.referencia_pago || '');
+    setPercepcionIva(Number(borrador.percepcion_iva) ? String(borrador.percepcion_iva) : '');
+    setPercepcionIibb(Number(borrador.percepcion_iibb) ? String(borrador.percepcion_iibb) : '');
+    setIdempotencyKey(borrador.idempotency_key);
+    setCargando(false);
+    setPaso(3);
+
+    if (carritoRecuperado.length !== detalles.length) {
+      showAlert.errorSave('Algunos productos ya no tienen stock o no pertenecen a la lista vigente y no se recuperaron.');
+    }
+  };
+
+  const handleCancelarBorrador = async (borradorId, cancelarActual = false) => {
+    setCargando(true);
+    const { error } = await cancelarVentaBorrador(borradorId);
+    if (error) {
+      setCargando(false);
+      return showAlert.errorSave('No se pudo cancelar el borrador: ' + error.message);
+    }
+    await recargarBorradores();
+    if (cancelarActual) {
+      limpiarVentaActual();
+      setPaso(1);
+    }
+    setCargando(false);
+    showAlert.successSave('Borrador cancelado sin afectar el stock.');
   };
 
   const handleGuardarCliente = async (e) => {
@@ -288,6 +410,7 @@ export default function RegistrarVenta() {
 
     setCargando(true);
     const payload = {
+      id_borrador: idBorrador,
       id_sucursal: sucursalSeleccionada,
       id_deposito: depositoSeleccionado,
       id_cliente: clienteElegido ? clienteElegido.id_cliente : null,
@@ -309,6 +432,8 @@ export default function RegistrarVenta() {
     } else {
       showAlert.successSave('¡Venta confirmada y stock actualizado con éxito!');
       setVentaConfirmada(data);
+      setIdBorrador(null);
+      await recargarBorradores();
       const hist = await getHistorialVentas();
       setHistorialVentas(hist.data || []);
       setCargando(false);
@@ -399,6 +524,39 @@ export default function RegistrarVenta() {
                 <h3 style={{ margin: '0.1rem 0 0', fontSize: '1.25rem', fontWeight: '700', color: '#166534' }}>${estadisticasSemanales.montoTotal.toFixed(2)}</h3>
               </div>
             </div>
+          </div>
+
+          <div style={{ backgroundColor: '#fff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', marginBottom: '1.5rem', overflow: 'hidden' }}>
+            <div style={{ padding: '0.85rem 1rem', backgroundColor: '#fffbeb', borderBottom: '1px solid #fde68a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <b style={{ color: '#92400e' }}>Ventas suspendidas</b>
+                <span style={{ marginLeft: '0.5rem', color: '#a16207', fontSize: '0.8rem' }}>{borradores.length} borrador(es)</span>
+              </div>
+            </div>
+            {borradores.length === 0 ? (
+              <p style={{ margin: 0, padding: '1rem', color: '#6b7280', fontSize: '0.85rem' }}>No hay ventas pendientes para retomar.</p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead style={{ backgroundColor: '#f9fafb' }}>
+                    <tr><th style={{ padding: '0.65rem', textAlign: 'left' }}>Actualización</th><th style={{ textAlign: 'left' }}>Sucursal</th><th style={{ textAlign: 'center' }}>Ítems</th><th style={{ textAlign: 'right', paddingRight: '0.65rem' }}>Acciones</th></tr>
+                  </thead>
+                  <tbody>
+                    {borradores.map((borrador) => (
+                      <tr key={borrador.id_borrador} style={{ borderTop: '1px solid #e5e7eb' }}>
+                        <td style={{ padding: '0.65rem' }}>{new Date(borrador.fecha_actualizacion).toLocaleString()}</td>
+                        <td>{sucursales.find((s) => String(s.id_sucursal) === String(borrador.id_sucursal))?.descripcion || 'Sin identificar'}</td>
+                        <td style={{ textAlign: 'center' }}>{borrador.detalle_venta_borrador?.length || 0}</td>
+                        <td style={{ textAlign: 'right', padding: '0.5rem 0.65rem' }}>
+                          <button type="button" onClick={() => handleRetomarBorrador(borrador)} disabled={cargando} style={{ border: 0, backgroundColor: '#166534', color: '#fff', borderRadius: '0.3rem', padding: '0.35rem 0.55rem', cursor: 'pointer', marginRight: '0.4rem', fontWeight: 600 }}><PlayCircle size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />Retomar</button>
+                          <button type="button" onClick={() => handleCancelarBorrador(borrador.id_borrador)} disabled={cargando} style={{ border: '1px solid #fecaca', backgroundColor: '#fff', color: '#b91c1c', borderRadius: '0.3rem', padding: '0.35rem 0.55rem', cursor: 'pointer', fontWeight: 600 }}>Cancelar</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', marginBottom: '1rem', gap: '0.75rem', alignItems: 'end' }}>
@@ -576,13 +734,10 @@ export default function RegistrarVenta() {
                 Condición fiscal del receptor: <b>{clienteElegido ? clienteElegido.condicion_fiscal : 'Consumidor Final'}</b>
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setPaso(2)}
-              style={{ backgroundColor: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem' }}
-            >
-              <ArrowLeft size={16} /> Volver atrás
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button type="button" onClick={handleSuspenderVenta} disabled={cargando} style={{ backgroundColor: '#d97706', color: '#fff', border: 0, padding: '0.625rem 0.8rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem' }}><PauseCircle size={16} /> Suspender</button>
+              <button type="button" onClick={() => handleCancelarBorrador(idBorrador, true)} disabled={cargando || !idBorrador} style={{ backgroundColor: '#fff', color: '#b91c1c', border: '1px solid #fecaca', padding: '0.625rem 0.8rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer' }}>Cancelar venta</button>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.5rem' }}>

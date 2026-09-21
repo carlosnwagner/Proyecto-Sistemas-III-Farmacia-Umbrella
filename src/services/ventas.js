@@ -35,6 +35,54 @@ export async function getMediosPagoActivos() {
   return { data: data || [], error };
 }
 
+export async function getBorradoresVenta() {
+  const { data, error } = await supabase
+    .from('venta_borrador')
+    .select(`
+      *,
+      cliente:id_cliente (*),
+      detalle_venta_borrador (*)
+    `)
+    .eq('estado', 'Borrador')
+    .order('fecha_actualizacion', { ascending: false });
+
+  return { data: data || [], error };
+}
+
+export async function guardarVentaBorrador(payload) {
+  const items = (payload.items || []).map((item) => ({
+    id_articulo: Number(item.id_articulo),
+    id_articulo_deposito: Number(item.id_articulo_deposito),
+    cantidad: Number(item.cantidad),
+    precio_unitario: Number(item.precio_venta),
+    alicuota_iva: Number(item.iva_porcentaje ?? 21)
+  }));
+
+  const { data, error } = await supabase.rpc('guardar_venta_borrador', {
+    p_id_borrador: payload.id_borrador || null,
+    p_id_sucursal: Number(payload.id_sucursal),
+    p_id_deposito: Number(payload.id_deposito),
+    p_id_cliente: payload.id_cliente ? Number(payload.id_cliente) : null,
+    p_id_lista: payload.id_lista ? Number(payload.id_lista) : null,
+    p_items: items,
+    p_id_medio_pago: payload.id_medio_pago ? Number(payload.id_medio_pago) : null,
+    p_importe_pagado: payload.importe_pagado === '' ? null : Number(payload.importe_pagado),
+    p_referencia_pago: payload.referencia_pago?.trim() || null,
+    p_percepcion_iva: Number(payload.percepcion_iva || 0),
+    p_percepcion_iibb: Number(payload.percepcion_iibb || 0),
+    p_idempotency_key: payload.idempotency_key || null
+  });
+
+  return { data, error };
+}
+
+export async function cancelarVentaBorrador(idBorrador) {
+  const { error } = await supabase.rpc('cancelar_venta_borrador', {
+    p_id_borrador: Number(idBorrador)
+  });
+  return { error };
+}
+
 function validarCuitArgentino(cuit) {
   const cleanCuit = String(cuit).replace(/\D/g, '');
   if (cleanCuit.length !== 11) return false;
@@ -217,7 +265,8 @@ export async function confirmarVenta(ventaPayload) {
   }));
 
   const { data, error } = await supabase
-    .rpc('confirmar_venta_transaccional', {
+    .rpc('confirmar_venta_desde_borrador', {
+      p_id_borrador: Number(ventaPayload.id_borrador),
       p_idempotency_key: ventaPayload.idempotency_key,
       p_id_sucursal: Number(ventaPayload.id_sucursal),
       p_id_deposito: Number(ventaPayload.id_deposito),
