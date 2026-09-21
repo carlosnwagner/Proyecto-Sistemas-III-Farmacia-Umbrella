@@ -95,13 +95,17 @@ export async function getOrdenCompraPorId(idOrdenCompra) {
   return { data: { ...orden, detalle }, error: null };
 }
 
-export async function registrarRecepcion(idOrdenCompra, recepciones) {
+export async function registrarRecepcion(idOrdenCompra, idDeposito, recepciones) {
+  if (!idDeposito) {
+    return { data: false, error: { field: 'id_deposito', message: 'Debe seleccionar el depósito receptor.' } };
+  }
   if (!Array.isArray(recepciones) || recepciones.length === 0) {
     return { data: false, error: { field: 'recepciones', message: 'Debe indicar al menos un renglón a recibir.' } };
   }
 
-  const { error } = await supabase.rpc('registrar_recepcion_orden_compra', {
+  const { data, error } = await supabase.rpc('registrar_recepcion_orden_compra_deposito', {
     p_id_orden_compra: idOrdenCompra,
+    p_id_deposito: Number(idDeposito),
     p_recepciones: recepciones.map((r) => ({
       id_detalle_orden: r.id_detalle_orden,
       cantidad: Number(r.cantidad),
@@ -109,5 +113,5 @@ export async function registrarRecepcion(idOrdenCompra, recepciones) {
   });
 
   if (error) return { data: false, error: parseSupabaseError(error) };
-  return { data: true, error: null };
+  return { data, error: null };
 }

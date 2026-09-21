@@ -132,18 +132,20 @@ export default function AsociarProductoModal({
           idLote = loteCreado.id_lote;
         }
 
-        // 3. Crear movimiento de stock inicial
-        const { error: errMov } = await supabase
-          .from("movimiento_stock")
-          .insert([
-            {
-              id_deposito: depId,
+        // 3. Actualizar saldo y registrar el movimiento inicial atómicamente.
+        let errMov = null;
+        if (cant > 0) {
+          const resultadoAjuste = await supabase.rpc("registrar_ajuste_stock", {
+            p_id_deposito: depId,
+            p_tipo_movimiento: "INGRESO_INICIAL",
+            p_items: [{
               id_articulo_deposito: rel.id_articulo_deposito,
               id_lote: idLote,
-              tipo_movimiento: "INGRESO_INICIAL",
               cantidad: cant
-            }
-          ]);
+            }]
+          });
+          errMov = resultadoAjuste.error;
+        }
 
         if (errMov) throw new Error(errMov.message);
       }

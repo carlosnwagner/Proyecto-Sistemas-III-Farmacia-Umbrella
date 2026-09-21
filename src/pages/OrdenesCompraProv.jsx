@@ -21,6 +21,7 @@ export default function OrdenesCompraProv() {
    
   const [proveedores, setProveedores] = useState([]);
   const [articulos, setArticulos] = useState([]);
+  const [depositos, setDepositos] = useState([]);
   const [condiciones, setCondiciones] = useState([]);
   const [mediosPago, setMediosPago] = useState([]);
 
@@ -30,6 +31,8 @@ export default function OrdenesCompraProv() {
   const [ordenSeleccionada, setOrdenSeleccionada] = useState(null);
   const [detallesSeguimiento, setDetallesSeguimiento] = useState([]);
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [depositoRecepcion, setDepositoRecepcion] = useState("");
+  const [procesandoRecepcion, setProcesandoRecepcion] = useState(false);
 
   useEffect(() => {
     cargarDatosBase();
@@ -50,6 +53,9 @@ export default function OrdenesCompraProv() {
 
     const { data: arts } = await supabase.from('articulo').select('id_articulo, nombre, precio_costo').eq('estado', true);
     setArticulos(arts || []);
+
+    const { data: deps } = await supabase.from('deposito').select('id_deposito, codigo, descripcion').eq('estado', true);
+    setDepositos(deps || []);
   };
 
   const handleVerOrden = async (orden) => {
@@ -65,7 +71,40 @@ export default function OrdenesCompraProv() {
       input_recepcion: d.cantidad_solicitada - d.cantidad_recibida
     }));
     setDetallesSeguimiento(detallesFormateados);
+    setDepositoRecepcion("");
     setModalAbierto(true);
+  };
+
+  const handleRegistrarRecepcion = async () => {
+    if (!depositoRecepcion) {
+      return showAlert.errorSave("Debe seleccionar el depósito que recibirá la mercadería.");
+    }
+
+    const payloadRecepcion = detallesSeguimiento.map(d => ({
+      id_detalle_orden: d.id_detalle_orden,
+      cantidad: Number(d.input_recepcion || 0)
+    })).filter(d => d.cantidad > 0);
+
+    if (payloadRecepcion.length === 0) {
+      return showAlert.errorSave("Debe ingresar al menos una cantidad recibida.");
+    }
+
+    setProcesandoRecepcion(true);
+    const { data: estado, error } = await registrarRecepcion(
+      ordenSeleccionada.id_orden_compra,
+      depositoRecepcion,
+      payloadRecepcion
+    );
+
+    if (error) {
+      setProcesandoRecepcion(false);
+      return showAlert.errorSave("No se pudo registrar la recepción: " + error.message);
+    }
+
+    showAlert.successSave(`Mercadería ingresada correctamente. Estado de la orden: ${estado}.`);
+    await cargarDatosBase();
+    setProcesandoRecepcion(false);
+    setModalAbierto(false);
   };
 
   const handleCambiarEstado = async (nuevoEstado) => {
@@ -84,17 +123,6 @@ export default function OrdenesCompraProv() {
           `Acción bloqueada: La Orden N° ${ordenSeleccionada.numero_orden} tiene una factura asociada. Debe registrar una Nota de Crédito antes de poder cancelar esta orden.`
         );
         return; 
-      }
-    }
-
-    if (nuevoEstado === "Recibida") {
-      const payloadRecepcion = detallesSeguimiento.map(d => ({
-        id_detalle_orden: d.id_detalle_orden,
-        cantidad: d.cantidad_solicitada - (d.cantidad_recibida || 0)
-      })).filter(d => d.cantidad > 0);
-
-      if (payloadRecepcion.length > 0) {
-        await registrarRecepcion(ordenSeleccionada.id_orden_compra, payloadRecepcion);
       }
     }
 
@@ -237,6 +265,7 @@ export default function OrdenesCompraProv() {
                 <option value="TODOS">Todos los estados</option>
                 <option value="Borrador">Borrador</option>
                 <option value="Emitida">Emitida</option>
+                <option value="Pendiente">Parcialmente recibida</option>
                 <option value="Recibida">Recibida</option>
                 <option value="Cancelada">Cancelada</option>
               </select>
@@ -326,6 +355,7 @@ export default function OrdenesCompraProv() {
                     <th style={{ padding: "0.75rem" }}>Concepto / Artículo</th>
                     <th style={{ padding: "0.75rem", textAlign: "center" }}>Solicitado</th>
                     <th style={{ padding: "0.75rem", textAlign: "center" }}>Ya Recibido</th>
+                    <th style={{ padding: "0.75rem", textAlign: "center" }}>Recibir ahora</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -334,11 +364,32 @@ export default function OrdenesCompraProv() {
                       <td style={{ padding: "0.75rem" }}>{det.articulo?.nombre || "Artículo / Servicio"}</td>
                       <td style={{ padding: "0.75rem", textAlign: "center" }}>{det.cantidad_solicitada}</td>
                       <td style={{ padding: "0.75rem", textAlign: "center", fontWeight: "bold" }}>{det.cantidad_recibida || 0}</td>
+                      <td style={{ padding: "0.75rem", textAlign: "center" }}>
+                        <input
+                          type="number"
+                          min="0"
+                          max={Number(det.cantidad_solicitada) - Number(det.cantidad_recibida || 0)}
+                          value={det.input_recepcion}
+                          disabled={Number(det.cantidad_recibida || 0) >= Number(det.cantidad_solicitada)}
+                          onChange={(e) => setDetallesSeguimiento(actual => actual.map((item) => item.id_detalle_orden === det.id_detalle_orden ? { ...item, input_recepcion: e.target.value } : item))}
+                          style={{ width: "85px", padding: "0.4rem", border: "1px solid #d1d5db", borderRadius: "0.35rem", textAlign: "center" }}
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            {['Emitida', 'Pendiente'].includes(ordenSeleccionada.estado) && (
+              <div style={{ marginBottom: "1.25rem", padding: "1rem", backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "0.5rem" }}>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#166534", marginBottom: "0.4rem" }}>Depósito receptor *</label>
+                <select value={depositoRecepcion} onChange={(e) => setDepositoRecepcion(e.target.value)} style={commonInputStyle}>
+                  <option value="">Seleccione el depósito donde ingresa la mercadería...</option>
+                  {depositos.map((deposito) => <option key={deposito.id_deposito} value={deposito.id_deposito}>{deposito.codigo} - {deposito.descripcion}</option>)}
+                </select>
+              </div>
+            )}
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
               <div style={{ display: "flex", gap: "0.75rem" }}>
@@ -352,10 +403,10 @@ export default function OrdenesCompraProv() {
                     Pasar a Emitida (Pendiente)
                   </button>
                 )}
-                {ordenSeleccionada.estado === "Emitida" && (
+                {['Emitida', 'Pendiente'].includes(ordenSeleccionada.estado) && (
                   <>
-                    <button type="button" onClick={() => handleCambiarEstado("Recibida")} style={{ backgroundColor: "#16a34a", color: "#ffffff", border: "none", padding: "0.625rem 0.875rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <CheckCircle size={16} /> Marcar Recibida
+                    <button type="button" onClick={handleRegistrarRecepcion} disabled={procesandoRecepcion} style={{ backgroundColor: "#16a34a", color: "#ffffff", border: "none", padding: "0.625rem 0.875rem", borderRadius: "0.5rem", fontWeight: "600", cursor: procesandoRecepcion ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <CheckCircle size={16} /> {procesandoRecepcion ? "Registrando..." : "Registrar recepción"}
                     </button>
                     <button type="button" onClick={() => handleCambiarEstado("Cancelada")} style={{ backgroundColor: "#dc2626", color: "#ffffff", border: "none", padding: "0.625rem 0.875rem", borderRadius: "0.5rem", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                       <Ban size={16} /> Cancelar Orden

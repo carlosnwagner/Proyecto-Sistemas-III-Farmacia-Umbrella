@@ -54,6 +54,7 @@ export default function InventarioDeposito() {
         id_articulo_deposito,
         id_articulo,
         stock_minimo,
+        stock_actual,
         articulo:id_articulo (
           id_articulo,
           codigo,
@@ -68,28 +69,10 @@ export default function InventarioDeposito() {
       return;
     }
 
-    const calculados = await Promise.all(
-      articulosDep.map(async (item) => {
-        const { data: movs } = await supabase
-          .from("movimiento_stock")
-          .select("cantidad, tipo_movimiento")
-          .eq("id_articulo_deposito", item.id_articulo_deposito);
-
-        const stockReal = (movs || []).reduce((sum, m) => {
-          const cant = Math.abs(Number(m.cantidad) || 0);
-          const tipoNorm = (m.tipo_movimiento || "").toUpperCase();
-          const esResta = tipoNorm.includes("EGRESO") || 
-                          tipoNorm.includes("MERMA") || 
-                          tipoNorm.includes("ROTURA") || 
-                          tipoNorm.includes("VENCIMIENTO");
-          return esResta ? sum - cant : sum + cant;
-        }, 0);
-
-        return { ...item, stock_actual: Math.max(0, stockReal) };
-      })
-    );
-
-    setInventario(calculados);
+    setInventario(articulosDep.map((item) => ({
+      ...item,
+      stock_actual: Math.max(0, Number(item.stock_actual || 0))
+    })));
   }
 
   const handleCambiarDeposito = (nuevoId) => {

@@ -75,14 +75,16 @@ export default function AjusteStockModal({ idDeposito, productosAsociados = [], 
     setLoading(true);
 
     try {
-      const inserts = filas.map(f => ({
-        id_deposito: parseInt(idDeposito),
+      const items = filas.map(f => ({
         id_articulo_deposito: parseInt(f.id_articulo_deposito),
-        tipo_movimiento: tipoOperacion,
-        cantidad: Math.abs(Number(f.cantidad)) // Siempre positivo en DB
+        cantidad: Math.abs(Number(f.cantidad))
       }));
 
-      const { error } = await supabase.from("movimiento_stock").insert(inserts);
+      const { error } = await supabase.rpc("registrar_ajuste_stock", {
+        p_id_deposito: parseInt(idDeposito),
+        p_tipo_movimiento: tipoOperacion,
+        p_items: items
+      });
       if (error) throw new Error(error.message);
 
       alert("¡Ajuste de stock registrado exitosamente!");

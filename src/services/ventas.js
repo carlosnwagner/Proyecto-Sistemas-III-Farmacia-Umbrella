@@ -210,25 +210,8 @@ export async function getProductosConStock(idDeposito) {
     };
   }
 
-  const productosConStock = await Promise.all(
-    inventarioIncluidoEnLista.map(async (item) => {
-      const { data: movs } = await supabase
-        .from("movimiento_stock")
-        .select("cantidad, tipo_movimiento")
-        .eq("id_articulo_deposito", item.id_articulo_deposito);
-
-      const stockReal = (movs || []).reduce((sum, m) => {
-        const cant = Math.abs(Number(m.cantidad) || 0);
-        const tipoNorm = (m.tipo_movimiento || "").toUpperCase();
-        const esResta = tipoNorm.includes("EGRESO") || 
-                        tipoNorm.includes("MERMA") || 
-                        tipoNorm.includes("ROTURA") || 
-                        tipoNorm.includes("VENCIMIENTO") ||
-                        tipoNorm.includes("VENTA");
-        return esResta ? sum - cant : sum + cant;
-      }, 0);
-
-      const stockCalculado = Math.max(0, stockReal > 0 ? stockReal : (item.stock_actual || 0));
+  const productosConStock = inventarioIncluidoEnLista.map((item) => {
+      const stockCalculado = Math.max(0, Number(item.stock_actual || 0));
       const art = item.articulo || {};
       const descripcion = art.descripcion || art.nombre || 'Artículo sin nombre';
       const nombre = art.nombre || descripcion;
@@ -251,8 +234,7 @@ export async function getProductosConStock(idDeposito) {
         stock_actual: stockCalculado,
         stock: stockCalculado
       };
-    })
-  );
+    });
 
   return { data: productosConStock.filter((producto) => producto.precio_venta > 0), error: null };
 }

@@ -76,9 +76,13 @@ export function validateFacturaPayload(payload) {
 
 function parseSupabaseError(error) {
   if (error?.code === '23505') {
+    const esComprobanteDuplicado = error.message?.includes('factura_proveedor_comprobante_unique')
+      || error.message?.includes('comprobante ya está registrado');
     return {
       field: 'numero_comprobante',
-      message: 'Ya existe ese comprobante para el proveedor seleccionado.',
+      message: esComprobanteDuplicado
+        ? 'Ya existe ese comprobante para el proveedor seleccionado.'
+        : `Conflicto de datos al guardar: ${error.details || error.message}`,
     };
   }
   if (error?.code === '23503') {
@@ -168,44 +172,35 @@ export async function createFacturaProveedor(payload) {
   const { valid, errors } = validateFacturaPayload(payload);
   if (!valid) return { data: null, error: { field: null, message: 'Revisá los campos marcados.', fieldErrors: errors } };
 
-  const insertPayload = {
-    id_proveedor: Number(payload.id_proveedor),
-    id_orden_compra: payload.id_orden_compra ? Number(payload.id_orden_compra) : null,
-    tipo_comprobante: payload.tipo_comprobante,
-    tipo_factura: payload.tipo_factura,
-    punto_venta: Number(payload.punto_venta),
-    numero_comprobante: payload.numero_comprobante.trim().padStart(8, '0'),
-    fecha: payload.fecha,
-    subtotal: Number(payload.subtotal),
-    iva: Number(payload.iva),
-    conceptos_exentos: Number(payload.conceptos_exentos || 0),
-    percepcion_iva: Number(payload.percepcion_iva || 0),
-    percepcion_iibb: Number(payload.percepcion_iibb || 0),
-    importe_total: Number(payload.importe_total),
-  };
+  const detalle = (payload.detalle || []).map((item) => ({
+    id_detalle_orden_compra: item.id_detalle_orden ? Number(item.id_detalle_orden) : null,
+    id_articulo: item.id_articulo ? Number(item.id_articulo) : null,
+    descripcion: item.descripcion || item.articulo?.nombre || null,
+    cantidad: Number(item.cantidad),
+    precio_unitario: Number(item.precio_unitario),
+    tasa_iva: Number(item.tasa_iva || 0),
+  }));
 
   const { data, error } = await supabase
-    .from('factura_proveedor')
-    .insert(insertPayload)
-    .select()
+    .rpc('registrar_factura_proveedor_transaccional', {
+      p_id_proveedor: Number(payload.id_proveedor),
+      p_id_orden_compra: payload.id_orden_compra ? Number(payload.id_orden_compra) : null,
+      p_tipo_comprobante: payload.tipo_comprobante,
+      p_tipo_factura: payload.tipo_factura,
+      p_punto_venta: Number(payload.punto_venta),
+      p_numero_comprobante: payload.numero_comprobante.trim(),
+      p_fecha: payload.fecha,
+      p_subtotal: Number(payload.subtotal),
+      p_iva: Number(payload.iva),
+      p_conceptos_exentos: Number(payload.conceptos_exentos || 0),
+      p_percepcion_iva: Number(payload.percepcion_iva || 0),
+      p_percepcion_iibb: Number(payload.percepcion_iibb || 0),
+      p_importe_total: Number(payload.importe_total),
+      p_detalle: detalle,
+    })
     .single();
 
   if (error) return { data: null, error: parseSupabaseError(error) };
-
-  if (payload.detalle?.length) {
-    const { error: detalleError } = await supabase.from('detalle_factura_proveedor').insert(
-      payload.detalle.map((detalle) => ({
-        id_factura_proveedor: data.id_factura_proveedor,
-        id_detalle_orden_compra: detalle.id_detalle_orden ? Number(detalle.id_detalle_orden) : null,
-        id_articulo: detalle.id_articulo ? Number(detalle.id_articulo) : null,
-        descripcion: detalle.descripcion || detalle.articulo?.nombre || null,
-        cantidad: Number(detalle.cantidad),
-        precio_unitario: Number(detalle.precio_unitario),
-        tasa_iva: Number(detalle.tasa_iva || 0),
-      })),
-    );
-    if (detalleError) return { data: null, error: parseSupabaseError(detalleError) };
-  }
 
   return { data, error: null };
 }
