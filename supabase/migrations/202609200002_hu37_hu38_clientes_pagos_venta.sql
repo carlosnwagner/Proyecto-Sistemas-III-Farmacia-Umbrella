@@ -28,6 +28,6 @@ grant select, insert on table public.pago_venta to anon, authenticated;
 grant usage, select on sequence public.pago_venta_id_pago_venta_seq to anon, authenticated;
 
 comment on table public.pago_venta is
-  'Cobro asociado a una venta. En el Sprint 3 existe un único medio de pago por venta.';
+  'Cobro asociado a una venta.';
 
 commit;
