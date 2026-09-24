@@ -111,21 +111,27 @@ function validarDniArgentino(dni) {
 }
 
 export async function crearCliente(clienteData) {
-  if (clienteData.dni && clienteData.dni.trim() !== '') {
-    if (!validarDniArgentino(clienteData.dni)) {
+  const clienteNormalizado = {
+    ...clienteData,
+    aplica_percepcion_iva: clienteData.condicion_fiscal === 'Responsable Inscripto' && Boolean(clienteData.aplica_percepcion_iva),
+    aplica_percepcion_iibb: clienteData.condicion_fiscal === 'Responsable Inscripto' && Boolean(clienteData.aplica_percepcion_iibb)
+  };
+
+  if (clienteNormalizado.dni && clienteNormalizado.dni.trim() !== '') {
+    if (!validarDniArgentino(clienteNormalizado.dni)) {
       return { data: null, error: { message: 'El DNI ingresado no es válido según el formato de Argentina.' } };
     }
   }
 
-  if (clienteData.cuit && clienteData.cuit.trim() !== '') {
-    if (!validarCuitArgentino(clienteData.cuit)) {
+  if (clienteNormalizado.cuit && clienteNormalizado.cuit.trim() !== '') {
+    if (!validarCuitArgentino(clienteNormalizado.cuit)) {
       return { data: null, error: { message: 'El CUIT ingresado no es válido (dígito verificador incorrecto).' } };
     }
   }
 
   const identificadores = [];
-  if (clienteData.dni) identificadores.push(`dni.eq.${clienteData.dni}`);
-  if (clienteData.cuit) identificadores.push(`cuit.eq.${clienteData.cuit}`);
+  if (clienteNormalizado.dni) identificadores.push(`dni.eq.${clienteNormalizado.dni}`);
+  if (clienteNormalizado.cuit) identificadores.push(`cuit.eq.${clienteNormalizado.cuit}`);
 
   if (identificadores.length > 0) {
     const { data: existente, error: errorBusqueda } = await supabase
@@ -143,9 +149,60 @@ export async function crearCliente(clienteData) {
 
   const { data, error } = await supabase
     .from('cliente')
-    .insert([clienteData])
+    .insert([clienteNormalizado])
     .select()
     .single();
+  return { data, error };
+}
+
+export async function getClientes() {
+  const { data, error } = await supabase
+    .from('cliente')
+    .select('*')
+    .order('nombre', { ascending: true });
+  return { data: data || [], error };
+}
+
+export async function actualizarCliente(idCliente, clienteData) {
+  const clienteNormalizado = {
+    ...clienteData,
+    aplica_percepcion_iva: clienteData.condicion_fiscal === 'Responsable Inscripto' && Boolean(clienteData.aplica_percepcion_iva),
+    aplica_percepcion_iibb: clienteData.condicion_fiscal === 'Responsable Inscripto' && Boolean(clienteData.aplica_percepcion_iibb)
+  };
+
+  if (clienteNormalizado.dni && !validarDniArgentino(clienteNormalizado.dni)) {
+    return { data: null, error: { message: 'El DNI ingresado no es válido según el formato de Argentina.' } };
+  }
+  if (clienteNormalizado.cuit && !validarCuitArgentino(clienteNormalizado.cuit)) {
+    return { data: null, error: { message: 'El CUIT ingresado no es válido (dígito verificador incorrecto).' } };
+  }
+
+  const identificadores = [];
+  if (clienteNormalizado.dni) identificadores.push(`dni.eq.${clienteNormalizado.dni}`);
+  if (clienteNormalizado.cuit) identificadores.push(`cuit.eq.${clienteNormalizado.cuit}`);
+  if (identificadores.length > 0) {
+    const { data: existente, error: errorBusqueda } = await supabase
+      .from('cliente')
+      .select('id_cliente')
+      .neq('id_cliente', Number(idCliente))
+      .or(identificadores.join(','))
+      .limit(1)
+      .maybeSingle();
+    if (errorBusqueda) return { data: null, error: errorBusqueda };
+    if (existente) return { data: null, error: { message: 'Ya existe otro cliente con el mismo DNI o CUIT.' } };
+  }
+
+  const { data, error } = await supabase.rpc('actualizar_cliente_venta', {
+    p_id_cliente: Number(idCliente),
+    p_nombre: clienteNormalizado.nombre,
+    p_dni: clienteNormalizado.dni || null,
+    p_cuit: clienteNormalizado.cuit || null,
+    p_telefono: clienteNormalizado.telefono || null,
+    p_condicion_fiscal: clienteNormalizado.condicion_fiscal,
+    p_aplica_percepcion_iva: clienteNormalizado.aplica_percepcion_iva,
+    p_aplica_percepcion_iibb: clienteNormalizado.aplica_percepcion_iibb,
+    p_estado: clienteNormalizado.estado
+  });
   return { data, error };
 }
 
@@ -272,7 +329,7 @@ export async function getHistorialVentas() {
     .from('venta')
     .select(`
       *,
-      cliente:id_cliente (id_cliente, nombre, cuit, dni, condicion_fiscal),
+      cliente:id_cliente (id_cliente, nombre, cuit, dni, condicion_fiscal, aplica_percepcion_iva, aplica_percepcion_iibb),
       pago_venta (
         id_pago_venta,
         importe,
@@ -330,10 +387,10 @@ export async function downloadComprobanteVentaPdf(venta, items, cliente, sucursa
       summaryData.push({ label: 'Importe exento', value: moneda(venta.exento) });
     }
     if (Number(venta.percepcion_iva || 0) > 0) {
-      summaryData.push({ label: 'Percepción IVA', value: moneda(venta.percepcion_iva) });
+      summaryData.push({ label: 'Percepción IVA (1%)', value: moneda(venta.percepcion_iva) });
     }
     if (Number(venta.percepcion_iibb || 0) > 0) {
-      summaryData.push({ label: 'Percepción IIBB', value: moneda(venta.percepcion_iibb) });
+      summaryData.push({ label: 'Percepción IIBB (3,6%)', value: moneda(venta.percepcion_iibb) });
     }
   }
   summaryData.push({ label: 'TOTAL', value: moneda(venta.importe_total), emphasis: true });

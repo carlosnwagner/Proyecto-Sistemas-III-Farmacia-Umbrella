@@ -139,6 +139,20 @@ export async function saveDetalleLista(payload) {
     .single();
 }
 
+export async function updateDetallesListaLote(idLista, detalles) {
+  const payload = detalles.map((detalle) => ({
+    id_detalle_lista: Number(detalle.id_detalle_lista),
+    precio: Number(detalle.precio),
+    tipo_ajuste: detalle.tipo_ajuste,
+    porcentaje_ajuste: Number(detalle.porcentaje_ajuste || 0),
+  }));
+
+  return supabase.rpc("actualizar_precios_lista_lote", {
+    p_id_lista: Number(idLista),
+    p_detalles: payload,
+  });
+}
+
 export async function deleteDetalleLista(idDetalleLista) {
   return supabase
     .from("detalle_lista_precio")

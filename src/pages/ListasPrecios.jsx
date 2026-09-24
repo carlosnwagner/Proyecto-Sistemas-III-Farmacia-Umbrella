@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, Edit2, Percent, Plus, Search, Tag, Trash2, X } from "lucide-react";
 import { showAlert } from "../lib/alerts.js";
 import {
@@ -10,6 +10,7 @@ import {
   getListasPrecios,
   saveDetalleLista,
   setListaPrecioActiva,
+  updateDetallesListaLote,
   updateListaPrecio,
 } from "../services/listasPrecios.js";
 
@@ -68,6 +69,14 @@ const emptyDetalleForm = () => ({
   porcentaje_ajuste: "0",
 });
 
+const calcularPrecioFinal = (detalle) => {
+  const precio = Number(detalle.precio) || 0;
+  const porcentaje = Number(detalle.porcentaje_ajuste) || 0;
+  if (detalle.tipo_ajuste === "Descuento") return precio * (1 - porcentaje / 100);
+  if (detalle.tipo_ajuste === "Recargo") return precio * (1 + porcentaje / 100);
+  return precio;
+};
+
 function Modal({ title, children, onClose, width = "680px" }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,.48)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" }}>
@@ -94,9 +103,11 @@ export default function ListasPrecios() {
   const [listaSeleccionada, setListaSeleccionada] = useState(null);
   const [detalles, setDetalles] = useState([]);
   const [detalleForm, setDetalleForm] = useState(emptyDetalleForm());
+  const [detallesEditando, setDetallesEditando] = useState([]);
   const [saving, setSaving] = useState(false);
   const [addingAll, setAddingAll] = useState(false);
   const [mostrarCargaIndividual, setMostrarCargaIndividual] = useState(false);
+  const edicionRefs = useRef({});
 
   const cargarListas = useCallback(async () => {
     setLoading(true);
@@ -126,13 +137,16 @@ export default function ListasPrecios() {
     };
   }, []);
 
-  const cargarDetalles = async (lista) => {
+  const cargarDetalles = async (lista, reiniciarInterfaz = true) => {
     const { data, error } = await getDetallesLista(lista.id_lista);
     if (error) return showAlert.errorSave(`No se pudieron cargar los precios: ${error.message}`);
     setListaSeleccionada(lista);
     setDetalles(data);
-    setDetalleForm(emptyDetalleForm());
-    setMostrarCargaIndividual(false);
+    if (reiniciarInterfaz) {
+      setDetalleForm(emptyDetalleForm());
+      setDetallesEditando([]);
+      setMostrarCargaIndividual(false);
+    }
   };
 
   const abrirNuevaLista = () => {
@@ -184,11 +198,7 @@ export default function ListasPrecios() {
   };
 
   const precioFinalPreview = useMemo(() => {
-    const precio = Number(detalleForm.precio) || 0;
-    const porcentaje = Number(detalleForm.porcentaje_ajuste) || 0;
-    if (detalleForm.tipo_ajuste === "Descuento") return precio * (1 - porcentaje / 100);
-    if (detalleForm.tipo_ajuste === "Recargo") return precio * (1 + porcentaje / 100);
-    return precio;
+    return calcularPrecioFinal(detalleForm);
   }, [detalleForm]);
 
   const articulosNoIncluidos = useMemo(() => {
@@ -196,9 +206,7 @@ export default function ListasPrecios() {
     return articulos.filter((articulo) => !idsIncluidos.has(String(articulo.id_articulo)));
   }, [articulos, detalles]);
 
-  const articulosParaSeleccionar = detalleForm.id_detalle_lista
-    ? articulos
-    : articulosNoIncluidos;
+  const articulosParaSeleccionar = articulosNoIncluidos;
 
   const guardarDetalle = async (event) => {
     event.preventDefault();
@@ -219,8 +227,10 @@ export default function ListasPrecios() {
     setSaving(false);
     if (error) return showAlert.errorSave(error.code === "23505" ? "El producto ya pertenece a esta lista." : error.message);
 
-    showAlert.successSave(detalleForm.id_detalle_lista ? "Precio actualizado" : "Producto agregado");
-    await cargarDetalles(listaSeleccionada);
+    showAlert.successSave("Producto agregado");
+    setDetalleForm(emptyDetalleForm());
+    setMostrarCargaIndividual(false);
+    await cargarDetalles(listaSeleccionada, false);
     await cargarListas();
   };
 
@@ -241,15 +251,15 @@ export default function ListasPrecios() {
         ? `Se agregaron ${data.productos_agregados} producto(s)`
         : "Todos los productos activos ya estaban incluidos"
     );
-    await cargarDetalles(listaSeleccionada);
+    await cargarDetalles(listaSeleccionada, false);
     await cargarListas();
   };
 
   const editarDetalle = (detalle) => {
-    setMostrarCargaIndividual(true);
-    setDetalleForm({
+    const formularioEdicion = {
       id_detalle_lista: detalle.id_detalle_lista,
       id_articulo: String(detalle.id_articulo),
+      articulo: detalle.articulo,
       precio: String(detalle.precio),
       tipo_ajuste: detalle.tipo_ajuste || "Sin ajuste",
       porcentaje_ajuste: String(
@@ -259,7 +269,74 @@ export default function ListasPrecios() {
           ? detalle.porcentaje_recargo || 0
           : 0
       ),
+    };
+    setDetallesEditando((actuales) => {
+      if (actuales.some((item) => item.id_detalle_lista === detalle.id_detalle_lista)) return actuales;
+      return [...actuales, formularioEdicion];
     });
+    requestAnimationFrame(() => {
+      edicionRefs.current[detalle.id_detalle_lista]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
+
+  const cambiarEdicion = (idDetalle, cambios) => {
+    setDetallesEditando((actuales) => actuales.map((item) =>
+      item.id_detalle_lista === idDetalle ? { ...item, ...cambios } : item
+    ));
+  };
+
+  const cancelarEdicion = (idDetalle) => {
+    setDetallesEditando((actuales) => actuales.filter((item) => item.id_detalle_lista !== idDetalle));
+  };
+
+  const guardarEdicionDetalle = async (event, edicion) => {
+    event.preventDefault();
+    const precio = Number(edicion.precio);
+    const porcentaje = Number(edicion.porcentaje_ajuste);
+    if (!Number.isFinite(precio) || precio <= 0) return showAlert.errorSave("El precio debe ser mayor que cero.");
+    if (!Number.isFinite(porcentaje) || porcentaje < 0) return showAlert.errorSave("El ajuste no puede ser negativo.");
+    if (edicion.tipo_ajuste === "Descuento" && porcentaje >= 100) {
+      return showAlert.errorSave("El descuento debe ser menor que 100 %.");
+    }
+
+    setSaving(true);
+    const { error } = await saveDetalleLista({
+      ...edicion,
+      id_lista: listaSeleccionada.id_lista,
+    });
+    setSaving(false);
+    if (error) return showAlert.errorSave(error.message);
+
+    cancelarEdicion(edicion.id_detalle_lista);
+    await cargarDetalles(listaSeleccionada, false);
+    await cargarListas();
+    showAlert.successSave(`Precio de ${edicion.articulo?.nombre || "producto"} actualizado`);
+  };
+
+  const guardarTodasLasEdiciones = async () => {
+    for (const edicion of detallesEditando) {
+      const precio = Number(edicion.precio);
+      const porcentaje = Number(edicion.porcentaje_ajuste);
+      if (!Number.isFinite(precio) || precio <= 0) {
+        return showAlert.errorSave(`El precio de ${edicion.articulo?.nombre || "un producto"} debe ser mayor que cero.`);
+      }
+      if (!Number.isFinite(porcentaje) || porcentaje < 0) {
+        return showAlert.errorSave(`El ajuste de ${edicion.articulo?.nombre || "un producto"} no puede ser negativo.`);
+      }
+      if (edicion.tipo_ajuste === "Descuento" && porcentaje >= 100) {
+        return showAlert.errorSave(`El descuento de ${edicion.articulo?.nombre || "un producto"} debe ser menor que 100 %.`);
+      }
+    }
+
+    setSaving(true);
+    const { data, error } = await updateDetallesListaLote(listaSeleccionada.id_lista, detallesEditando);
+    setSaving(false);
+    if (error) return showAlert.errorSave(`No se actualizaron los precios: ${error.message}`);
+
+    setDetallesEditando([]);
+    await cargarDetalles(listaSeleccionada, false);
+    await cargarListas();
+    showAlert.successSave(`${data} producto(s) actualizado(s) correctamente`);
   };
 
   const eliminarDetalle = async (detalle) => {
@@ -272,7 +349,8 @@ export default function ListasPrecios() {
     const { error } = await deleteDetalleLista(detalle.id_detalle_lista);
     if (error) return showAlert.errorSave(error.message);
     showAlert.successSave("Producto quitado de la lista");
-    await cargarDetalles(listaSeleccionada);
+    cancelarEdicion(detalle.id_detalle_lista);
+    await cargarDetalles(listaSeleccionada, false);
     await cargarListas();
   };
 
@@ -362,15 +440,44 @@ export default function ListasPrecios() {
                 {(mostrarCargaIndividual || articulosNoIncluidos.length > 0) && <button type="button" onClick={() => { setMostrarCargaIndividual(!mostrarCargaIndividual); setDetalleForm(emptyDetalleForm()); }} style={{ border: "1px solid #d1d5db", background: "#fff", color: "#374151", borderRadius: 8, padding: ".65rem .9rem", cursor: "pointer" }}>{mostrarCargaIndividual ? "Ocultar carga individual" : `Agregar producto no incluido (${articulosNoIncluidos.length})`}</button>}
               </div>
             </div>
+            {detallesEditando.length > 0 && (
+              <div style={{ marginBottom: "1rem", display: "grid", gap: ".75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: ".75rem", flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 700, color: "#374151" }}>{detallesEditando.length} producto(s) en edición</div>
+                  <div style={{ display: "flex", gap: ".6rem" }}>
+                    <button type="button" disabled={saving} onClick={guardarTodasLasEdiciones} style={{ border: 0, background: "#166534", color: "#fff", borderRadius: 8, padding: ".6rem .85rem", cursor: "pointer", fontWeight: 700 }}>Actualizar todos ({detallesEditando.length})</button>
+                    <button type="button" disabled={saving} onClick={() => setDetallesEditando([])} style={{ border: "1px solid #d1d5db", background: "#fff", color: "#374151", borderRadius: 8, padding: ".6rem .85rem", cursor: "pointer" }}>Cancelar todos</button>
+                  </div>
+                </div>
+                {detallesEditando.map((edicion) => (
+                  <form
+                    key={edicion.id_detalle_lista}
+                    ref={(node) => {
+                      if (node) edicionRefs.current[edicion.id_detalle_lista] = node;
+                      else delete edicionRefs.current[edicion.id_detalle_lista];
+                    }}
+                    onSubmit={(event) => guardarEdicionDetalle(event, edicion)}
+                    style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto auto", gap: ".65rem", alignItems: "end", padding: "1rem", background: "#fffaf5", border: "1px solid #e7d7c8", borderRadius: 10, scrollMarginTop: "1rem" }}
+                  >
+                    <div><span style={{ display: "block", fontSize: ".85rem" }}>Producto</span><b style={{ display: "block", padding: ".65rem 0" }}>{edicion.articulo?.codigo} — {edicion.articulo?.nombre}</b></div>
+                    <label>Precio base *<input type="number" min="0.01" step="0.01" value={edicion.precio} onChange={(e) => cambiarEdicion(edicion.id_detalle_lista, { precio: e.target.value })} style={inputStyle} /></label>
+                    <label>Ajuste<select value={edicion.tipo_ajuste} onChange={(e) => cambiarEdicion(edicion.id_detalle_lista, { tipo_ajuste: e.target.value, porcentaje_ajuste: "0" })} style={inputStyle}><option>Sin ajuste</option><option>Descuento</option><option>Recargo</option></select></label>
+                    <label>Porcentaje<input type="number" min="0" step="0.01" disabled={edicion.tipo_ajuste === "Sin ajuste"} value={edicion.porcentaje_ajuste} onChange={(e) => cambiarEdicion(edicion.id_detalle_lista, { porcentaje_ajuste: e.target.value })} style={inputStyle} /></label>
+                    <div><span style={{ display: "block", fontSize: ".85rem" }}>Precio final</span><b style={{ display: "block", padding: ".65rem 0", color: "#166534" }}>{money(calcularPrecioFinal(edicion))}</b></div>
+                    <button type="submit" disabled={saving} style={{ border: 0, background: "#65482b", color: "#fff", borderRadius: 8, padding: ".7rem", cursor: "pointer" }}>Actualizar</button>
+                    <button type="button" onClick={() => cancelarEdicion(edicion.id_detalle_lista)} style={{ border: "1px solid #d1d5db", background: "#fff", color: "#374151", borderRadius: 8, padding: ".7rem", cursor: "pointer" }}>Cancelar</button>
+                  </form>
+                ))}
+              </div>
+            )}
             {mostrarCargaIndividual && <form onSubmit={guardarDetalle} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto", gap: ".65rem", alignItems: "end", padding: "1rem", background: "#f9fafb", borderRadius: 10, marginBottom: "1rem" }}>
-              <label>Producto *<select value={detalleForm.id_articulo} disabled={!!detalleForm.id_detalle_lista} onChange={(e) => { const articulo = articulos.find((a) => String(a.id_articulo) === e.target.value); setDetalleForm({ ...detalleForm, id_articulo: e.target.value, precio: articulo?.precio_venta ? String(articulo.precio_venta) : detalleForm.precio }); }} style={inputStyle}><option value="">Seleccionar...</option>{articulosParaSeleccionar.map((a) => <option key={a.id_articulo} value={a.id_articulo}>{a.codigo} — {a.nombre}</option>)}</select></label>
+              <label>Producto *<select value={detalleForm.id_articulo} onChange={(e) => { const articulo = articulos.find((a) => String(a.id_articulo) === e.target.value); setDetalleForm({ ...detalleForm, id_articulo: e.target.value, precio: articulo?.precio_venta ? String(articulo.precio_venta) : detalleForm.precio }); }} style={inputStyle}><option value="">Seleccionar...</option>{articulosParaSeleccionar.map((a) => <option key={a.id_articulo} value={a.id_articulo}>{a.codigo} — {a.nombre}</option>)}</select></label>
               <label>Precio base al público *<input type="number" min="0.01" step="0.01" value={detalleForm.precio} onChange={(e) => setDetalleForm({ ...detalleForm, precio: e.target.value })} style={inputStyle} /></label>
               <label>Ajuste<select value={detalleForm.tipo_ajuste} onChange={(e) => setDetalleForm({ ...detalleForm, tipo_ajuste: e.target.value, porcentaje_ajuste: "0" })} style={inputStyle}><option>Sin ajuste</option><option>Descuento</option><option>Recargo</option></select></label>
               <label>Porcentaje<input type="number" min="0" step="0.01" disabled={detalleForm.tipo_ajuste === "Sin ajuste"} value={detalleForm.porcentaje_ajuste} onChange={(e) => setDetalleForm({ ...detalleForm, porcentaje_ajuste: e.target.value })} style={inputStyle} /></label>
               <div><span style={{ display: "block", fontSize: ".85rem" }}>Precio final al público</span><b style={{ display: "block", padding: ".65rem 0", color: "#166534" }}>{money(precioFinalPreview)}</b></div>
-              <button disabled={saving} style={{ border: 0, background: "#65482b", color: "#fff", borderRadius: 8, padding: ".7rem", cursor: "pointer" }}>{detalleForm.id_detalle_lista ? "Actualizar" : "Agregar"}</button>
+              <button disabled={saving} style={{ border: 0, background: "#65482b", color: "#fff", borderRadius: 8, padding: ".7rem", cursor: "pointer" }}>Agregar</button>
             </form>}
-            {detalleForm.id_detalle_lista && <button onClick={() => setDetalleForm(emptyDetalleForm())} style={{ marginBottom: ".75rem", border: 0, background: "transparent", color: "#65482b", cursor: "pointer" }}>Cancelar edición</button>}
             <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".88rem" }}><thead style={{ background: "#f9fafb" }}><tr>{["Producto", "Precio base al público", "IVA incluido", "Ajuste", "Precio final al público", "Acciones"].map((h) => <th key={h} style={{ padding: ".7rem", textAlign: h === "Acciones" ? "center" : "left" }}>{h}</th>)}</tr></thead><tbody>{detalles.length === 0 ? <tr><td colSpan="6" style={{ padding: "2rem", textAlign: "center", color: "#6b7280" }}>La lista está vacía. Usá “Agregar todos los productos activos”.</td></tr> : detalles.map((d) => <tr key={d.id_detalle_lista} style={{ borderTop: "1px solid #e5e7eb" }}><td style={{ padding: ".7rem" }}><b>{d.articulo?.nombre}</b><div style={{ color: "#6b7280" }}>{d.articulo?.codigo}</div></td><td style={{ padding: ".7rem" }}>{money(d.precio)}</td><td style={{ padding: ".7rem", color: d.articulo?.alicuota_iva === null ? "#b91c1c" : "#4b5563", fontWeight: 600 }}>{ivaLabel(d.articulo?.alicuota_iva)}</td><td style={{ padding: ".7rem" }}><Percent size={14} style={{ verticalAlign: "middle", marginRight: 4 }} />{d.tipo_ajuste}{d.tipo_ajuste !== "Sin ajuste" ? ` ${d.tipo_ajuste === "Descuento" ? d.porcentaje_descuento : d.porcentaje_recargo}%` : ""}</td><td style={{ padding: ".7rem", fontWeight: 700, color: "#166534" }}>{money(d.precio_final)}</td><td style={{ padding: ".7rem", textAlign: "center" }}><button onClick={() => editarDetalle(d)} title="Editar" style={{ marginRight: 6, border: "1px solid #d1d5db", background: "#fff", borderRadius: 6, padding: ".4rem", cursor: "pointer" }}><Edit2 size={15} /></button><button onClick={() => eliminarDetalle(d)} title="Quitar" style={{ border: "1px solid #fecaca", color: "#b91c1c", background: "#fff", borderRadius: 6, padding: ".4rem", cursor: "pointer" }}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>
           </div>
         </Modal>

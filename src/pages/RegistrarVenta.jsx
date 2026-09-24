@@ -43,7 +43,14 @@ export default function RegistrarVenta() {
   const [listaClientes, setListaClientes] = useState([]);
   const [clienteElegido, setClienteElegido] = useState(null);
   const [mostrarModalCliente, setMostrarModalCliente] = useState(false);
-  const [tempCliente, setTempCliente] = useState({ nombre: '', identificacion: '', telefono: '', condicion: 'Consumidor Final' });
+  const [tempCliente, setTempCliente] = useState({
+    nombre: '',
+    identificacion: '',
+    telefono: '',
+    condicion: 'Consumidor Final',
+    aplica_percepcion_iva: false,
+    aplica_percepcion_iibb: false
+  });
 
   // Productos y Carrito
   const [productosDisponibles, setProductosDisponibles] = useState([]);
@@ -56,8 +63,6 @@ export default function RegistrarVenta() {
   const [idMedioPago, setIdMedioPago] = useState('');
   const [montoRecibido, setMontoRecibido] = useState('');
   const [referenciaPago, setReferenciaPago] = useState('');
-  const [percepcionIva, setPercepcionIva] = useState('');
-  const [percepcionIibb, setPercepcionIibb] = useState('');
 
   // Venta confirmada para PDF
   const [ventaConfirmada, setVentaConfirmada] = useState(null);
@@ -130,8 +135,6 @@ export default function RegistrarVenta() {
     setCarrito([]);
     setClienteElegido(null);
     setBusquedaCliente('');
-    setPercepcionIva('');
-    setPercepcionIibb('');
     setMontoRecibido('');
     setReferenciaPago('');
     setFiltroProducto('');
@@ -153,8 +156,8 @@ export default function RegistrarVenta() {
     id_medio_pago: idMedioPago || null,
     importe_pagado: montoRecibido,
     referencia_pago: referenciaPago,
-    percepcion_iva: percepcionIva,
-    percepcion_iibb: percepcionIibb,
+    percepcion_iva: resumenImpuestos.percepcion_iva,
+    percepcion_iibb: resumenImpuestos.percepcion_iibb,
     idempotency_key: idempotencyKey
   });
 
@@ -200,8 +203,6 @@ export default function RegistrarVenta() {
     setIdMedioPago(borrador.id_medio_pago ? String(borrador.id_medio_pago) : idMedioPago);
     setMontoRecibido(borrador.importe_pagado == null ? '' : String(borrador.importe_pagado));
     setReferenciaPago(borrador.referencia_pago || '');
-    setPercepcionIva(Number(borrador.percepcion_iva) ? String(borrador.percepcion_iva) : '');
-    setPercepcionIibb(Number(borrador.percepcion_iibb) ? String(borrador.percepcion_iibb) : '');
     setIdempotencyKey(borrador.idempotency_key);
     setCargando(false);
     setPaso(3);
@@ -256,7 +257,9 @@ export default function RegistrarVenta() {
       dni: dniFinal,
       cuit: cuitFinal,
       telefono: tempCliente.telefono.trim() || null,
-      condicion_fiscal: tempCliente.condicion
+      condicion_fiscal: tempCliente.condicion,
+      aplica_percepcion_iva: tempCliente.condicion === 'Responsable Inscripto' && tempCliente.aplica_percepcion_iva,
+      aplica_percepcion_iibb: tempCliente.condicion === 'Responsable Inscripto' && tempCliente.aplica_percepcion_iibb
     });
 
     if (error) {
@@ -265,7 +268,14 @@ export default function RegistrarVenta() {
       showAlert.successSave('Cliente registrado y seleccionado correctamente.');
       setClienteElegido(data);
       setMostrarModalCliente(false);
-      setTempCliente({ nombre: '', identificacion: '', telefono: '', condicion: 'Consumidor Final' });
+      setTempCliente({
+        nombre: '',
+        identificacion: '',
+        telefono: '',
+        condicion: 'Consumidor Final',
+        aplica_percepcion_iva: false,
+        aplica_percepcion_iibb: false
+      });
     }
     setCargando(false);
   };
@@ -284,8 +294,11 @@ export default function RegistrarVenta() {
   );
 
   const esEfectivo = medioPagoSeleccionado?.codigo === 'EFECTIVO';
+  const condicionFiscalCliente = clienteElegido?.condicion_fiscal || 'Consumidor Final';
+  const clienteAplicaPercepcionIva = Boolean(clienteElegido?.aplica_percepcion_iva);
+  const clienteAplicaPercepcionIibb = Boolean(clienteElegido?.aplica_percepcion_iibb);
 
-  const resumenImpuestos = useMemo(() => {
+  const resumenImpuestos = (() => {
     let neto_21 = 0;
     let iva_21 = 0;
     let neto_105 = 0;
@@ -302,11 +315,11 @@ export default function RegistrarVenta() {
         if (item.es_exento) {
           exento += sub;
         } else if (alicuota === 10.5) {
-          const neto = sub / 1.105;
+          const neto = Number((sub / 1.105).toFixed(2));
           neto_105 += neto;
           iva_105 += sub - neto;
         } else {
-          const neto = sub / 1.21;
+          const neto = Number((sub / 1.21).toFixed(2));
           neto_21 += neto;
           iva_21 += sub - neto;
         }
@@ -314,7 +327,7 @@ export default function RegistrarVenta() {
         if (item.es_exento) {
           exento += sub;
         } else {
-          const neto = sub / (alicuota === 10.5 ? 1.105 : 1.21);
+          const neto = Number((sub / (alicuota === 10.5 ? 1.105 : 1.21)).toFixed(2));
           if (alicuota === 10.5) {
             neto_105 += neto;
             iva_105 += sub - neto;
@@ -326,8 +339,16 @@ export default function RegistrarVenta() {
       }
     });
 
-    const percepcion_iva = Number(percepcionIva || 0);
-    const percepcion_iibb = Number(percepcionIibb || 0);
+    const basePercepciones = neto_21 + neto_105;
+    const esResponsableInscripto = condicionFiscalCliente === 'Responsable Inscripto';
+    const percepcion_iva = esResponsableInscripto && clienteAplicaPercepcionIva
+      ? basePercepciones * 0.01
+      : 0;
+    const percepcion_iibb = esResponsableInscripto && clienteAplicaPercepcionIibb
+      ? basePercepciones * 0.036
+      : 0;
+    const percepcionIvaRedondeada = Number(percepcion_iva.toFixed(2));
+    const percepcionIibbRedondeada = Number(percepcion_iibb.toFixed(2));
 
     return {
       neto_21: Number(neto_21.toFixed(2)),
@@ -336,11 +357,11 @@ export default function RegistrarVenta() {
       iva_105: Number(iva_105.toFixed(2)),
       exento: Number(exento.toFixed(2)),
       subtotal_productos: Number(total.toFixed(2)),
-      percepcion_iva: Number(percepcion_iva.toFixed(2)),
-      percepcion_iibb: Number(percepcion_iibb.toFixed(2)),
-      total: Number((total + percepcion_iva + percepcion_iibb).toFixed(2))
+      percepcion_iva: percepcionIvaRedondeada,
+      percepcion_iibb: percepcionIibbRedondeada,
+      total: Number((total + percepcionIvaRedondeada + percepcionIibbRedondeada).toFixed(2))
     };
-  }, [carrito, tipoComprobanteActual, percepcionIva, percepcionIibb]);
+  })();
 
   const agregarAlCarrito = (prod) => {
     if (prod.stock_actual <= 0) {
@@ -392,10 +413,6 @@ export default function RegistrarVenta() {
   const handleConfirmarVentaFinal = async () => {
     if (cargando) return; // Previene doble clic concurrente
     if (carrito.length === 0) return showAlert.errorSave('El carrito está vacío.');
-    if (Number(percepcionIva || 0) < 0 || Number(percepcionIibb || 0) < 0) {
-      return showAlert.errorSave('Las percepciones no pueden tener importes negativos.');
-    }
-    
     const totalVenta = resumenImpuestos.total;
     if (!medioPagoSeleccionado) {
       return showAlert.errorSave('Debe seleccionar un medio de pago activo.');
@@ -951,43 +968,6 @@ export default function RegistrarVenta() {
                 </div>
               </div>
 
-              <div style={{ marginBottom: '1rem', padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '0.375rem' }}>
-                <div style={{ fontWeight: '700', fontSize: '0.8rem', color: '#374151', marginBottom: '0.6rem' }}>
-                  Percepciones manuales
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>
-                    Percepción IVA $
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={percepcionIva}
-                      onChange={(e) => setPercepcionIva(e.target.value)}
-                      style={{ ...inputStyle, marginTop: '0.3rem' }}
-                      placeholder="0.00"
-                    />
-                  </label>
-                  <label style={{ fontSize: '0.75rem', color: '#4b5563' }}>
-                    Percepción IIBB $
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={percepcionIibb}
-                      onChange={(e) => setPercepcionIibb(e.target.value)}
-                      style={{ ...inputStyle, marginTop: '0.3rem' }}
-                      placeholder="0.00"
-                    />
-                  </label>
-                </div>
-                {tipoComprobanteActual === 'B' && (
-                  <small style={{ display: 'block', color: '#6b7280', marginTop: '0.5rem' }}>
-                    Se suman al total, pero no se discriminan en la Factura B.
-                  </small>
-                )}
-              </div>
-
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.4rem', fontSize: '0.8rem', color: '#374151' }}>Medio de Pago *</label>
                 <select
@@ -1078,8 +1058,6 @@ export default function RegistrarVenta() {
                 setVentaConfirmada(null);
                 setCarrito([]);
                 setClienteElegido(null);
-                setPercepcionIva('');
-                setPercepcionIibb('');
                 setMontoRecibido('');
                 setReferenciaPago('');
                 setIdempotencyKey(crypto.randomUUID());
@@ -1169,7 +1147,15 @@ export default function RegistrarVenta() {
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '0.3rem', color: '#374151' }}>Condición Fiscal</label>
                 <select
                   value={tempCliente.condicion}
-                  onChange={(e) => setTempCliente({ ...tempCliente, condicion: e.target.value })}
+                  onChange={(e) => {
+                    const condicion = e.target.value;
+                    setTempCliente({
+                      ...tempCliente,
+                      condicion,
+                      aplica_percepcion_iva: condicion === 'Responsable Inscripto' ? tempCliente.aplica_percepcion_iva : false,
+                      aplica_percepcion_iibb: condicion === 'Responsable Inscripto' ? tempCliente.aplica_percepcion_iibb : false
+                    });
+                  }}
                   style={inputStyle}
                 >
                   <option value="Consumidor Final">Consumidor Final (Factura B)</option>
@@ -1178,6 +1164,28 @@ export default function RegistrarVenta() {
                   <option value="Exento">Exento (Factura B)</option>
                 </select>
               </div>
+
+              {tempCliente.condicion === 'Responsable Inscripto' && (
+                <div style={{ marginBottom: '1.5rem', padding: '0.75rem', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '0.375rem' }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: '700', marginBottom: '0.55rem', color: '#374151' }}>Percepciones aplicables</div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', marginBottom: '0.45rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={tempCliente.aplica_percepcion_iva}
+                      onChange={(e) => setTempCliente({ ...tempCliente, aplica_percepcion_iva: e.target.checked })}
+                    />
+                    Percepción de IVA (1% sobre el neto)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={tempCliente.aplica_percepcion_iibb}
+                      onChange={(e) => setTempCliente({ ...tempCliente, aplica_percepcion_iibb: e.target.checked })}
+                    />
+                    Percepción de IIBB (3,6% sobre el neto)
+                  </label>
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
                 <button

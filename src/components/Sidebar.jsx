@@ -16,6 +16,7 @@ import {
   FileText,
   Tags,
   ShoppingCart,
+  Users,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -23,7 +24,7 @@ export default function Sidebar() {
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
   const [ventasOpen, setVentasOpen] = useState(() =>
-    ["/ventas", "/listas-precios"].includes(window.location.pathname)
+    ["/ventas", "/listas-precios", "/clientes"].includes(window.location.pathname)
   );
 
   const location = useLocation();
@@ -39,6 +40,7 @@ export default function Sidebar() {
 
   const ventasSubItems = [
     { key: "RegistroVentas", label: "Registro de ventas", path: "/ventas", icon: ShoppingCart },
+    { key: "ClientesVentas", label: "Clientes", path: "/clientes", icon: Users },
     { key: "ListasPrecios", label: "Listas de precios", path: "/listas-precios", icon: Tags },
   ];
 
