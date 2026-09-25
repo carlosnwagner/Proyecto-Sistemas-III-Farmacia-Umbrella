@@ -220,7 +220,8 @@ export async function getProductosConStock(idDeposito) {
       stock_actual,
       articulo:id_articulo (*)
     `)
-    .eq("id_deposito", idDeposito);
+    .eq("id_deposito", idDeposito)
+    .eq("estado", true);
 
   if (errDep) {
     console.error('Error al cargar inventario del depósito:', errDep);
@@ -256,9 +257,17 @@ export async function getProductosConStock(idDeposito) {
     (detallesLista || []).map((detalle) => [Number(detalle.id_articulo), Number(detalle.precio_final || 0)])
   );
 
-  const inventarioIncluidoEnLista = articulosDep.filter((item) =>
-    preciosVigentes.has(Number(item.id_articulo))
-  );
+  const inventarioIncluidoEnLista = articulosDep.filter((item) => {
+    const articulo = item.articulo;
+    const alicuotaIva = articulo?.alicuota_iva;
+    const tieneIvaValido = alicuotaIva !== null
+      && alicuotaIva !== undefined
+      && [0, 10.5, 21].includes(Number(alicuotaIva));
+
+    return articulo?.estado === true
+      && tieneIvaValido
+      && preciosVigentes.has(Number(item.id_articulo));
+  });
 
   if (inventarioIncluidoEnLista.length === 0) {
     return {
