@@ -12,6 +12,7 @@ import InventarioDeposito from "./pages/InventarioDeposito.jsx";
 import RegistrarVenta from "./pages/RegistrarVenta.jsx"; // <-- ¡Importamos el nuevo módulo de ventas del Sprint 3!
 import ListasPrecios from "./pages/ListasPrecios.jsx";
 import ClientesVentas from "./pages/ClientesVentas.jsx";
+import MovimientosCaja from "./pages/MovimientosCaja.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -50,6 +51,7 @@ export default function App() {
 
           <Route path="/listas-precios" element={<ListasPrecios />} />
           <Route path="/clientes" element={<ClientesVentas />} />
+          <Route path="/caja/movimientos" element={<MovimientosCaja />} />
           <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
           <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />
         </Route>
