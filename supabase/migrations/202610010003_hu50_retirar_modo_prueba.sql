@@ -1,60 +1,17 @@
--- HU50. Requiere las tablas caja, turno_caja y usuario de HU49.
--- No crea usuarios ni modifica turnos existentes. El equipo de login debe
--- provisionar usuario_auth_caja y sus sucursales mediante una cuenta administrativa.
+-- Retira el acceso temporal sin login de HU50 y restaura la autorización de HU56.
 begin;
 
-create table public.usuario_auth_caja (
-  auth_id uuid primary key references auth.users(id),
-  usuario_id integer not null unique references public.usuario(id_usuario),
-  puede_movimientos boolean not null default false,
-  activo boolean not null default true
-);
-create table public.usuario_sucursal_caja (
-  usuario_id integer not null references public.usuario(id_usuario),
-  sucursal_id integer not null references public.sucursal(id_sucursal),
-  primary key (usuario_id, sucursal_id)
-);
-create table public.movimiento_caja (
-  id bigint generated always as identity primary key,
-  turno_id bigint not null references public.turno_caja(id),
-  caja_id bigint not null references public.caja(id),
-  usuario_id integer not null references public.usuario(id_usuario),
-  auth_id uuid not null references auth.users(id),
-  fecha_hora timestamptz not null default now(),
-  tipo text not null check (tipo in ('Ingreso', 'Egreso')),
-  concepto text not null check (length(trim(concepto)) > 0),
-  importe numeric(14,2) not null check (importe > 0),
-  medio_pago_id integer not null references public.medio_pago(id_medio_pago),
-  -- Se conserva la clasificación histórica aunque cambie el catálogo.
-  medio text not null check (medio in ('Efectivo', 'Tarjeta', 'Transferencia')),
-  origen text not null default 'Manual' check (origen in ('Manual', 'Reversion', 'Venta')),
-  movimiento_original_id bigint unique references public.movimiento_caja(id),
-  idempotency_key uuid not null unique,
-  check ((origen = 'Reversion') = (movimiento_original_id is not null))
-);
-create index movimiento_caja_turno_idx on public.movimiento_caja(turno_id, fecha_hora, id);
-
-alter table public.usuario_auth_caja enable row level security;
-alter table public.usuario_sucursal_caja enable row level security;
-alter table public.movimiento_caja enable row level security;
-revoke all on public.usuario_auth_caja, public.usuario_sucursal_caja, public.movimiento_caja from anon, authenticated;
-
-create function public.hu50_usuario_autorizado(p_sucursal_id bigint)
-returns integer language plpgsql security definer set search_path = public as $$
-declare v_usuario integer;
+do $$
 begin
-  if auth.uid() is null then raise exception 'Debés iniciar sesión para operar la caja'; end if;
-  select a.usuario_id into v_usuario
-  from public.usuario_auth_caja a
-  join public.usuario u on u.id_usuario = a.usuario_id and u.estado is true
-  join public.usuario_sucursal_caja s on s.usuario_id = a.usuario_id
-  where a.auth_id = auth.uid() and a.activo and a.puede_movimientos
-    and s.sucursal_id = p_sucursal_id;
-  if not found then raise exception 'No tenés permiso para operar movimientos en esta sucursal'; end if;
-  return v_usuario;
-end; $$;
+  if exists (select 1 from public.movimiento_caja where auth_id is null) then
+    raise exception 'Existen movimientos de prueba sin auth_id. Eliminarlos o asociarlos a una cuenta antes de retirar el modo de prueba';
+  end if;
+end;
+$$;
 
-create function public.hu50_contexto_caja()
+alter table public.movimiento_caja alter column auth_id set not null;
+
+create or replace function public.hu50_contexto_caja()
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare v_usuario integer; v_resultado jsonb;
 begin
@@ -78,7 +35,7 @@ begin
   return jsonb_build_object('usuario_id',v_usuario,'turnos',v_resultado);
 end; $$;
 
-create function public.hu50_consultar_movimientos(p_turno_id bigint)
+create or replace function public.hu50_consultar_movimientos(p_turno_id bigint)
 returns setof public.movimiento_caja language plpgsql security definer set search_path = public as $$
 declare v_sucursal bigint; v_cajero bigint; v_usuario integer;
 begin
@@ -89,7 +46,7 @@ begin
   return query select * from public.movimiento_caja where turno_id = p_turno_id order by fecha_hora desc, id desc;
 end; $$;
 
-create function public.hu50_registrar_movimiento(
+create or replace function public.hu50_registrar_movimiento(
   p_turno_id bigint, p_tipo text, p_concepto text, p_importe numeric,
   p_medio_pago_id integer, p_idempotency_key uuid,
   p_movimiento_original_id bigint default null
@@ -101,13 +58,11 @@ declare
   v_existente public.movimiento_caja%rowtype;
   v_usuario integer; v_nombre text; v_medio text; v_saldo numeric;
 begin
-  -- HU49/HU52/HU69 deben bloquear esta misma fila antes de abrir/cerrar/cobrar.
   select * into v_turno from public.turno_caja where id = p_turno_id for update;
   if not found then raise exception 'El turno no existe'; end if;
   v_usuario := public.hu50_usuario_autorizado(v_turno.sucursal_id);
   if v_turno.cajero_id <> v_usuario then raise exception 'Solo podés operar tu propio turno de caja'; end if;
   if p_idempotency_key is null then raise exception 'Falta la clave de confirmación'; end if;
-  -- Serializa también el uso de una clave entre turnos diferentes.
   perform pg_advisory_xact_lock(hashtextextended(p_idempotency_key::text, 0));
   select * into v_existente from public.movimiento_caja where idempotency_key = p_idempotency_key;
   if found then
@@ -166,10 +121,9 @@ begin
   return v_existente;
 end; $$;
 
-revoke all on function public.hu50_usuario_autorizado(bigint) from public, anon, authenticated;
-revoke all on function public.hu50_contexto_caja() from public, anon;
-revoke all on function public.hu50_consultar_movimientos(bigint) from public, anon;
-revoke all on function public.hu50_registrar_movimiento(bigint,text,text,numeric,integer,uuid,bigint) from public, anon;
+revoke all on function public.hu50_contexto_caja() from anon;
+revoke all on function public.hu50_consultar_movimientos(bigint) from anon;
+revoke all on function public.hu50_registrar_movimiento(bigint,text,text,numeric,integer,uuid,bigint) from anon;
 grant execute on function public.hu50_contexto_caja() to authenticated;
 grant execute on function public.hu50_consultar_movimientos(bigint) to authenticated;
 grant execute on function public.hu50_registrar_movimiento(bigint,text,text,numeric,integer,uuid,bigint) to authenticated;
