@@ -22,7 +22,7 @@ export default function MainLayout() {
   return (
     <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#f9fafb", fontFamily: "sans-serif" }}>
       <Sidebar activeItem={getActiveKey(location.pathname)} />
-      <main style={{ flex: 1, padding: "2rem", overflowY: "auto" }}>
+      <main style={{ flex: 1, minWidth: 0, padding: "clamp(1rem, 3vw, 2rem)", overflowY: "auto" }}>
         <Outlet />
       </main>
     </div>

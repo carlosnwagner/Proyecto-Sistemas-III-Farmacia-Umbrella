@@ -1,9 +1,49 @@
 # HU50: movimientos manuales de caja
 
+## Demostración al profesor sin login
+
+Ejecutar `npm.cmd run dev` en Windows y abrir la URL que indique Vite con
+la ruta `/demo/hu50` (normalmente `http://localhost:5173/demo/hu50`).
+La demo solo está disponible en desarrollo. Usa el mismo formulario que la
+pantalla real y un servicio en memoria, sin consultar ni escribir en Supabase.
+Muestra una indicación discreta «Vista de demostración»; al recargar se reinicia
+todo. Al desplegar esa indicación aparecen los controles de cierre y reinicio.
+
+Guion sugerido:
+
+1. Mostrar caja y turno de ejemplo con base de $1.000.
+2. Registrar ingreso de $200 en efectivo: esperado $1.200.
+3. Registrar egreso de $100: esperado $1.100.
+4. Intentar egreso de $1.101: rechazo por efectivo insuficiente.
+5. Registrar ingreso por tarjeta: cambia su total, conserva efectivo.
+6. Revertir el primer ingreso con motivo: queda el original y su reversión;
+   efectivo esperado $900.
+7. Simular turno cerrado: ya no hay turno disponible para registrar.
+8. Reiniciar demo para repetir la presentación.
+
+Esto muestra el avance del flujo de HU50. La autorización real, la persistencia
+y la concurrencia deben verificarse con sesión, permisos, turnos y migraciones
+en un entorno de prueba; el simulador no demuestra esas garantías del backend.
+No se aplicaron migraciones a la base compartida para habilitar esta demo.
+
 Ruta: `/caja/movimientos`. Migración: `202610010001_hu50_movimientos_caja.sql`.
 La migración se ejecuta manualmente en Supabase, después de crear `usuario`,
 `caja` y `turno_caja` con las columnas compartidas por el equipo de HU49.
 No reemplaza ni modifica esas tablas. No implementa apertura ni cierre.
+
+## Estado frente a los criterios de aceptación
+
+| Criterio de Trello | Implementación y validación pendiente |
+| --- | --- |
+| Usuario autorizado y turno abierto | SQL verifica sesión, usuario activo, permisos, sucursal y cajero del turno. Falta prueba integrada con login/HU49. La demo simula un usuario autorizado. |
+| Datos obligatorios y trazabilidad | Formulario y SQL validan tipo, concepto, importe y medio. SQL asigna turno, caja, usuario y fecha/hora. Falta verificar persistencia en el entorno integrado. |
+| Efectivo y totales separados | Implementado; comprobado en el simulador. Falta integrar cobros de ventas de HU69 para que el efectivo esperado refleje toda la caja. |
+| Egreso limitado al efectivo disponible | Validado en SQL bajo bloqueo del turno y en el simulador. Falta ejecutar la prueba SQL concurrente. |
+| Cierre antes de confirmar y duplicados | SQL vuelve a comprobar estado y utiliza clave única de confirmación. Simulador verificado; falta probar cierre concurrente con HU52 y reintentos en Supabase. |
+| Correcciones por reversión sin borrar | Implementado con motivo, usuario y referencia al original; acceso directo a las tablas restringido. Simulador verificado; falta comprobar permisos y persistencia en Supabase. |
+
+La pantalla y la demo son avances presentables. No se declara la historia
+aceptada hasta completar las pruebas integradas y las dependencias indicadas.
 
 ## Login y permisos
 
