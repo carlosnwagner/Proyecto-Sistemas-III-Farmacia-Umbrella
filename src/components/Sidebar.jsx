@@ -17,9 +17,13 @@ import {
   Tags,
   ShoppingCart,
   Users,
+  LogOut,
 } from "lucide-react";
+import Swal from "sweetalert2";
+import { useAuth } from "../context/AuthContext.jsx";
 
 export default function Sidebar() {
+  const { user, profile, logout } = useAuth();
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
@@ -28,6 +32,23 @@ export default function Sidebar() {
   );
 
   const location = useLocation();
+
+  const handleLogout = async () => {
+    const result = await Swal.fire({
+      title: "¿Cerrar sesión?",
+      text: "Se finalizará tu sesión en Farmacia Umbrella.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Sí, salir",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#65482b",
+      cancelButtonColor: "#6b7280",
+    });
+
+    if (result.isConfirmed) {
+      await logout();
+    }
+  };
 
   // Submenú unificado de Compras (sin repeticiones sueltas en el menú principal)
   const comprasSubItems = [
@@ -407,6 +428,130 @@ export default function Sidebar() {
           </span>
         </Link>
       </div>
+
+      {/* Usuario conectado y Cerrar Sesión */}
+      {user && (
+        <div
+          style={{
+            borderTop: "1px solid #3f332a",
+            paddingTop: "0.75rem",
+            marginTop: "0.5rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+          }}
+        >
+          {isHovered ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0.35rem 0.5rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "rgba(255, 255, 255, 0.04)",
+                gap: "0.5rem",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", overflow: "hidden", minWidth: 0 }}>
+                <div
+                  style={{
+                    width: "30px",
+                    height: "30px",
+                    borderRadius: "50%",
+                    backgroundColor: "#65482b",
+                    color: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "0.85rem",
+                    fontWeight: "700",
+                    flexShrink: 0,
+                  }}
+                >
+                  {(profile?.nombre_completo || profile?.usuario || user.email || "U")
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
+                <div style={{ overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0 }}>
+                  <span
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: "600",
+                      color: "#ffffff",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                    title={profile?.nombre_completo || profile?.usuario || user.email}
+                  >
+                    {profile?.nombre_completo || profile?.usuario || user.email}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      color: "#84cc16",
+                      textTransform: "capitalize",
+                      fontWeight: "500",
+                    }}
+                  >
+                    {profile?.rol || "Usuario"}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Cerrar sesión"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#ef4444",
+                  cursor: "pointer",
+                  padding: "0.35rem",
+                  borderRadius: "0.375rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.15)")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Cerrar sesión"
+              onMouseEnter={() => setHoveredButton("logout")}
+              onMouseLeave={() => setHoveredButton(null)}
+              style={{
+                width: "100%",
+                height: "44px",
+                borderRadius: "0.5rem",
+                border: "none",
+                backgroundColor: hoveredButton === "logout" ? "rgba(239, 68, 68, 0.15)" : "transparent",
+                color: hoveredButton === "logout" ? "#ef4444" : "#9ca3af",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 0.75rem",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                boxSizing: "border-box",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+                <LogOut size={20} />
+              </div>
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   );
 

@@ -9,9 +9,11 @@ import Depositos from "./pages/Depositos.jsx";
 import FacturasProveedores from "./pages/FacturasProveedores.jsx";
 import OrdenesCompra from "./pages/OrdenesCompraProv.jsx";
 import InventarioDeposito from "./pages/InventarioDeposito.jsx";
-import RegistrarVenta from "./pages/RegistrarVenta.jsx"; // <-- ¡Importamos el nuevo módulo de ventas del Sprint 3!
+import RegistrarVenta from "./pages/RegistrarVenta.jsx";
 import ListasPrecios from "./pages/ListasPrecios.jsx";
 import ClientesVentas from "./pages/ClientesVentas.jsx";
+import Login from "./pages/login.jsx";
+import { AuthProvider, ProtectedRoute } from "./context/AuthContext.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -29,31 +31,42 @@ function PaginaEnConstruccion({ titulo }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<Navigate to="/inventario" replace />} />
-          <Route path="/inicio" element={<PaginaEnConstruccion titulo="Inicio" />} />
-          <Route path="/inventario" element={<Inventario />} />
-          <Route path="/ordenes-compra" element={<OrdenesCompra />} />
-          <Route path="/facturas-proveedores" element={<FacturasProveedores />} />
-          <Route path="/proveedores" element={<Proveedores />} />
-          <Route path="/pagos-proveedores" element={<RegistarPagoProveedor titulo="Pago Proveedor" />} />
-          <Route path="/notas-credito-debito" element={<RegistarNotaCreditoDebito titulo="Notas Crédito/Débito" />} />
-          <Route path="/sucursales" element={<Sucursales />} />
-          <Route path="/depositos" element={<Depositos />} />
-          {/* Soportamos ambos formatos para que nunca falle la ruta */}
-          <Route path="/depositos/:id/inventario" element={<InventarioDeposito />} />
-          <Route path="/inventario-deposito" element={<InventarioDeposito />} />
-          
-          {/* AQUÍ ESTABA EL CAMBIO CLAVE */}
-          <Route path="/ventas" element={<RegistrarVenta />} /> 
+      <AuthProvider>
+        <Routes>
+          {/* Ruta pública de Login y Registro */}
+          <Route path="/login" element={<Login />} />
 
-          <Route path="/listas-precios" element={<ListasPrecios />} />
-          <Route path="/clientes" element={<ClientesVentas />} />
-          <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
-          <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />
-        </Route>
-      </Routes>
+          {/* Rutas protegidas del Sistema */}
+          <Route
+            element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/" element={<Navigate to="/inventario" replace />} />
+            <Route path="/inicio" element={<PaginaEnConstruccion titulo="Inicio" />} />
+            <Route path="/inventario" element={<Inventario />} />
+            <Route path="/ordenes-compra" element={<OrdenesCompra />} />
+            <Route path="/facturas-proveedores" element={<FacturasProveedores />} />
+            <Route path="/proveedores" element={<Proveedores />} />
+            <Route path="/pagos-proveedores" element={<RegistarPagoProveedor titulo="Pago Proveedor" />} />
+            <Route path="/notas-credito-debito" element={<RegistarNotaCreditoDebito titulo="Notas Crédito/Débito" />} />
+            <Route path="/sucursales" element={<Sucursales />} />
+            <Route path="/depositos" element={<Depositos />} />
+            {/* Soportamos ambos formatos para que nunca falle la ruta */}
+            <Route path="/depositos/:id/inventario" element={<InventarioDeposito />} />
+            <Route path="/inventario-deposito" element={<InventarioDeposito />} />
+            
+            <Route path="/ventas" element={<RegistrarVenta />} /> 
+
+            <Route path="/listas-precios" element={<ListasPrecios />} />
+            <Route path="/clientes" element={<ClientesVentas />} />
+            <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
+            <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />
+          </Route>
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }
