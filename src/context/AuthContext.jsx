@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation,Outlet } from 'react-router-dom';
+import { ROLES_SUPERUSUARIO, RUTA_POR_DEFECTO, getRutaInicial } from '../config/roles.js';   // línea nueva
 import { supabase } from '../lib/supabase.js';
 import {
   loginUser,
@@ -171,4 +172,27 @@ export function ProtectedRoute({ children }) {
   }
 
   return children;
+}
+/**
+ * Restringe un grupo de rutas a ciertos roles.
+ * Si el rol del usuario no está permitido, lo redirige a /inicio.
+ * Se usa como ruta de layout: <Route element={<RoleRoute allowedRoles={[...]} />}>
+ */
+
+export function RoleRoute({ allowedRoles }) {
+  const { profile } = useAuth();
+  const rol = profile?.rol;
+
+  const permitido = ROLES_SUPERUSUARIO.includes(rol) || allowedRoles.includes(rol);
+
+  if (!permitido) {
+    return <Navigate to={RUTA_POR_DEFECTO} replace />;
+  }
+
+  return <Outlet />;
+}
+
+export function HomeRedirect() {
+  const { profile } = useAuth();
+  return <Navigate to={getRutaInicial(profile?.rol)} replace />;
 }

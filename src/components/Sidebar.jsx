@@ -21,9 +21,11 @@ import {
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { useAuth } from "../context/AuthContext.jsx";
+import { puedeVerMenu } from "../config/roles.js";
 
 export default function Sidebar() {
   const { user, profile, logout } = useAuth();
+  const puedeVer = (key) => puedeVerMenu(profile?.rol, key);
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
@@ -65,6 +67,10 @@ export default function Sidebar() {
     { key: "ListasPrecios", label: "Listas de precios", path: "/listas-precios", icon: Tags },
   ];
 
+  const comprasVisibles = comprasSubItems.filter((s) => puedeVer(s.key));
+  const ventasVisibles = ventasSubItems.filter((s) => puedeVer(s.key));
+
+  
   // Elementos principales limpios (sin duplicar los submódulos de compras)
   const menuItems = [
     { key: "Inicio", label: "Inicio", path: "/inicio", icon: Home },
@@ -74,8 +80,8 @@ export default function Sidebar() {
     { key: "reportes", label: "Reportes", path: "/reportes", icon: BarChart3 },
   ];
 
-  const isComprasActive = comprasSubItems.some((sub) => location.pathname === sub.path);
-  const isVentasActive = ventasSubItems.some((sub) => location.pathname === sub.path);
+  const isComprasActive = comprasVisibles.some((sub) => location.pathname === sub.path);
+  const isVentasActive = ventasVisibles.some((sub) => location.pathname === sub.path);
 
   return (
     <aside
@@ -158,7 +164,9 @@ export default function Sidebar() {
         {renderNavLink(menuItems[1])}
 
         {/* MÓDULO AGRUPADO: COMPRAS */}
-        <div>
+        {comprasVisibles.length > 0 && (
+      <div>
+          <div>
           <button
             onClick={() => {
               if (isHovered) setComprasOpen(!comprasOpen);
@@ -243,7 +251,7 @@ export default function Sidebar() {
                 marginTop: "0.35rem",
               }}
             >
-              {comprasSubItems.map((sub) => {
+              {comprasVisibles.map((sub) => {  
                 const SubIcon = sub.icon;
                 const isSubActive = location.pathname === sub.path;
                 const isSubHovered = hoveredButton === sub.key;
@@ -289,11 +297,15 @@ export default function Sidebar() {
             </div>
           )}
         </div>
+      </div>
+)}
+
 
         {/* Sucursales y depósitos */}
         {menuItems.slice(2, 4).map((item) => renderNavLink(item))}
 
         {/* MÓDULO AGRUPADO: VENTAS */}
+        {ventasVisibles.length > 0 && (
         <div>
           <button
             onClick={() => {
@@ -339,7 +351,7 @@ export default function Sidebar() {
 
           {ventasOpen && isHovered && (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "1.25rem", marginTop: "0.35rem" }}>
-              {ventasSubItems.map((sub) => {
+                {ventasVisibles.map((sub) => {   // antes: ventasSubItems.map(
                 const SubIcon = sub.icon;
                 const isSubActive = location.pathname === sub.path;
                 const isSubHovered = hoveredButton === sub.key;
@@ -372,12 +384,13 @@ export default function Sidebar() {
             </div>
           )}
         </div>
-
+)}
         {/* Reportes */}
         {menuItems.slice(4).map((item) => renderNavLink(item))}
       </nav>
 
       {/* Configuración */}
+      {puedeVer("Configuracion") && (
       <div
         style={{
           borderTop: "1px solid #3f332a",
@@ -428,6 +441,7 @@ export default function Sidebar() {
           </span>
         </Link>
       </div>
+      )}
 
       {/* Usuario conectado y Cerrar Sesión */}
       {user && (
@@ -557,6 +571,7 @@ export default function Sidebar() {
 
   // Helper para renderizar los ítems principales
   function renderNavLink(item) {
+    if (!puedeVer(item.key)) return null;    
     const Icon = item.icon;
     const isActive = location.pathname === item.path;
     const isItemHovered = hoveredButton === item.key;
