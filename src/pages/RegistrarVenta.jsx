@@ -15,6 +15,7 @@ import {
 import { showAlert } from '../lib/alerts.js';
 import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle } from 'lucide-react';
 import '../App.css';
+import ArqueoCajaModal from '../components/ArqueoCajaModal.jsx';
 
 export default function RegistrarVenta() {
   const [cargando, setCargando] = useState(false);
@@ -51,6 +52,9 @@ export default function RegistrarVenta() {
     aplica_percepcion_iva: false,
     aplica_percepcion_iibb: false
   });
+
+  // ARQUEO DE CAJA HU51
+  const [mostrarArqueo, setMostrarArqueo] = useState(false);
 
   // Productos y Carrito
   const [productosDisponibles, setProductosDisponibles] = useState([]);
@@ -512,13 +516,29 @@ export default function RegistrarVenta() {
                 Historial de operaciones, control de stock en tiempo real y emisión de comprobantes fiscales
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setPaso(2)}
-              style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem' }}
-            >
-              + Nuevo Registro de Venta
-            </button>
+
+            {/* CONTENEDOR DE BOTONES */}
+            <div style={{display: 'flex', gap: '0.75rem'}}>
+              {/* BOTON DE ARQUEO DE CAJA */}
+              <button
+                type="button"
+                onClick={() => setMostrarArqueo(true)}
+                style={{ backgroundColor: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem' }}
+              >
+                Cierre / Arqueo de Caja
+              </button>
+
+              {/* BOTON NUEVO REGISTRO DE VENTA */}
+              <button
+                type="button"
+                onClick={() => setPaso(2)}
+                style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem' }}
+              >
+                + Nuevo Registro de Venta
+              </button>
+
+            </div>
+            
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -1207,6 +1227,14 @@ export default function RegistrarVenta() {
           </div>
         </div>
       )}
+
+      {/* Modal Arqueo de Caja (HU51) */}
+      <ArqueoCajaModal 
+        isOpen={mostrarArqueo} 
+        onClose={() => setMostrarArqueo(false)} 
+        // (Nota: Actualmente estadisticasSemanales tiene TODO. Se filtra solo lo pagado en Efectivo en el turno actual)
+        ventasTurno={estadisticasSemanales.montoTotal}
+      />
     </div>
   );
 }
