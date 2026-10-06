@@ -12,6 +12,7 @@ import InventarioDeposito from "./pages/InventarioDeposito.jsx";
 import RegistrarVenta from "./pages/RegistrarVenta.jsx"; // <-- ¡Importamos el nuevo módulo de ventas del Sprint 3!
 import ListasPrecios from "./pages/ListasPrecios.jsx";
 import ClientesVentas from "./pages/ClientesVentas.jsx";
+import AperturaCaja from "./pages/AperturaCaja.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -47,6 +48,10 @@ export default function App() {
           
           {/* AQUÍ ESTABA EL CAMBIO CLAVE */}
           <Route path="/ventas" element={<RegistrarVenta />} /> 
+
+          {/* Módulo de Caja (Sprint 4 - HU49) */}
+          <Route path="/caja" element={<AperturaCaja />} />
+          <Route path="/cajas" element={<Navigate to="/caja" replace />} />
 
           <Route path="/listas-precios" element={<ListasPrecios />} />
           <Route path="/clientes" element={<ClientesVentas />} />

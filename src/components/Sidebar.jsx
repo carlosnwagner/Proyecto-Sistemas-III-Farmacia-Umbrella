@@ -17,6 +17,7 @@ import {
   Tags,
   ShoppingCart,
   Users,
+  DollarSign,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -24,7 +25,7 @@ export default function Sidebar() {
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
   const [ventasOpen, setVentasOpen] = useState(() =>
-    ["/ventas", "/listas-precios", "/clientes"].includes(window.location.pathname)
+    ["/ventas", "/caja", "/listas-precios", "/clientes"].includes(window.location.pathname)
   );
 
   const location = useLocation();
@@ -39,6 +40,7 @@ export default function Sidebar() {
   ];
 
   const ventasSubItems = [
+    { key: "Cajas", label: "Apertura de caja", path: "/caja", icon: DollarSign },
     { key: "RegistroVentas", label: "Registro de ventas", path: "/ventas", icon: ShoppingCart },
     { key: "ClientesVentas", label: "Clientes", path: "/clientes", icon: Users },
     { key: "ListasPrecios", label: "Listas de precios", path: "/listas-precios", icon: Tags },

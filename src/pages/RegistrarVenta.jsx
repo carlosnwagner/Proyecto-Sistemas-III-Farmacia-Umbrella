@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   getSucursalesYDepositos, 
   getMediosPagoActivos,
@@ -12,13 +13,17 @@ import {
   cancelarVentaBorrador,
   downloadComprobanteVentaPdf 
 } from '../services/ventas';
+import { getTurnoActivoCajero } from '../services/caja.js';
+import { getUsuarioActual } from '../lib/auth.js';
 import { showAlert } from '../lib/alerts.js';
-import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle } from 'lucide-react';
+import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle, Lock, AlertTriangle } from 'lucide-react';
 import '../App.css';
 
 export default function RegistrarVenta() {
+  const navigate = useNavigate();
   const [cargando, setCargando] = useState(false);
   const [paso, setPaso] = useState(1); // 1: Panel Principal / Historial, 2: Selector de Depósito, 3: POS / Carrito, 4: Éxito
+  const [mostrarModalCajaRequerida, setMostrarModalCajaRequerida] = useState(false);
 
   // Contexto
   const [sucursales, setSucursales] = useState([]);
@@ -175,7 +180,29 @@ export default function RegistrarVenta() {
     showAlert.successSave('Venta suspendida y guardada como borrador.');
   };
 
+  const validarCajaAbierta = async () => {
+    const usuario = getUsuarioActual();
+    if (!usuario) {
+      showAlert('error', 'Debe iniciar sesión para operar el punto de venta.');
+      return false;
+    }
+    if (usuario.rol === 'cajero') {
+      const res = await getTurnoActivoCajero(usuario.id_usuario);
+      if (!res.tieneTurno) {
+        setMostrarModalCajaRequerida(true);
+        return false;
+      }
+      if (res.turno?.sucursal_id) {
+        setSucursalSeleccionada(String(res.turno.sucursal_id));
+      }
+    }
+    return true;
+  };
+
   const handleRetomarBorrador = async (borrador) => {
+    const tieneCaja = await validarCajaAbierta();
+    if (!tieneCaja) return;
+
     setCargando(true);
     const { data: productos, error } = await getProductosConStock(borrador.id_deposito);
     if (error) {
@@ -514,7 +541,10 @@ export default function RegistrarVenta() {
             </div>
             <button
               type="button"
-              onClick={() => setPaso(2)}
+              onClick={async () => {
+                const tieneCaja = await validarCajaAbierta();
+                if (tieneCaja) setPaso(2);
+              }}
               style={{ backgroundColor: '#65482b', color: '#fff', border: 0, padding: '0.625rem 1rem', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem' }}
             >
               + Nuevo Registro de Venta
@@ -1204,6 +1234,85 @@ export default function RegistrarVenta() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL BLOQUEANTE: APERTURA DE CAJA REQUERIDA ANTES DE FACTURAR */}
+      {mostrarModalCajaRequerida && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '0.75rem',
+            maxWidth: '460px',
+            width: '100%',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            textAlign: 'center',
+            padding: '2rem'
+          }}>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '50%',
+              backgroundColor: '#fef3c7',
+              color: '#d97706',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 1.25rem'
+            }}>
+              <Lock size={32} />
+            </div>
+
+            <h3 style={{ fontSize: '1.3rem', fontWeight: '800', color: '#111827', margin: '0 0 0.5rem' }}>
+              Apertura de Caja Requerida
+            </h3>
+
+            <p style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: 1.5, margin: '0 0 1.5rem' }}>
+              Para iniciar una venta es obligatorio contar con un turno de caja abierto en el sistema. Actualmente no tienes ninguna caja abierta asignada a tu usuario.
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setMostrarModalCajaRequerida(false)}
+                style={{
+                  padding: '0.65rem 1.25rem',
+                  border: '1px solid #d1d5db',
+                  backgroundColor: '#ffffff',
+                  color: '#4b5563',
+                  borderRadius: '0.375rem',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Volver
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarModalCajaRequerida(false);
+                  navigate('/caja');
+                }}
+                className="boton-principal"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.65rem 1.25rem' }}
+              >
+                <DollarSign size={16} /> Ir a Abrir Caja
+              </button>
+            </div>
           </div>
         </div>
       )}
