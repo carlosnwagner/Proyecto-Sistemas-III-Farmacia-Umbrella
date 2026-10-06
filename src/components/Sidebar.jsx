@@ -55,6 +55,8 @@ export default function Sidebar() {
     { key: "Depositos", label: "Depósitos", path: "/depositos", icon: Warehouse },
     { key: "Caja", label: "Caja", path: "/turnos-caja", icon: Wallet },
     { key: "reportes", label: "Reportes", path: "/reportes", icon: BarChart3 },
+    { key: "MovimientosCaja", label: "Movimientos de caja", path: "/caja/movimientos", icon: Receipt },
+    ...(import.meta.env.DEV ? [{ key: "DemoCaja", label: "Demo HU50", path: "/demo/hu50", icon: Receipt }] : []),
   ];
 
   const isComprasActive = comprasSubItems.some((sub) => location.pathname === sub.path);

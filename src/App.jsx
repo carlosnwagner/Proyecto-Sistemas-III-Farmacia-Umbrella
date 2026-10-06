@@ -14,6 +14,7 @@ import ListasPrecios from "./pages/ListasPrecios.jsx";
 import ClientesVentas from "./pages/ClientesVentas.jsx";
 import AperturaCaja from "./pages/AperturaCaja.jsx";
 import TurnosCaja from "./pages/TurnosCaja.jsx";
+import MovimientosCaja from "./pages/MovimientosCaja.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -33,6 +34,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<MainLayout />}>
+          {import.meta.env.DEV && <Route path="/demo/hu50" element={<MovimientosCaja key="demo" demo />} />}
           <Route path="/" element={<Navigate to="/inventario" replace />} />
           <Route path="/inicio" element={<PaginaEnConstruccion titulo="Inicio" />} />
           <Route path="/inventario" element={<Inventario />} />
@@ -57,6 +59,7 @@ export default function App() {
 
           <Route path="/listas-precios" element={<ListasPrecios />} />
           <Route path="/clientes" element={<ClientesVentas />} />
+          <Route path="/caja/movimientos" element={<MovimientosCaja key="real" />} />
           <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
           <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />
         </Route>
