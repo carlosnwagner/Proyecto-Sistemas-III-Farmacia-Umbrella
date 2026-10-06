@@ -17,6 +17,7 @@ import {
   Tags,
   ShoppingCart,
   Users,
+  Wallet,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -50,6 +51,7 @@ export default function Sidebar() {
     { key: "Inventario", label: "Inventario", path: "/inventario", icon: Package },
     { key: "Sucursales", label: "Sucursales", path: "/sucursales", icon: MapPin },
     { key: "Depositos", label: "Depósitos", path: "/depositos", icon: Warehouse },
+    { key: "Caja", label: "Caja", path: "/turnos-caja", icon: Wallet },
     { key: "reportes", label: "Reportes", path: "/reportes", icon: BarChart3 },
   ];
 
