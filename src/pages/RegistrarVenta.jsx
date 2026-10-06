@@ -18,6 +18,7 @@ import { getUsuarioActual } from '../lib/auth.js';
 import { showAlert } from '../lib/alerts.js';
 import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle, Lock, AlertTriangle } from 'lucide-react';
 import '../App.css';
+import ArqueoCajaModal from '../components/ArqueoCajaModal.jsx';
 
 export default function RegistrarVenta() {
   const navigate = useNavigate();
@@ -56,6 +57,9 @@ export default function RegistrarVenta() {
     aplica_percepcion_iva: false,
     aplica_percepcion_iibb: false
   });
+
+  // ARQUEO DE CAJA HU51
+  const [mostrarArqueo, setMostrarArqueo] = useState(false);
 
   // Productos y Carrito
   const [productosDisponibles, setProductosDisponibles] = useState([]);
@@ -1316,6 +1320,14 @@ export default function RegistrarVenta() {
           </div>
         </div>
       )}
+
+      {/* Modal Arqueo de Caja (HU51) */}
+      <ArqueoCajaModal 
+        isOpen={mostrarArqueo} 
+        onClose={() => setMostrarArqueo(false)} 
+        // (Nota: Actualmente estadisticasSemanales tiene TODO. Se filtra solo lo pagado en Efectivo en el turno actual)
+        ventasTurno={estadisticasSemanales.montoTotal}
+      />
     </div>
   );
 }
