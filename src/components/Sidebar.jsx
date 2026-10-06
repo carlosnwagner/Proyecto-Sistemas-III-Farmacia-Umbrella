@@ -55,6 +55,7 @@ export default function Sidebar() {
     { key: "Cajas", label: "Apertura de caja", path: "/caja", icon: DollarSign },
     { key: "MovimientosCaja", label: "Ingresos y egresos", path: "/caja/movimientos", icon: Receipt },
     { key: "ArqueoCaja", label: "Arqueo de caja", path: "/caja/arqueo", icon: Calculator },
+    { key: "CierreCaja", label: "Cierre de caja", path: "/caja/cierre", icon: Wallet },
     { key: "TurnosCaja", label: "Saldo y movimientos", path: "/turnos-caja", icon: ClipboardList },
     ...(import.meta.env.DEV ? [{ key: "DemoCaja", label: "Demo de movimientos", path: "/demo/hu50", icon: Receipt }] : []),
   ];

@@ -1,5 +1,7 @@
 # HU50: movimientos manuales de caja
 
+Actualización del 6 de octubre: el arqueo, cierre y consulta reales están implementados en la migración complementaria. Las pruebas locales de cierre concurrente y confirmaciones repetidas pasan. Ver [instrucciones de integración HU51–HU53](HU51-HU52-HU53-integracion.md) antes de ejecutar SQL en la base existente. Continúan pendientes la sesión integrada, la validación en Supabase y los cobros automáticos de HU69.
+
 ## Demostración al profesor sin login
 
 Ejecutar `npm.cmd run dev` en Windows y abrir la URL que indique Vite con
