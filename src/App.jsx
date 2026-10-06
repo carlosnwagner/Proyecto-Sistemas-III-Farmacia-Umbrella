@@ -15,6 +15,7 @@ import ClientesVentas from "./pages/ClientesVentas.jsx";
 import AperturaCaja from "./pages/AperturaCaja.jsx";
 import TurnosCaja from "./pages/TurnosCaja.jsx";
 import MovimientosCaja from "./pages/MovimientosCaja.jsx";
+import ArqueoCaja from "./pages/ArqueoCaja.jsx";
 
 function PaginaEnConstruccion({ titulo }) {
   return (
@@ -54,6 +55,7 @@ export default function App() {
 
           {/* Módulo de Caja (Sprint 4 - HU49) */}
           <Route path="/caja" element={<AperturaCaja />} />
+          <Route path="/caja/arqueo" element={<ArqueoCaja />} />
           <Route path="/cajas" element={<Navigate to="/caja" replace />} />
           <Route path="/turnos-caja" element={<TurnosCaja />} />
 

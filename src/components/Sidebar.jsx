@@ -19,6 +19,7 @@ import {
   Users,
   DollarSign,
   Wallet,
+  Calculator,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -26,7 +27,11 @@ export default function Sidebar() {
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
   const [ventasOpen, setVentasOpen] = useState(() =>
-    ["/ventas", "/caja", "/listas-precios", "/clientes"].includes(window.location.pathname)
+    ["/ventas", "/listas-precios", "/clientes"].includes(window.location.pathname)
+  );
+  const [cajaOpen, setCajaOpen] = useState(() =>
+    window.location.pathname.startsWith('/caja') ||
+    ['/turnos-caja', '/demo/hu50'].includes(window.location.pathname)
   );
 
   const location = useLocation();
@@ -41,10 +46,17 @@ export default function Sidebar() {
   ];
 
   const ventasSubItems = [
-    { key: "Cajas", label: "Apertura de caja", path: "/caja", icon: DollarSign },
     { key: "RegistroVentas", label: "Registro de ventas", path: "/ventas", icon: ShoppingCart },
     { key: "ClientesVentas", label: "Clientes", path: "/clientes", icon: Users },
     { key: "ListasPrecios", label: "Listas de precios", path: "/listas-precios", icon: Tags },
+  ];
+
+  const cajaSubItems = [
+    { key: "Cajas", label: "Apertura de caja", path: "/caja", icon: DollarSign },
+    { key: "MovimientosCaja", label: "Ingresos y egresos", path: "/caja/movimientos", icon: Receipt },
+    { key: "ArqueoCaja", label: "Arqueo de caja", path: "/caja/arqueo", icon: Calculator },
+    { key: "TurnosCaja", label: "Saldo y movimientos", path: "/turnos-caja", icon: ClipboardList },
+    ...(import.meta.env.DEV ? [{ key: "DemoCaja", label: "Demo de movimientos", path: "/demo/hu50", icon: Receipt }] : []),
   ];
 
   // Elementos principales limpios (sin duplicar los submódulos de compras)
@@ -53,14 +65,12 @@ export default function Sidebar() {
     { key: "Inventario", label: "Inventario", path: "/inventario", icon: Package },
     { key: "Sucursales", label: "Sucursales", path: "/sucursales", icon: MapPin },
     { key: "Depositos", label: "Depósitos", path: "/depositos", icon: Warehouse },
-    { key: "Caja", label: "Caja", path: "/turnos-caja", icon: Wallet },
     { key: "reportes", label: "Reportes", path: "/reportes", icon: BarChart3 },
-    { key: "MovimientosCaja", label: "Movimientos de caja", path: "/caja/movimientos", icon: Receipt },
-    ...(import.meta.env.DEV ? [{ key: "DemoCaja", label: "Demo HU50", path: "/demo/hu50", icon: Receipt }] : []),
   ];
 
   const isComprasActive = comprasSubItems.some((sub) => location.pathname === sub.path);
   const isVentasActive = ventasSubItems.some((sub) => location.pathname === sub.path);
+  const isCajaActive = cajaSubItems.some(sub => location.pathname === sub.path);
 
   return (
     <aside
@@ -356,6 +366,32 @@ export default function Sidebar() {
               })}
             </div>
           )}
+        </div>
+
+        <div>
+          <button
+            type="button"
+            title="Caja"
+            aria-expanded={cajaOpen && isHovered}
+            aria-controls="submenu-caja"
+            onClick={() => { setIsHovered(true); setCajaOpen(!cajaOpen); }}
+            onMouseEnter={() => setHoveredButton('CajaGroup')}
+            onMouseLeave={() => setHoveredButton(null)}
+            style={{ width: '100%', height: 44, border: 0, borderRadius: 8,
+              background: isCajaActive ? '#4a3c32' : hoveredButton === 'CajaGroup' ? 'rgba(255,255,255,.08)' : 'transparent',
+              color: isCajaActive ? '#ffffff' : '#9ca3af', display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', padding: '0 .75rem', cursor: 'pointer',
+              borderLeft: isCajaActive ? '4px solid #84cc16' : '4px solid transparent' }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '.85rem' }}>
+              <Wallet size={20} style={{ flexShrink: 0, color: isCajaActive ? '#84cc16' : 'inherit' }} />
+              {isHovered && <span style={{ fontSize: '.9rem', fontWeight: isCajaActive ? 600 : 400 }}>Caja</span>}
+            </span>
+            {isHovered && (cajaOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+          </button>
+          {cajaOpen && isHovered && <div id="submenu-caja" style={{ paddingLeft: '.75rem', marginTop: '.35rem', display: 'grid', gap: '.25rem' }}>
+            {cajaSubItems.map(renderNavLink)}
+          </div>}
         </div>
 
         {/* Reportes */}

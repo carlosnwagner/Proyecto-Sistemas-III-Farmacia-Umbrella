@@ -13,7 +13,11 @@ const inicial = { tipo: 'Ingreso', concepto: '', importe: '', medioPagoId: '' };
 
 export default function MovimientosCaja({ demo = false }) {
   const [simulador] = useState(crearCajaDemo);
-  const { getContextoCaja, getMovimientosCaja, registrarMovimientoCaja } = demo ? simulador : cajaReal;
+  const {
+    getContextoMovimientosCaja: getContextoCaja,
+    getMovimientosCaja,
+    registrarMovimientoCaja,
+  } = demo ? simulador : cajaReal;
   const cargarMedios = demo ? simulador.getMediosPago : getMediosPago;
   const [turnos, setTurnos] = useState([]);
   const [turnoId, setTurnoId] = useState('');

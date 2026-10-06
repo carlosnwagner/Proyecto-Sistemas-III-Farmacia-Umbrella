@@ -7,7 +7,7 @@ export function crearCajaDemo() {
   const rechazar = mensaje => { throw Object.assign(new Error(mensaje), { code: 'P0001' }); };
   return {
     getMediosPago: async () => ({ data: medios, error: null }),
-    getContextoCaja: async () => ({ turnos: abierto ? [{ id: 1, caja: 'Caja 01', sucursal_id: 1, saldo_inicial: 1000, efectivo_esperado: saldo() }] : [] }),
+    getContextoMovimientosCaja: async () => ({ turnos: abierto ? [{ id: 1, caja: 'Caja 01', sucursal_id: 1, saldo_inicial: 1000, efectivo_esperado: saldo() }] : [] }),
     getMovimientosCaja: async () => [...movimientos].reverse(),
     registrarMovimientoCaja: async p => {
       const existente = movimientos.find(m => m.idempotency_key === p.clave);

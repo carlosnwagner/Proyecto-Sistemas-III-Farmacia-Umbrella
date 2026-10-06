@@ -372,7 +372,7 @@ export async function registrarArqueoBackend(payload) {
     console.error("Excepción en registrarArqueoBackend:", err);
     return { data: null, error: err };
   }
-}import { supabase } from '../lib/supabase.js';
+}
 
 // La identidad viaja en la sesión de Supabase. Nunca se envía un cajero elegido
 // desde el formulario: las RPC resuelven auth.uid() y validan la sucursal.
