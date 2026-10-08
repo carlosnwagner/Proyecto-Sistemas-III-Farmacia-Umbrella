@@ -20,9 +20,16 @@ import {
   DollarSign,
   Wallet,
   Calculator,
+  LogOut,
 } from "lucide-react";
+import Swal from "sweetalert2";
+import { useAuth } from "../context/AuthContext.jsx";
+import { puedeVerMenu } from "../config/roles.js";
 
 export default function Sidebar() {
+  const { user, profile, logout } = useAuth();
+  const puedeVer = (key) => puedeVerMenu(profile?.rol, key);
+
   const [isHovered, setIsHovered] = useState(false);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
@@ -35,6 +42,23 @@ export default function Sidebar() {
   );
 
   const location = useLocation();
+
+  const handleLogout = async () => {
+    const result = await Swal.fire({
+      title: "¿Cerrar sesión?",
+      text: "Se finalizará tu sesión en Farmacia Umbrella.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Sí, salir",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#65482b",
+      cancelButtonColor: "#6b7280",
+    });
+
+    if (result.isConfirmed) {
+      await logout();
+    }
+  };
 
   // Submenú unificado de Compras (sin repeticiones sueltas en el menú principal)
   const comprasSubItems = [
@@ -52,13 +76,18 @@ export default function Sidebar() {
   ];
 
   const cajaSubItems = [
-    { key: "Cajas", label: "Apertura de caja", path: "/caja", icon: DollarSign },
+    { key: "AperturaCaja", label: "Apertura de caja", path: "/caja", icon: DollarSign },
     { key: "MovimientosCaja", label: "Ingresos y egresos", path: "/caja/movimientos", icon: Receipt },
     { key: "ArqueoCaja", label: "Arqueo de caja", path: "/caja/arqueo", icon: Calculator },
     { key: "CierreCaja", label: "Cierre de caja", path: "/caja/cierre", icon: Wallet },
     { key: "TurnosCaja", label: "Saldo y movimientos", path: "/turnos-caja", icon: ClipboardList },
     ...(import.meta.env.DEV ? [{ key: "DemoCaja", label: "Demo de movimientos", path: "/demo/hu50", icon: Receipt }] : []),
   ];
+
+  // Solo los submenús que el rol actual puede ver
+  const comprasVisibles = comprasSubItems.filter((s) => puedeVer(s.key));
+  const ventasVisibles = ventasSubItems.filter((s) => puedeVer(s.key));
+  const cajaVisibles = cajaSubItems.filter((s) => puedeVer(s.key));
 
   // Elementos principales limpios (sin duplicar los submódulos de compras)
   const menuItems = [
@@ -69,9 +98,9 @@ export default function Sidebar() {
     { key: "reportes", label: "Reportes", path: "/reportes", icon: BarChart3 },
   ];
 
-  const isComprasActive = comprasSubItems.some((sub) => location.pathname === sub.path);
-  const isVentasActive = ventasSubItems.some((sub) => location.pathname === sub.path);
-  const isCajaActive = cajaSubItems.some(sub => location.pathname === sub.path);
+  const isComprasActive = comprasVisibles.some((sub) => location.pathname === sub.path);
+  const isVentasActive = ventasVisibles.some((sub) => location.pathname === sub.path);
+  const isCajaActive = cajaVisibles.some((sub) => location.pathname === sub.path);
 
   return (
     <aside
@@ -154,307 +183,443 @@ export default function Sidebar() {
         {renderNavLink(menuItems[1])}
 
         {/* MÓDULO AGRUPADO: COMPRAS */}
-        <div>
-          <button
-            onClick={() => {
-              if (isHovered) setComprasOpen(!comprasOpen);
-            }}
-            title={!isHovered ? "Compras" : ""}
-            onMouseEnter={() => setHoveredButton("ComprasGroup")}
-            onMouseLeave={() => setHoveredButton(null)}
-            style={{
-              width: "100%",
-              height: "44px",
-              borderRadius: "0.5rem",
-              border: "none",
-              backgroundColor: isComprasActive
-                ? "#4a3c32"
-                : hoveredButton === "ComprasGroup"
-                ? "rgba(255, 255, 255, 0.08)"
-                : "transparent",
-              color: isComprasActive ? "#ffffff" : hoveredButton === "ComprasGroup" ? "#e5e7eb" : "#9ca3af",
-              display: "flex",
-              alignItems: "center",
-              padding: "0 0.75rem",
-              justifyContent: "space-between",
-              cursor: "pointer",
-              position: "relative",
-              transition: "all 0.2s ease",
-              boxSizing: "border-box",
-            }}
-          >
-            {isComprasActive && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  top: "15%",
-                  height: "70%",
-                  width: "4px",
-                  backgroundColor: "#84cc16",
-                  borderRadius: "0 4px 4px 0",
-                }}
-              />
-            )}
+        {comprasVisibles.length > 0 && (
+          <div>
+            <button
+              onClick={() => {
+                if (isHovered) setComprasOpen(!comprasOpen);
+              }}
+              title={!isHovered ? "Compras" : ""}
+              onMouseEnter={() => setHoveredButton("ComprasGroup")}
+              onMouseLeave={() => setHoveredButton(null)}
+              style={{
+                width: "100%",
+                height: "44px",
+                borderRadius: "0.5rem",
+                border: "none",
+                backgroundColor: isComprasActive
+                  ? "#4a3c32"
+                  : hoveredButton === "ComprasGroup"
+                  ? "rgba(255, 255, 255, 0.08)"
+                  : "transparent",
+                color: isComprasActive ? "#ffffff" : hoveredButton === "ComprasGroup" ? "#e5e7eb" : "#9ca3af",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 0.75rem",
+                justifyContent: "space-between",
+                cursor: "pointer",
+                position: "relative",
+                transition: "all 0.2s ease",
+                boxSizing: "border-box",
+              }}
+            >
+              {isComprasActive && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: "15%",
+                    height: "70%",
+                    width: "4px",
+                    backgroundColor: "#84cc16",
+                    borderRadius: "0 4px 4px 0",
+                  }}
+                />
+              )}
 
-            <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    flexShrink: 0,
+                    color: isComprasActive ? "#84cc16" : hoveredButton === "ComprasGroup" ? "#ffffff" : "inherit",
+                  }}
+                >
+                  <Truck size={20} />
+                </div>
+                <span
+                  style={{
+                    fontSize: "0.9rem",
+                    fontWeight: isComprasActive ? "600" : "400",
+                    whiteSpace: "nowrap",
+                    opacity: isHovered ? 1 : 0,
+                    transition: "opacity 0.2s ease",
+                  }}
+                >
+                  Compras
+                </span>
+              </div>
+
+              {isHovered && (
+                <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>
+                  {comprasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </div>
+              )}
+            </button>
+
+            {/* Submenú desplegable de Compras */}
+            {comprasOpen && isHovered && (
               <div
                 style={{
                   display: "flex",
-                  alignItems: "center",
-                  flexShrink: 0,
-                  color: isComprasActive ? "#84cc16" : hoveredButton === "ComprasGroup" ? "#ffffff" : "inherit",
+                  flexDirection: "column",
+                  gap: "0.35rem",
+                  paddingLeft: "1.25rem",
+                  marginTop: "0.35rem",
                 }}
               >
-                <Truck size={20} />
-              </div>
-              <span
-                style={{
-                  fontSize: "0.9rem",
-                  fontWeight: isComprasActive ? "600" : "400",
-                  whiteSpace: "nowrap",
-                  opacity: isHovered ? 1 : 0,
-                  transition: "opacity 0.2s ease",
-                }}
-              >
-                Compras
-              </span>
-            </div>
+                {comprasVisibles.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isSubActive = location.pathname === sub.path;
+                  const isSubHovered = hoveredButton === sub.key;
 
-            {isHovered && (
-              <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>
-                {comprasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </div>
-            )}
-          </button>
-
-          {/* Submenú desplegable de Compras */}
-          {comprasOpen && isHovered && (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.35rem",
-                paddingLeft: "1.25rem",
-                marginTop: "0.35rem",
-              }}
-            >
-              {comprasSubItems.map((sub) => {
-                const SubIcon = sub.icon;
-                const isSubActive = location.pathname === sub.path;
-                const isSubHovered = hoveredButton === sub.key;
-
-                return (
-                  <Link
-                    key={sub.key}
-                    to={sub.path}
-                    onMouseEnter={() => setHoveredButton(sub.key)}
-                    onMouseLeave={() => setHoveredButton(null)}
-                    style={{
-                      width: "100%",
-                      height: "38px",
-                      borderRadius: "0.375rem",
-                      textDecoration: "none",
-                      backgroundColor: isSubActive
-                        ? "rgba(132, 204, 22, 0.15)"
-                        : isSubHovered
-                        ? "rgba(255, 255, 255, 0.05)"
-                        : "transparent",
-                      color: isSubActive ? "#84cc16" : isSubHovered ? "#ffffff" : "#9ca3af",
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "0 0.6rem",
-                      gap: "0.65rem",
-                      transition: "all 0.2s ease",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <SubIcon size={16} />
-                    <span
+                  return (
+                    <Link
+                      key={sub.key}
+                      to={sub.path}
+                      onMouseEnter={() => setHoveredButton(sub.key)}
+                      onMouseLeave={() => setHoveredButton(null)}
                       style={{
-                        fontSize: "0.825rem",
-                        fontWeight: isSubActive ? "600" : "400",
-                        whiteSpace: "nowrap",
+                        width: "100%",
+                        height: "38px",
+                        borderRadius: "0.375rem",
+                        textDecoration: "none",
+                        backgroundColor: isSubActive
+                          ? "rgba(132, 204, 22, 0.15)"
+                          : isSubHovered
+                          ? "rgba(255, 255, 255, 0.05)"
+                          : "transparent",
+                        color: isSubActive ? "#84cc16" : isSubHovered ? "#ffffff" : "#9ca3af",
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "0 0.6rem",
+                        gap: "0.65rem",
+                        transition: "all 0.2s ease",
+                        boxSizing: "border-box",
                       }}
                     >
-                      {sub.label}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                      <SubIcon size={16} />
+                      <span
+                        style={{
+                          fontSize: "0.825rem",
+                          fontWeight: isSubActive ? "600" : "400",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {sub.label}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Sucursales y depósitos */}
         {menuItems.slice(2, 4).map((item) => renderNavLink(item))}
 
         {/* MÓDULO AGRUPADO: VENTAS */}
-        <div>
-          <button
-            onClick={() => {
-              if (isHovered) setVentasOpen(!ventasOpen);
-            }}
-            title={!isHovered ? "Ventas" : ""}
-            onMouseEnter={() => setHoveredButton("VentasGroup")}
-            onMouseLeave={() => setHoveredButton(null)}
-            style={{
-              width: "100%",
-              height: "44px",
-              borderRadius: "0.5rem",
-              border: "none",
-              backgroundColor: isVentasActive
-                ? "#4a3c32"
-                : hoveredButton === "VentasGroup"
-                ? "rgba(255, 255, 255, 0.08)"
-                : "transparent",
-              color: isVentasActive ? "#ffffff" : hoveredButton === "VentasGroup" ? "#e5e7eb" : "#9ca3af",
-              display: "flex",
-              alignItems: "center",
-              padding: "0 0.75rem",
-              justifyContent: "space-between",
-              cursor: "pointer",
-              position: "relative",
-              transition: "all 0.2s ease",
-              boxSizing: "border-box",
-            }}
-          >
-            {isVentasActive && (
-              <div style={{ position: "absolute", left: 0, top: "15%", height: "70%", width: "4px", backgroundColor: "#84cc16", borderRadius: "0 4px 4px 0" }} />
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
-              <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: isVentasActive ? "#84cc16" : hoveredButton === "VentasGroup" ? "#ffffff" : "inherit" }}>
-                <Globe size={20} />
+        {ventasVisibles.length > 0 && (
+          <div>
+            <button
+              onClick={() => {
+                if (isHovered) setVentasOpen(!ventasOpen);
+              }}
+              title={!isHovered ? "Ventas" : ""}
+              onMouseEnter={() => setHoveredButton("VentasGroup")}
+              onMouseLeave={() => setHoveredButton(null)}
+              style={{
+                width: "100%",
+                height: "44px",
+                borderRadius: "0.5rem",
+                border: "none",
+                backgroundColor: isVentasActive
+                  ? "#4a3c32"
+                  : hoveredButton === "VentasGroup"
+                  ? "rgba(255, 255, 255, 0.08)"
+                  : "transparent",
+                color: isVentasActive ? "#ffffff" : hoveredButton === "VentasGroup" ? "#e5e7eb" : "#9ca3af",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 0.75rem",
+                justifyContent: "space-between",
+                cursor: "pointer",
+                position: "relative",
+                transition: "all 0.2s ease",
+                boxSizing: "border-box",
+              }}
+            >
+              {isVentasActive && (
+                <div style={{ position: "absolute", left: 0, top: "15%", height: "70%", width: "4px", backgroundColor: "#84cc16", borderRadius: "0 4px 4px 0" }} />
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+                <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: isVentasActive ? "#84cc16" : hoveredButton === "VentasGroup" ? "#ffffff" : "inherit" }}>
+                  <Globe size={20} />
+                </div>
+                <span style={{ fontSize: "0.9rem", fontWeight: isVentasActive ? "600" : "400", whiteSpace: "nowrap", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease" }}>
+                  Ventas
+                </span>
               </div>
-              <span style={{ fontSize: "0.9rem", fontWeight: isVentasActive ? "600" : "400", whiteSpace: "nowrap", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease" }}>
-                Ventas
+              {isHovered && <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>{ventasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>}
+            </button>
+
+            {ventasOpen && isHovered && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "1.25rem", marginTop: "0.35rem" }}>
+                {ventasVisibles.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isSubActive = location.pathname === sub.path;
+                  const isSubHovered = hoveredButton === sub.key;
+                  return (
+                    <Link
+                      key={sub.key}
+                      to={sub.path}
+                      onMouseEnter={() => setHoveredButton(sub.key)}
+                      onMouseLeave={() => setHoveredButton(null)}
+                      style={{
+                        width: "100%",
+                        height: "38px",
+                        borderRadius: "0.375rem",
+                        textDecoration: "none",
+                        backgroundColor: isSubActive ? "rgba(132, 204, 22, 0.15)" : isSubHovered ? "rgba(255, 255, 255, 0.05)" : "transparent",
+                        color: isSubActive ? "#84cc16" : isSubHovered ? "#ffffff" : "#9ca3af",
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "0 0.6rem",
+                        gap: "0.65rem",
+                        transition: "all 0.2s ease",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <SubIcon size={16} />
+                      <span style={{ fontSize: "0.825rem", fontWeight: isSubActive ? "600" : "400", whiteSpace: "nowrap" }}>{sub.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* MÓDULO AGRUPADO: CAJA */}
+        {cajaVisibles.length > 0 && (
+          <div>
+            <button
+              type="button"
+              title="Caja"
+              aria-expanded={cajaOpen && isHovered}
+              aria-controls="submenu-caja"
+              onClick={() => { setIsHovered(true); setCajaOpen(!cajaOpen); }}
+              onMouseEnter={() => setHoveredButton('CajaGroup')}
+              onMouseLeave={() => setHoveredButton(null)}
+              style={{ width: '100%', height: 44, border: 0, borderRadius: 8,
+                background: isCajaActive ? '#4a3c32' : hoveredButton === 'CajaGroup' ? 'rgba(255,255,255,.08)' : 'transparent',
+                color: isCajaActive ? '#ffffff' : '#9ca3af', display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between', padding: '0 .75rem', cursor: 'pointer',
+                borderLeft: isCajaActive ? '4px solid #84cc16' : '4px solid transparent' }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '.85rem' }}>
+                <Wallet size={20} style={{ flexShrink: 0, color: isCajaActive ? '#84cc16' : 'inherit' }} />
+                {isHovered && <span style={{ fontSize: '.9rem', fontWeight: isCajaActive ? 600 : 400 }}>Caja</span>}
               </span>
-            </div>
-            {isHovered && <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>{ventasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>}
-          </button>
-
-          {ventasOpen && isHovered && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "1.25rem", marginTop: "0.35rem" }}>
-              {ventasSubItems.map((sub) => {
-                const SubIcon = sub.icon;
-                const isSubActive = location.pathname === sub.path;
-                const isSubHovered = hoveredButton === sub.key;
-                return (
-                  <Link
-                    key={sub.key}
-                    to={sub.path}
-                    onMouseEnter={() => setHoveredButton(sub.key)}
-                    onMouseLeave={() => setHoveredButton(null)}
-                    style={{
-                      width: "100%",
-                      height: "38px",
-                      borderRadius: "0.375rem",
-                      textDecoration: "none",
-                      backgroundColor: isSubActive ? "rgba(132, 204, 22, 0.15)" : isSubHovered ? "rgba(255, 255, 255, 0.05)" : "transparent",
-                      color: isSubActive ? "#84cc16" : isSubHovered ? "#ffffff" : "#9ca3af",
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "0 0.6rem",
-                      gap: "0.65rem",
-                      transition: "all 0.2s ease",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <SubIcon size={16} />
-                    <span style={{ fontSize: "0.825rem", fontWeight: isSubActive ? "600" : "400", whiteSpace: "nowrap" }}>{sub.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <button
-            type="button"
-            title="Caja"
-            aria-expanded={cajaOpen && isHovered}
-            aria-controls="submenu-caja"
-            onClick={() => { setIsHovered(true); setCajaOpen(!cajaOpen); }}
-            onMouseEnter={() => setHoveredButton('CajaGroup')}
-            onMouseLeave={() => setHoveredButton(null)}
-            style={{ width: '100%', height: 44, border: 0, borderRadius: 8,
-              background: isCajaActive ? '#4a3c32' : hoveredButton === 'CajaGroup' ? 'rgba(255,255,255,.08)' : 'transparent',
-              color: isCajaActive ? '#ffffff' : '#9ca3af', display: 'flex', alignItems: 'center',
-              justifyContent: 'space-between', padding: '0 .75rem', cursor: 'pointer',
-              borderLeft: isCajaActive ? '4px solid #84cc16' : '4px solid transparent' }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '.85rem' }}>
-              <Wallet size={20} style={{ flexShrink: 0, color: isCajaActive ? '#84cc16' : 'inherit' }} />
-              {isHovered && <span style={{ fontSize: '.9rem', fontWeight: isCajaActive ? 600 : 400 }}>Caja</span>}
-            </span>
-            {isHovered && (cajaOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
-          </button>
-          {cajaOpen && isHovered && <div id="submenu-caja" style={{ paddingLeft: '.75rem', marginTop: '.35rem', display: 'grid', gap: '.25rem' }}>
-            {cajaSubItems.map(renderNavLink)}
-          </div>}
-        </div>
+              {isHovered && (cajaOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+            </button>
+            {cajaOpen && isHovered && (
+              <div id="submenu-caja" style={{ paddingLeft: '.75rem', marginTop: '.35rem', display: 'grid', gap: '.25rem' }}>
+                {cajaVisibles.map((item) => renderNavLink(item))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Reportes */}
         {menuItems.slice(4).map((item) => renderNavLink(item))}
       </nav>
 
       {/* Configuración */}
-      <div
-        style={{
-          borderTop: "1px solid #3f332a",
-          paddingTop: "0.75rem",
-        }}
-      >
-        <Link
-          to="/configuracion"
-          title={!isHovered ? "Configuración" : ""}
-          onMouseEnter={() => setHoveredButton("settings")}
-          onMouseLeave={() => setHoveredButton(null)}
+      {puedeVer("Configuracion") && (
+        <div
           style={{
-            width: "100%",
-            height: "44px",
-            borderRadius: "0.5rem",
-            textDecoration: "none",
-            backgroundColor:
-              location.pathname === "/configuracion"
-                ? "#4a3c32"
-                : hoveredButton === "settings"
-                ? "rgba(255, 255, 255, 0.08)"
-                : "transparent",
-            color:
-              location.pathname === "/configuracion" || hoveredButton === "settings"
-                ? "#ffffff"
-                : "#9ca3af",
-            display: "flex",
-            alignItems: "center",
-            padding: "0 0.75rem",
-            gap: "0.85rem",
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-            boxSizing: "border-box",
+            borderTop: "1px solid #3f332a",
+            paddingTop: "0.75rem",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-            <Settings size={20} />
-          </div>
-          <span
+          <Link
+            to="/configuracion"
+            title={!isHovered ? "Configuración" : ""}
+            onMouseEnter={() => setHoveredButton("settings")}
+            onMouseLeave={() => setHoveredButton(null)}
             style={{
-              fontSize: "0.9rem",
-              whiteSpace: "nowrap",
-              opacity: isHovered ? 1 : 0,
-              transition: "opacity 0.2s ease",
+              width: "100%",
+              height: "44px",
+              borderRadius: "0.5rem",
+              textDecoration: "none",
+              backgroundColor:
+                location.pathname === "/configuracion"
+                  ? "#4a3c32"
+                  : hoveredButton === "settings"
+                  ? "rgba(255, 255, 255, 0.08)"
+                  : "transparent",
+              color:
+                location.pathname === "/configuracion" || hoveredButton === "settings"
+                  ? "#ffffff"
+                  : "#9ca3af",
+              display: "flex",
+              alignItems: "center",
+              padding: "0 0.75rem",
+              gap: "0.85rem",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+              boxSizing: "border-box",
             }}
           >
-            Configuración
-          </span>
-        </Link>
-      </div>
+            <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <Settings size={20} />
+            </div>
+            <span
+              style={{
+                fontSize: "0.9rem",
+                whiteSpace: "nowrap",
+                opacity: isHovered ? 1 : 0,
+                transition: "opacity 0.2s ease",
+              }}
+            >
+              Configuración
+            </span>
+          </Link>
+        </div>
+      )}
+
+      {/* Usuario conectado y Cerrar Sesión */}
+      {user && (
+        <div
+          style={{
+            borderTop: "1px solid #3f332a",
+            paddingTop: "0.75rem",
+            marginTop: "0.5rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+          }}
+        >
+          {isHovered ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0.35rem 0.5rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "rgba(255, 255, 255, 0.04)",
+                gap: "0.5rem",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", overflow: "hidden", minWidth: 0 }}>
+                <div
+                  style={{
+                    width: "30px",
+                    height: "30px",
+                    borderRadius: "50%",
+                    backgroundColor: "#65482b",
+                    color: "#ffffff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "0.85rem",
+                    fontWeight: "700",
+                    flexShrink: 0,
+                  }}
+                >
+                  {(profile?.nombre_completo || profile?.usuario || user.email || "U")
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
+                <div style={{ overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0 }}>
+                  <span
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: "600",
+                      color: "#ffffff",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                    title={profile?.nombre_completo || profile?.usuario || user.email}
+                  >
+                    {profile?.nombre_completo || profile?.usuario || user.email}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      color: "#84cc16",
+                      textTransform: "capitalize",
+                      fontWeight: "500",
+                    }}
+                  >
+                    {profile?.rol || "Usuario"}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Cerrar sesión"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#ef4444",
+                  cursor: "pointer",
+                  padding: "0.35rem",
+                  borderRadius: "0.375rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.15)")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Cerrar sesión"
+              onMouseEnter={() => setHoveredButton("logout")}
+              onMouseLeave={() => setHoveredButton(null)}
+              style={{
+                width: "100%",
+                height: "44px",
+                borderRadius: "0.5rem",
+                border: "none",
+                backgroundColor: hoveredButton === "logout" ? "rgba(239, 68, 68, 0.15)" : "transparent",
+                color: hoveredButton === "logout" ? "#ef4444" : "#9ca3af",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 0.75rem",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                boxSizing: "border-box",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+                <LogOut size={20} />
+              </div>
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   );
 
   // Helper para renderizar los ítems principales
   function renderNavLink(item) {
+    if (!puedeVer(item.key)) return null;
     const Icon = item.icon;
     const isActive = location.pathname === item.path;
     const isItemHovered = hoveredButton === item.key;

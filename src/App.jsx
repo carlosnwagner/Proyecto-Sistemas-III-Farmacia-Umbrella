@@ -65,11 +65,12 @@ export default function App() {
               <Route path="/cajas" element={<Navigate to="/caja" replace />} />
               <Route path="/turnos-caja" element={<TurnosCaja />} />
               <Route path="/configuracion" element={<PaginaEnConstruccion titulo="Configuración" />} />
+              {import.meta.env.DEV && <Route path="/demo/hu50" element={<MovimientosCaja key="demo" demo />} />}
+
             </Route>
 
             {/* ── SOLO ADMINISTRADOR ── */}
             <Route element={<RoleRoute allowedRoles={[ROLES.ADMIN]} />}>
-              {import.meta.env.DEV && <Route path="/demo/hu50" element={<MovimientosCaja key="demo" demo />} />}
               <Route path="/inventario" element={<Inventario />} />
               <Route path="/ordenes-compra" element={<OrdenesCompra />} />
               <Route path="/facturas-proveedores" element={<FacturasProveedores />} />
