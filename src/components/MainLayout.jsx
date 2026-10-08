@@ -15,6 +15,8 @@ export default function MainLayout() {
     if (path.startsWith("/notas-credito-debito")) return "Notas";
     if (path.startsWith("/sucursales")) return "Sucursales";
     if (path.startsWith("/ventas")) return "Ventas";
+    if (path.startsWith("/caja")) return "Cajas";
+    if (path.startsWith("/turnos-caja")) return "Caja";
     if (path.startsWith("/reportes")) return "reportes";
     return "Inventario";
   };
@@ -22,7 +24,7 @@ export default function MainLayout() {
   return (
     <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#f9fafb", fontFamily: "sans-serif" }}>
       <Sidebar activeItem={getActiveKey(location.pathname)} />
-      <main style={{ flex: 1, padding: "2rem", overflowY: "auto" }}>
+      <main style={{ flex: 1, minWidth: 0, padding: "clamp(1rem, 3vw, 2rem)", overflowY: "auto" }}>
         <Outlet />
       </main>
     </div>
