@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   getSucursalesYDepositos, 
@@ -18,6 +18,7 @@ import { getUsuarioActual } from '../lib/auth.js';
 import { showAlert } from '../lib/alerts.js';
 import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle, Lock, AlertTriangle } from 'lucide-react';
 import '../App.css';
+import './RegistrarVenta.css';
 import { supabase } from '../lib/supabase.js';
 
 export default function RegistrarVenta() {
@@ -25,6 +26,15 @@ export default function RegistrarVenta() {
   const [cargando, setCargando] = useState(false);
   const [paso, setPaso] = useState(1); // 1: Panel Principal / Historial, 2: Selector de Depósito, 3: POS / Carrito, 4: Éxito
   const [mostrarModalCajaRequerida, setMostrarModalCajaRequerida] = useState(false);
+  const [mostrarCatalogo, setMostrarCatalogo] = useState(false);
+  const catalogoRef = useRef(null);
+  useEffect(() => {
+    const dialogo = catalogoRef.current;
+    if (!dialogo) return;
+    if (mostrarCatalogo && paso === 3) {
+      if (!dialogo.open) dialogo.showModal();
+    } else if (dialogo.open) dialogo.close();
+  }, [mostrarCatalogo, paso]);
 
   // Contexto
   const [sucursales, setSucursales] = useState([]);
@@ -794,7 +804,7 @@ export default function RegistrarVenta() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.5rem' }}>
+          <div className="venta-terminal-central">
             <div>
               {/* Sección Cliente (HU37) */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '1.25rem', marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -852,8 +862,12 @@ export default function RegistrarVenta() {
               </div>
 
               {/* Catálogo de Productos */}
+              <dialog ref={catalogoRef} className="venta-catalogo-dialog" aria-labelledby="venta-catalogo-titulo" onCancel={() => setMostrarCatalogo(false)} onClose={() => setMostrarCatalogo(false)}>
               <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '0.75rem', color: '#374151' }}>Catálogo de Productos Disponibles</h3>
+                <div className="venta-catalogo-header">
+                  <h3 id="venta-catalogo-titulo">Catálogo de productos disponibles</h3>
+                  <button type="button" className="venta-catalogo-cerrar" aria-label="Cerrar catálogo" onClick={() => setMostrarCatalogo(false)}><X size={22} /></button>
+                </div>
                 <input
                   type="text"
                   placeholder="Buscar por nombre, código o código de barras..."
@@ -862,7 +876,7 @@ export default function RegistrarVenta() {
                   style={{ ...inputStyle, marginBottom: '1rem' }}
                 />
 
-                <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: '0.375rem' }}>
+                <div style={{ maxHeight: '55vh', overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: '0.375rem' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                     <thead style={{ backgroundColor: '#f9fafb', position: 'sticky', top: 0, borderBottom: '1px solid #e5e7eb' }}>
                       <tr>
@@ -902,11 +916,20 @@ export default function RegistrarVenta() {
                     </tbody>
                   </table>
                 </div>
+                <div className="venta-catalogo-footer">
+                  <span>{carrito.reduce((total, item) => total + Number(item.cantidad), 0)} unidades en el carrito · Total ${resumenImpuestos.total.toFixed(2)}</span>
+                  <button type="button" className="venta-agregar-productos" onClick={() => setMostrarCatalogo(false)}>Volver al carrito</button>
+                </div>
               </div>
+              </dialog>
             </div>
 
             {/* Carrito */}
             <div style={{ backgroundColor: '#ffffff', borderRadius: '0.5rem', border: '1px solid #e5e7eb', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', height: 'fit-content' }}>
+              <div className="venta-carrito-header">
+                <span>Revisá los productos y completá el cobro</span>
+                <button type="button" className="venta-agregar-productos" disabled={cargando} onClick={() => setMostrarCatalogo(true)}><Search size={18} /> Agregar productos</button>
+              </div>
               <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '1rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem', color: '#111827' }}>
                 Carrito de Venta {clienteElegido ? `(Factura ${tipoComprobanteActual})` : '(Factura B)'}
               </h3>
@@ -914,8 +937,14 @@ export default function RegistrarVenta() {
               {carrito.length === 0 ? (
                 <p style={{ color: '#6b7280', fontSize: '0.85rem', textAlign: 'center', padding: '2rem 0' }}>El carrito está vacío</p>
               ) : (
-                <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '1rem' }}>
-                  {carrito.map(item => (
+                <div style={{ maxHeight: '380px', overflowY: 'auto', marginBottom: '1rem' }}>
+                  {carrito.map(item => {
+                    const subtotal = Number(item.subtotal);
+                    const alicuota = Number(item.iva_porcentaje ?? 21);
+                    const exento = item.es_exento || alicuota === 0;
+                    const neto = exento ? subtotal : Number((subtotal / (1 + alicuota / 100)).toFixed(2));
+                    const iva = subtotal - neto;
+                    return (
                     <div key={item.id_articulo} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', borderBottom: '1px solid #f3f4f6', paddingBottom: '0.5rem', fontSize: '0.85rem' }}>
                       <div style={{ flex: 1 }}>
                         <b style={{ color: '#111827' }}>{item.descripcion}</b>
@@ -929,6 +958,13 @@ export default function RegistrarVenta() {
                             style={{ width: '45px', marginLeft: '0.4rem', marginRight: '0.4rem', textAlign: 'center', padding: '0.1rem', borderRadius: '0.25rem', border: '1px solid #d1d5db' }}
                           />
                         </div>
+                        {tipoComprobanteActual === 'A' && (
+                          <div style={{ color: '#4b5563', fontSize: '0.8rem', marginTop: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem' }}>
+                            <span>Neto: <b>${neto.toFixed(2)}</b></span>
+                            <span>{exento ? 'Exento de IVA' : `IVA ${alicuota}%:`} {!exento && <b>${iva.toFixed(2)}</b>}</span>
+                            <span>Total del producto: <b>${subtotal.toFixed(2)}</b></span>
+                          </div>
+                        )}
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <b style={{ color: '#111827' }}>${Number(item.subtotal).toFixed(2)}</b>
@@ -941,7 +977,8 @@ export default function RegistrarVenta() {
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

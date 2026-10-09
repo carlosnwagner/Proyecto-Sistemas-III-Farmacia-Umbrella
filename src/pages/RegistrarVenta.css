@@ -1,0 +1,58 @@
+.venta-terminal-central {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.venta-terminal-central > div { min-width: 0; }
+.venta-carrito-header, .venta-catalogo-header, .venta-catalogo-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.venta-carrito-header > span { color: #6b7280; font-size: .85rem; }
+.venta-agregar-productos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  background: #65482b;
+  color: white;
+  border: 0;
+  border-radius: .5rem;
+  padding: .75rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.venta-agregar-productos:disabled { opacity: .6; cursor: wait; }
+.venta-catalogo-dialog {
+  width: min(1000px, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+  border: 0;
+  border-radius: .75rem;
+  padding: 0;
+  margin: auto;
+  box-shadow: 0 24px 70px #0004;
+}
+.venta-catalogo-dialog::backdrop { background: #11182788; }
+.venta-catalogo-header h3 { margin: 0; color: #374151; font-size: 1.1rem; }
+.venta-catalogo-cerrar {
+  display: inline-flex;
+  padding: .5rem;
+  background: #f3f4f6;
+  color: #374151;
+  border: 0;
+  border-radius: .5rem;
+  cursor: pointer;
+}
+.venta-catalogo-footer { margin: 1rem 0 0; font-size: .85rem; color: #4b5563; }
+@media (max-width: 600px) {
+  .venta-carrito-header .venta-agregar-productos { width: 100%; }
+  .venta-catalogo-dialog table { min-width: 520px; }
+}
