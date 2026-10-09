@@ -13,7 +13,8 @@ export async function getSucursalesAutorizadas(usuario) {
       return { data: data || [], error: null };
     }
     try {
-      const { data: asignaciones } = await supabase.from('usuario_sucursal_caja').select('sucursal_id').eq('usuario_id', usuario.id_usuario);
+      // Reemplazamos la consulta directa bloqueada por el RPC seguro
+      const { data: asignaciones } = await supabase.rpc('verificar_usuario_sucursal_caja', { p_usuario_id: usuario.id_usuario });
       if (asignaciones && asignaciones.length > 0) {
         const ids = asignaciones.map((a) => a.sucursal_id);
         const { data: sucursales } = await supabase.from('sucursal').select('*').in('id_sucursal', ids).eq('estado', true).order('codigo', { ascending: true });

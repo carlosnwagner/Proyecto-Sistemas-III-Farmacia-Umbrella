@@ -38,13 +38,18 @@ export const consultarDetalleTurno = async (turnoId) => {
       .single();
     if (errTurno) throw errTurno;
 
-    // 2. Obtener directamente el registro de la tabla cierre_caja (que ya sabemos que funciona y trae los montos)
+    // 2. Obtener registro de cierre si existe
     const { data: cierre, error: errCierre } = await supabase
       .from('cierre_caja')
       .select('*')
       .eq('turno_id', idNum)
       .maybeSingle();
     if (errCierre) console.warn(errCierre);
+
+    // 3. Obtener el historial de arqueos mediante el RPC seguro
+    const { data: arqueosList, error: errArqueos } = await supabase
+      .rpc('obtener_arqueos_turno', { p_turno_id: idNum });
+    if (errArqueos) console.warn('Aviso al listar arqueos:', errArqueos);
 
     const saldoInicial = Number(turno?.saldo_inicial || 0);
     const efectivoEsperado = cierre?.efectivo_esperado ? Number(cierre.efectivo_esperado) : saldoInicial;
@@ -56,7 +61,7 @@ export const consultarDetalleTurno = async (turnoId) => {
         cajero_nombre: `Carlos`
       },
       cierre: cierre || null,
-      arqueos: [], // Evitamos consultar la tabla restringida arqueo_caja para prevenir el error 403
+      arqueos: arqueosList || [],
       totales: {
         saldo_inicial: saldoInicial,
         efectivo_esperado: efectivoEsperado

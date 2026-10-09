@@ -36,8 +36,8 @@ export const getRutaInicial = (rol) => RUTA_INICIAL_POR_ROL[rol] ?? RUTA_POR_DEF
  * Menú lateral: qué ítems ve cada rol.
  * Las claves son las `key` de los ítems de Sidebar.jsx:
  *   Principales: Inicio, Inventario, Sucursales, Depositos, reportes, Configuracion
- *   Compras:     Proveedores, OrdenesCompra, Facturas, Pagos, Notas
- *   Ventas:      RegistroVentas, ClientesVentas, ListasPrecios
+ *   Compras:      Proveedores, OrdenesCompra, Facturas, Pagos, Notas
+ *   Ventas:       RegistroVentas, ClientesVentas, ListasPrecios
  * '*' = ve todo. Un grupo (Compras/Ventas) aparece solo si el rol ve al menos uno de sus submenús.
  */
 export const MENU_POR_ROL = {
@@ -52,10 +52,10 @@ export const MENU_POR_ROL = {
     'ArqueoCaja',
     'CierreCaja',
     'DemoCaja',
-    // agregar el resto cuando estén listas las páginas
+    // Ventas (Añadido para cumplir con la HU69)
+    'RegistroVentas',
   ],
   [ROLES.PENDIENTE]: ['Inicio'],
-  // agregar más roles si se requiere
 };
 // "Inicio" lo ve cualquier usuario autenticado (igual que la ruta /inicio)
 const MENU_BASE = ['Inicio'];

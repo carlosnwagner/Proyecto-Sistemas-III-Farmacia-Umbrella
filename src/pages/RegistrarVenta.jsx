@@ -18,6 +18,7 @@ import { getUsuarioActual } from '../lib/auth.js';
 import { showAlert } from '../lib/alerts.js';
 import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle, Lock, AlertTriangle } from 'lucide-react';
 import '../App.css';
+import { supabase } from '../lib/supabase.js';
 
 export default function RegistrarVenta() {
   const navigate = useNavigate();
@@ -56,8 +57,6 @@ export default function RegistrarVenta() {
     aplica_percepcion_iva: false,
     aplica_percepcion_iibb: false
   });
-
-  // ARQUEO DE CAJA HU51
 
   // Productos y Carrito
   const [productosDisponibles, setProductosDisponibles] = useState([]);
@@ -183,22 +182,28 @@ export default function RegistrarVenta() {
   };
 
   const validarCajaAbierta = async () => {
-    const usuario = getUsuarioActual();
-    if (!usuario) {
-      showAlert('error', 'Debe iniciar sesión para operar el punto de venta.');
-      return false;
-    }
-    if (usuario.rol === 'cajero') {
-      const res = await getTurnoActivoCajero(usuario.id_usuario);
-      if (!res.tieneTurno) {
+    // Validación robusta consultando directamente si hay turnos abiertos en la base de datos
+    try {
+      const { data: turnosAbiertos, error } = await supabase
+        .from('turno_caja')
+        .select('id, sucursal_id, estado')
+        .ilike('estado', 'Abierto')
+        .limit(1);
+
+      if (error || !turnosAbiertos || turnosAbiertos.length === 0) {
         setMostrarModalCajaRequerida(true);
         return false;
       }
-      if (res.turno?.sucursal_id) {
-        setSucursalSeleccionada(String(res.turno.sucursal_id));
+
+      if (turnosAbiertos[0]?.sucursal_id) {
+        setSucursalSeleccionada(String(turnosAbiertos[0].sucursal_id));
       }
+      return true;
+    } catch (e) {
+      console.error('Error validando caja abierta:', e);
+      setMostrarModalCajaRequerida(true);
+      return false;
     }
-    return true;
   };
 
   const handleRetomarBorrador = async (borrador) => {
@@ -440,7 +445,7 @@ export default function RegistrarVenta() {
   };
 
   const handleConfirmarVentaFinal = async () => {
-    if (cargando) return; // Previene doble clic concurrente
+    if (cargando) return;
     if (carrito.length === 0) return showAlert.errorSave('El carrito está vacío.');
     const totalVenta = resumenImpuestos.total;
     if (!medioPagoSeleccionado) {
@@ -1030,7 +1035,7 @@ export default function RegistrarVenta() {
                       Vuelto: ${(Number(montoRecibido) - resumenImpuestos.total).toFixed(2)}
                     </small>
                   )}
-                </div>
+              </div>
 
               {!esEfectivo && idMedioPago && (
                 <div style={{ marginBottom: '1rem' }}>
@@ -1212,7 +1217,7 @@ export default function RegistrarVenta() {
                     <input
                       type="checkbox"
                       checked={tempCliente.aplica_percepcion_iibb}
-                      onChange={(e) => setTempCliente({ ...tempCliente, aplica_percepcion_iibb: e.target.checked })}
+                      onChange={(e) => setTempCliente({ ...tempCodeCliente, aplica_percepcion_iibb: e.target.checked })}
                     />
                     Percepción de IIBB (3,6% sobre el neto)
                   </label>
@@ -1283,7 +1288,7 @@ export default function RegistrarVenta() {
               Apertura de Caja Requerida
             </h3>
 
-            <p style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: 1.5, margin: '0 0 1.5rem' }}>
+            <p style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.5', margin: '0 0 1.5rem' }}>
               Para iniciar una venta es obligatorio contar con un turno de caja abierto en el sistema. Actualmente no tienes ninguna caja abierta asignada a tu usuario.
             </p>
 

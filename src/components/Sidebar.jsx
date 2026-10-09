@@ -38,7 +38,7 @@ export default function Sidebar() {
   );
   const [cajaOpen, setCajaOpen] = useState(() =>
     window.location.pathname.startsWith('/caja') ||
-    ['/turnos-caja', '/demo/hu50'].includes(window.location.pathname)
+    ['/turnos-caja'].includes(window.location.pathname)
   );
 
   const location = useLocation();
@@ -60,7 +60,6 @@ export default function Sidebar() {
     }
   };
 
-  // Submenú unificado de Compras (sin repeticiones sueltas en el menú principal)
   const comprasSubItems = [
     { key: "Proveedores", label: "Proveedores", path: "/proveedores", icon: Truck },
     { key: "OrdenesCompra", label: "Órdenes de compra", path: "/ordenes-compra", icon: ClipboardList },
@@ -77,19 +76,15 @@ export default function Sidebar() {
 
   const cajaSubItems = [
     { key: "AperturaCaja", label: "Apertura de caja", path: "/caja", icon: DollarSign },
-    { key: "MovimientosCaja", label: "Ingresos y egresos", path: "/caja/movimientos", icon: Receipt },
+    { key: "MovimientosCaja", label: "Movimientos y saldos", path: "/caja/movimientos", icon: Receipt },
     { key: "ArqueoCaja", label: "Arqueo de caja", path: "/caja/arqueo", icon: Calculator },
     { key: "CierreCaja", label: "Cierre de caja", path: "/caja/cierre", icon: Wallet },
-    { key: "TurnosCaja", label: "Saldo y movimientos", path: "/turnos-caja", icon: ClipboardList },
-    ...(import.meta.env.DEV ? [{ key: "DemoCaja", label: "Demo de movimientos", path: "/demo/hu50", icon: Receipt }] : []),
   ];
 
-  // Solo los submenús que el rol actual puede ver
   const comprasVisibles = comprasSubItems.filter((s) => puedeVer(s.key));
   const ventasVisibles = ventasSubItems.filter((s) => puedeVer(s.key));
   const cajaVisibles = cajaSubItems.filter((s) => puedeVer(s.key));
 
-  // Elementos principales limpios (sin duplicar los submódulos de compras)
   const menuItems = [
     { key: "Inicio", label: "Inicio", path: "/inicio", icon: Home },
     { key: "Inventario", label: "Inventario", path: "/inventario", icon: Package },
@@ -127,269 +122,59 @@ export default function Sidebar() {
         zIndex: 50,
       }}
     >
-      {/* Logo */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "0.75rem",
-          marginBottom: "1.5rem",
-          paddingLeft: "0.25rem",
-        }}
-      >
-        <div
-          style={{
-            padding: "0.4rem",
-            backgroundColor: "#3f332a",
-            borderRadius: "0.5rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <img
-            src="/Umbrellafarmacia.svg"
-            alt="Umbrella Farmacia"
-            style={{ width: "32px", height: "32px", objectFit: "contain" }}
-          />
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem", paddingLeft: "0.25rem" }}>
+        <div style={{ padding: "0.4rem", backgroundColor: "#3f332a", borderRadius: "0.5rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <img src="/Umbrellafarmacia.svg" alt="Umbrella Farmacia" style={{ width: "32px", height: "32px", objectFit: "contain" }} />
         </div>
-        <span
-          style={{
-            fontWeight: "700",
-            fontSize: "0.95rem",
-            color: "#ffffff",
-            lineHeight: "1.2",
-            opacity: isHovered ? 1 : 0,
-            transition: "opacity 0.2s ease",
-            whiteSpace: "nowrap",
-          }}
-        >
+        <span style={{ fontWeight: "700", fontSize: "0.95rem", color: "#ffffff", lineHeight: "1.2", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease", whiteSpace: "nowrap" }}>
           Farmacia<br />Umbrella
         </span>
       </div>
 
-      {/* Menú de Navegación */}
-      <nav
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "0.5rem",
-          flex: 1,
-        }}
-      >
-        {/* Inicio & Inventario */}
+      <nav style={{ display: "flex", flexDirection: "column", gap: "0.5rem", flex: 1 }}>
         {renderNavLink(menuItems[0])}
         {renderNavLink(menuItems[1])}
 
-        {/* MÓDULO AGRUPADO: COMPRAS */}
         {comprasVisibles.length > 0 && (
           <div>
             <button
-              onClick={() => {
-                if (isHovered) setComprasOpen(!comprasOpen);
-              }}
+              onClick={() => { if (isHovered) setComprasOpen(!comprasOpen); }}
               title={!isHovered ? "Compras" : ""}
               onMouseEnter={() => setHoveredButton("ComprasGroup")}
               onMouseLeave={() => setHoveredButton(null)}
               style={{
-                width: "100%",
-                height: "44px",
-                borderRadius: "0.5rem",
-                border: "none",
-                backgroundColor: isComprasActive
-                  ? "#4a3c32"
-                  : hoveredButton === "ComprasGroup"
-                  ? "rgba(255, 255, 255, 0.08)"
-                  : "transparent",
+                width: "100%", height: "44px", borderRadius: "0.5rem", border: "none",
+                backgroundColor: isComprasActive ? "#4a3c32" : hoveredButton === "ComprasGroup" ? "rgba(255, 255, 255, 0.08)" : "transparent",
                 color: isComprasActive ? "#ffffff" : hoveredButton === "ComprasGroup" ? "#e5e7eb" : "#9ca3af",
-                display: "flex",
-                alignItems: "center",
-                padding: "0 0.75rem",
-                justifyContent: "space-between",
-                cursor: "pointer",
-                position: "relative",
-                transition: "all 0.2s ease",
-                boxSizing: "border-box",
+                display: "flex", alignItems: "center", padding: "0 0.75rem", justifyContent: "space-between", cursor: "pointer", position: "relative", transition: "all 0.2s ease", boxSizing: "border-box"
               }}
             >
-              {isComprasActive && (
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: "15%",
-                    height: "70%",
-                    width: "4px",
-                    backgroundColor: "#84cc16",
-                    borderRadius: "0 4px 4px 0",
-                  }}
-                />
-              )}
-
+              {isComprasActive && <div style={{ position: "absolute", left: 0, top: "15%", height: "70%", width: "4px", backgroundColor: "#84cc16", borderRadius: "0 4px 4px 0" }} />}
               <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    flexShrink: 0,
-                    color: isComprasActive ? "#84cc16" : hoveredButton === "ComprasGroup" ? "#ffffff" : "inherit",
-                  }}
-                >
+                <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: isComprasActive ? "#84cc16" : hoveredButton === "ComprasGroup" ? "#ffffff" : "inherit" }}>
                   <Truck size={20} />
                 </div>
-                <span
-                  style={{
-                    fontSize: "0.9rem",
-                    fontWeight: isComprasActive ? "600" : "400",
-                    whiteSpace: "nowrap",
-                    opacity: isHovered ? 1 : 0,
-                    transition: "opacity 0.2s ease",
-                  }}
-                >
-                  Compras
-                </span>
+                <span style={{ fontSize: "0.9rem", fontWeight: isComprasActive ? "600" : "400", whiteSpace: "nowrap", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease" }}>Compras</span>
               </div>
-
-              {isHovered && (
-                <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>
-                  {comprasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </div>
-              )}
+              {isHovered && <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>{comprasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>}
             </button>
 
-            {/* Submenú desplegable de Compras */}
             {comprasOpen && isHovered && (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.35rem",
-                  paddingLeft: "1.25rem",
-                  marginTop: "0.35rem",
-                }}
-              >
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "1.25rem", marginTop: "0.35rem" }}>
                 {comprasVisibles.map((sub) => {
                   const SubIcon = sub.icon;
                   const isSubActive = location.pathname === sub.path;
                   const isSubHovered = hoveredButton === sub.key;
-
                   return (
                     <Link
-                      key={sub.key}
-                      to={sub.path}
+                      key={sub.key} to={sub.path}
                       onMouseEnter={() => setHoveredButton(sub.key)}
                       onMouseLeave={() => setHoveredButton(null)}
                       style={{
-                        width: "100%",
-                        height: "38px",
-                        borderRadius: "0.375rem",
-                        textDecoration: "none",
-                        backgroundColor: isSubActive
-                          ? "rgba(132, 204, 22, 0.15)"
-                          : isSubHovered
-                          ? "rgba(255, 255, 255, 0.05)"
-                          : "transparent",
-                        color: isSubActive ? "#84cc16" : isSubHovered ? "#ffffff" : "#9ca3af",
-                        display: "flex",
-                        alignItems: "center",
-                        padding: "0 0.6rem",
-                        gap: "0.65rem",
-                        transition: "all 0.2s ease",
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      <SubIcon size={16} />
-                      <span
-                        style={{
-                          fontSize: "0.825rem",
-                          fontWeight: isSubActive ? "600" : "400",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {sub.label}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Sucursales y depósitos */}
-        {menuItems.slice(2, 4).map((item) => renderNavLink(item))}
-
-        {/* MÓDULO AGRUPADO: VENTAS */}
-        {ventasVisibles.length > 0 && (
-          <div>
-            <button
-              onClick={() => {
-                if (isHovered) setVentasOpen(!ventasOpen);
-              }}
-              title={!isHovered ? "Ventas" : ""}
-              onMouseEnter={() => setHoveredButton("VentasGroup")}
-              onMouseLeave={() => setHoveredButton(null)}
-              style={{
-                width: "100%",
-                height: "44px",
-                borderRadius: "0.5rem",
-                border: "none",
-                backgroundColor: isVentasActive
-                  ? "#4a3c32"
-                  : hoveredButton === "VentasGroup"
-                  ? "rgba(255, 255, 255, 0.08)"
-                  : "transparent",
-                color: isVentasActive ? "#ffffff" : hoveredButton === "VentasGroup" ? "#e5e7eb" : "#9ca3af",
-                display: "flex",
-                alignItems: "center",
-                padding: "0 0.75rem",
-                justifyContent: "space-between",
-                cursor: "pointer",
-                position: "relative",
-                transition: "all 0.2s ease",
-                boxSizing: "border-box",
-              }}
-            >
-              {isVentasActive && (
-                <div style={{ position: "absolute", left: 0, top: "15%", height: "70%", width: "4px", backgroundColor: "#84cc16", borderRadius: "0 4px 4px 0" }} />
-              )}
-              <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
-                <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: isVentasActive ? "#84cc16" : hoveredButton === "VentasGroup" ? "#ffffff" : "inherit" }}>
-                  <Globe size={20} />
-                </div>
-                <span style={{ fontSize: "0.9rem", fontWeight: isVentasActive ? "600" : "400", whiteSpace: "nowrap", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease" }}>
-                  Ventas
-                </span>
-              </div>
-              {isHovered && <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>{ventasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>}
-            </button>
-
-            {ventasOpen && isHovered && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "1.25rem", marginTop: "0.35rem" }}>
-                {ventasVisibles.map((sub) => {
-                  const SubIcon = sub.icon;
-                  const isSubActive = location.pathname === sub.path;
-                  const isSubHovered = hoveredButton === sub.key;
-                  return (
-                    <Link
-                      key={sub.key}
-                      to={sub.path}
-                      onMouseEnter={() => setHoveredButton(sub.key)}
-                      onMouseLeave={() => setHoveredButton(null)}
-                      style={{
-                        width: "100%",
-                        height: "38px",
-                        borderRadius: "0.375rem",
-                        textDecoration: "none",
+                        width: "100%", height: "38px", borderRadius: "0.375rem", textDecoration: "none",
                         backgroundColor: isSubActive ? "rgba(132, 204, 22, 0.15)" : isSubHovered ? "rgba(255, 255, 255, 0.05)" : "transparent",
                         color: isSubActive ? "#84cc16" : isSubHovered ? "#ffffff" : "#9ca3af",
-                        display: "flex",
-                        alignItems: "center",
-                        padding: "0 0.6rem",
-                        gap: "0.65rem",
-                        transition: "all 0.2s ease",
-                        boxSizing: "border-box",
+                        display: "flex", alignItems: "center", padding: "0 0.6rem", gap: "0.65rem", transition: "all 0.2s ease", boxSizing: "border-box"
                       }}
                     >
                       <SubIcon size={16} />
@@ -402,22 +187,74 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* MÓDULO AGRUPADO: CAJA */}
+        {menuItems.slice(2, 4).map((item) => renderNavLink(item))}
+
+        {ventasVisibles.length > 0 && (
+          <div>
+            <button
+              onClick={() => { if (isHovered) setVentasOpen(!ventasOpen); }}
+              title={!isHovered ? "Ventas" : ""}
+              onMouseEnter={() => setHoveredButton("VentasGroup")}
+              onMouseLeave={() => setHoveredButton(null)}
+              style={{
+                width: "100%", height: "44px", borderRadius: "0.5rem", border: "none",
+                backgroundColor: isVentasActive ? "#4a3c32" : hoveredButton === "VentasGroup" ? "rgba(255, 255, 255, 0.08)" : "transparent",
+                color: isVentasActive ? "#ffffff" : hoveredButton === "VentasGroup" ? "#e5e7eb" : "#9ca3af",
+                display: "flex", alignItems: "center", padding: "0 0.75rem", justifyContent: "space-between", cursor: "pointer", position: "relative", transition: "all 0.2s ease", boxSizing: "border-box"
+              }}
+            >
+              {isVentasActive && <div style={{ position: "absolute", left: 0, top: "15%", height: "70%", width: "4px", backgroundColor: "#84cc16", borderRadius: "0 4px 4px 0" }} />}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
+                <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: isVentasActive ? "#84cc16" : hoveredButton === "VentasGroup" ? "#ffffff" : "inherit" }}>
+                  <Globe size={20} />
+                </div>
+                <span style={{ fontSize: "0.9rem", fontWeight: isVentasActive ? "600" : "400", whiteSpace: "nowrap", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease" }}>Ventas</span>
+              </div>
+              {isHovered && <div style={{ display: "flex", alignItems: "center", color: "#9ca3af" }}>{ventasOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>}
+            </button>
+
+            {ventasOpen && isHovered && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", paddingLeft: "1.25rem", marginTop: "0.35rem" }}>
+                {ventasVisibles.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isSubActive = location.pathname === sub.path;
+                  const isSubHovered = hoveredButton === sub.key;
+                  return (
+                    <Link
+                      key={sub.key} to={sub.path}
+                      onMouseEnter={() => setHoveredButton(sub.key)}
+                      onMouseLeave={() => setHoveredButton(null)}
+                      style={{
+                        width: "100%", height: "38px", borderRadius: "0.375rem", textDecoration: "none",
+                        backgroundColor: isSubActive ? "rgba(132, 204, 22, 0.15)" : isSubHovered ? "rgba(255, 255, 255, 0.05)" : "transparent",
+                        color: isSubActive ? "#84cc16" : isSubHovered ? "#ffffff" : "#9ca3af",
+                        display: "flex", alignItems: "center", padding: "0 0.6rem", gap: "0.65rem", transition: "all 0.2s ease", boxSizing: "border-box"
+                      }}
+                    >
+                      <SubIcon size={16} />
+                      <span style={{ fontSize: "0.825rem", fontWeight: isSubActive ? "600" : "400", whiteSpace: "nowrap" }}>{sub.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {cajaVisibles.length > 0 && (
           <div>
             <button
-              type="button"
-              title="Caja"
-              aria-expanded={cajaOpen && isHovered}
-              aria-controls="submenu-caja"
+              type="button" title="Caja" aria-expanded={cajaOpen && isHovered} aria-controls="submenu-caja"
               onClick={() => { setIsHovered(true); setCajaOpen(!cajaOpen); }}
               onMouseEnter={() => setHoveredButton('CajaGroup')}
               onMouseLeave={() => setHoveredButton(null)}
-              style={{ width: '100%', height: 44, border: 0, borderRadius: 8,
+              style={{
+                width: '100%', height: 44, border: 0, borderRadius: 8,
                 background: isCajaActive ? '#4a3c32' : hoveredButton === 'CajaGroup' ? 'rgba(255,255,255,.08)' : 'transparent',
                 color: isCajaActive ? '#ffffff' : '#9ca3af', display: 'flex', alignItems: 'center',
                 justifyContent: 'space-between', padding: '0 .75rem', cursor: 'pointer',
-                borderLeft: isCajaActive ? '4px solid #84cc16' : '4px solid transparent' }}
+                borderLeft: isCajaActive ? '4px solid #84cc16' : '4px solid transparent'
+              }}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: '.85rem' }}>
                 <Wallet size={20} style={{ flexShrink: 0, color: isCajaActive ? '#84cc16' : 'inherit' }} />
@@ -433,152 +270,50 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Reportes */}
         {menuItems.slice(4).map((item) => renderNavLink(item))}
       </nav>
 
-      {/* Configuración */}
       {puedeVer("Configuracion") && (
-        <div
-          style={{
-            borderTop: "1px solid #3f332a",
-            paddingTop: "0.75rem",
-          }}
-        >
+        <div style={{ borderTop: "1px solid #3f332a", paddingTop: "0.75rem" }}>
           <Link
-            to="/configuracion"
-            title={!isHovered ? "Configuración" : ""}
+            to="/configuracion" title={!isHovered ? "Configuración" : ""}
             onMouseEnter={() => setHoveredButton("settings")}
             onMouseLeave={() => setHoveredButton(null)}
             style={{
-              width: "100%",
-              height: "44px",
-              borderRadius: "0.5rem",
-              textDecoration: "none",
-              backgroundColor:
-                location.pathname === "/configuracion"
-                  ? "#4a3c32"
-                  : hoveredButton === "settings"
-                  ? "rgba(255, 255, 255, 0.08)"
-                  : "transparent",
-              color:
-                location.pathname === "/configuracion" || hoveredButton === "settings"
-                  ? "#ffffff"
-                  : "#9ca3af",
-              display: "flex",
-              alignItems: "center",
-              padding: "0 0.75rem",
-              gap: "0.85rem",
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-              boxSizing: "border-box",
+              width: "100%", height: "44px", borderRadius: "0.5rem", textDecoration: "none",
+              backgroundColor: location.pathname === "/configuracion" ? "#4a3c32" : hoveredButton === "settings" ? "rgba(255, 255, 255, 0.08)" : "transparent",
+              color: location.pathname === "/configuracion" || hoveredButton === "settings" ? "#ffffff" : "#9ca3af",
+              display: "flex", alignItems: "center", padding: "0 0.75rem", gap: "0.85rem", cursor: "pointer", transition: "all 0.2s ease", boxSizing: "border-box"
             }}
           >
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
               <Settings size={20} />
             </div>
-            <span
-              style={{
-                fontSize: "0.9rem",
-                whiteSpace: "nowrap",
-                opacity: isHovered ? 1 : 0,
-                transition: "opacity 0.2s ease",
-              }}
-            >
-              Configuración
-            </span>
+            <span style={{ fontSize: "0.9rem", whiteSpace: "nowrap", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease" }}>Configuración</span>
           </Link>
         </div>
       )}
 
-      {/* Usuario conectado y Cerrar Sesión */}
       {user && (
-        <div
-          style={{
-            borderTop: "1px solid #3f332a",
-            paddingTop: "0.75rem",
-            marginTop: "0.5rem",
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
-          }}
-        >
+        <div style={{ borderTop: "1px solid #3f332a", paddingTop: "0.75rem", marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
           {isHovered ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "0.35rem 0.5rem",
-                borderRadius: "0.5rem",
-                backgroundColor: "rgba(255, 255, 255, 0.04)",
-                gap: "0.5rem",
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.35rem 0.5rem", borderRadius: "0.5rem", backgroundColor: "rgba(255, 255, 255, 0.04)", gap: "0.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", overflow: "hidden", minWidth: 0 }}>
-                <div
-                  style={{
-                    width: "30px",
-                    height: "30px",
-                    borderRadius: "50%",
-                    backgroundColor: "#65482b",
-                    color: "#ffffff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "0.85rem",
-                    fontWeight: "700",
-                    flexShrink: 0,
-                  }}
-                >
-                  {(profile?.nombre_completo || profile?.usuario || user.email || "U")
-                    .charAt(0)
-                    .toUpperCase()}
+                <div style={{ width: "30px", height: "30px", borderRadius: "50%", backgroundColor: "#65482b", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.85rem", fontWeight: "700", flexShrink: 0 }}>
+                  {(profile?.nombre_completo || profile?.usuario || user.email || "U").charAt(0).toUpperCase()}
                 </div>
                 <div style={{ overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0 }}>
-                  <span
-                    style={{
-                      fontSize: "0.8rem",
-                      fontWeight: "600",
-                      color: "#ffffff",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                    title={profile?.nombre_completo || profile?.usuario || user.email}
-                  >
+                  <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#ffffff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={profile?.nombre_completo || profile?.usuario || user.email}>
                     {profile?.nombre_completo || profile?.usuario || user.email}
                   </span>
-                  <span
-                    style={{
-                      fontSize: "0.7rem",
-                      color: "#84cc16",
-                      textTransform: "capitalize",
-                      fontWeight: "500",
-                    }}
-                  >
+                  <span style={{ fontSize: "0.7rem", color: "#84cc16", textTransform: "capitalize", fontWeight: "500" }}>
                     {profile?.rol || "Usuario"}
                   </span>
                 </div>
               </div>
-
               <button
-                type="button"
-                onClick={handleLogout}
-                title="Cerrar sesión"
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#ef4444",
-                  cursor: "pointer",
-                  padding: "0.35rem",
-                  borderRadius: "0.375rem",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                  transition: "background 0.2s",
-                }}
+                type="button" onClick={handleLogout} title="Cerrar sesión"
+                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: "0.35rem", borderRadius: "0.375rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background 0.2s" }}
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.15)")}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
               >
@@ -587,24 +322,14 @@ export default function Sidebar() {
             </div>
           ) : (
             <button
-              type="button"
-              onClick={handleLogout}
-              title="Cerrar sesión"
+              type="button" onClick={handleLogout} title="Cerrar sesión"
               onMouseEnter={() => setHoveredButton("logout")}
               onMouseLeave={() => setHoveredButton(null)}
               style={{
-                width: "100%",
-                height: "44px",
-                borderRadius: "0.5rem",
-                border: "none",
+                width: "100%", height: "44px", borderRadius: "0.5rem", border: "none",
                 backgroundColor: hoveredButton === "logout" ? "rgba(239, 68, 68, 0.15)" : "transparent",
                 color: hoveredButton === "logout" ? "#ef4444" : "#9ca3af",
-                display: "flex",
-                alignItems: "center",
-                padding: "0 0.75rem",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                boxSizing: "border-box",
+                display: "flex", alignItems: "center", padding: "0 0.75rem", cursor: "pointer", transition: "all 0.2s ease", boxSizing: "border-box"
               }}
             >
               <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
@@ -617,7 +342,6 @@ export default function Sidebar() {
     </aside>
   );
 
-  // Helper para renderizar los ítems principales
   function renderNavLink(item) {
     if (!puedeVer(item.key)) return null;
     const Icon = item.icon;
@@ -630,62 +354,20 @@ export default function Sidebar() {
 
     return (
       <Link
-        key={item.key}
-        to={item.path}
-        title={!isHovered ? item.label : ""}
+        key={item.key} to={item.path} title={!isHovered ? item.label : ""}
         onMouseEnter={() => setHoveredButton(item.key)}
         onMouseLeave={() => setHoveredButton(null)}
         style={{
-          width: "100%",
-          height: "44px",
-          borderRadius: "0.5rem",
-          textDecoration: "none",
-          backgroundColor: bg,
-          color: isActive ? "#ffffff" : isItemHovered ? "#e5e7eb" : "#9ca3af",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 0.75rem",
-          gap: "0.85rem",
-          cursor: "pointer",
-          position: "relative",
-          transition: "all 0.2s ease",
-          boxSizing: "border-box",
+          width: "100%", height: "44px", borderRadius: "0.5rem", textDecoration: "none",
+          backgroundColor: bg, color: isActive ? "#ffffff" : isItemHovered ? "#e5e7eb" : "#9ca3af",
+          display: "flex", alignItems: "center", padding: "0 0.75rem", gap: "0.85rem", cursor: "pointer", position: "relative", transition: "all 0.2s ease", boxSizing: "border-box"
         }}
       >
-        {isActive && (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: "15%",
-              height: "70%",
-              width: "4px",
-              backgroundColor: "#84cc16",
-              borderRadius: "0 4px 4px 0",
-            }}
-          />
-        )}
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            flexShrink: 0,
-            color: isActive ? "#84cc16" : isItemHovered ? "#ffffff" : "inherit",
-            transition: "color 0.2s ease",
-          }}
-        >
+        {isActive && <div style={{ position: "absolute", left: 0, top: "15%", height: "70%", width: "4px", backgroundColor: "#84cc16", borderRadius: "0 4px 4px 0" }} />}
+        <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: isActive ? "#84cc16" : isItemHovered ? "#ffffff" : "inherit", transition: "color 0.2s ease" }}>
           <Icon size={20} />
         </div>
-        <span
-          style={{
-            fontSize: "0.9rem",
-            fontWeight: isActive ? "600" : "400",
-            whiteSpace: "nowrap",
-            opacity: isHovered ? 1 : 0,
-            transition: "opacity 0.2s ease",
-          }}
-        >
+        <span style={{ fontSize: "0.9rem", fontWeight: isActive ? "600" : "400", whiteSpace: "nowrap", opacity: isHovered ? 1 : 0, transition: "opacity 0.2s ease" }}>
           {item.label}
         </span>
       </Link>

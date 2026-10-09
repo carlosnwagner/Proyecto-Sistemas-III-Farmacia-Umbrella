@@ -28,6 +28,12 @@ export default function MovimientosCaja() {
   const [guardando, setGuardando] = useState(false);
   const [recarga, setRecarga] = useState(0);
   const [mostrarModalNuevo, setMostrarModalNuevo] = useState(false);
+  
+  // Estados para filtros de fecha y tipo de caja
+  const [filtroCaja, setFiltroCaja] = useState('Todas');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+
   const ocupado = useRef(false);
 
   const cargarDatos = useCallback(async () => {
@@ -72,8 +78,17 @@ export default function MovimientosCaja() {
     return () => { activo = false; };
   }, [turnoActivo?.id, recarga]);
 
-  const movimientos = detalle.turnoId === turnoActivo?.id ? detalle.movimientos : [];
+  const movimientosCrudos = detalle.turnoId === turnoActivo?.id ? detalle.movimientos : [];
   
+  // Aplicar filtros de Caja y Fechas
+  const movimientos = movimientosCrudos.filter(m => {
+    const cumpleCaja = filtroCaja === 'Todas' || String(turnoActivo?.caja_id) === String(filtroCaja) || String(m.caja_id) === String(filtroCaja);
+    const fechaMov = new Date(m.fecha_hora).toISOString().split('T')[0];
+    const cumpleDesde = !fechaDesde || fechaMov >= fechaDesde;
+    const cumpleHasta = !fechaHasta || fechaMov <= fechaHasta;
+    return cumpleCaja && cumpleDesde && cumpleHasta;
+  });
+
   const totales = ['Efectivo', 'Tarjeta', 'Transferencia'].map(medio => ({
     medio,
     neto: movimientos
@@ -81,7 +96,6 @@ export default function MovimientosCaja() {
       .reduce((s, m) => s + (m.tipo === 'Ingreso' ? Number(m.importe) : -Number(m.importe)), 0),
   }));
 
-  // Cálculo dinámico del efectivo disponible considerando base inicial + movimientos en efectivo
   const efectivoMovimientos = movimientos
     .filter(m => /efectivo/i.test(m.medio_pago_nombre || m.medio || ''))
     .reduce((s, m) => s + (m.tipo === 'Ingreso' ? Number(m.importe) : -Number(m.importe)), 0);
@@ -176,8 +190,8 @@ export default function MovimientosCaja() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem', width: '100%' }}>
         <div>
           <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Gestión de Caja</span>
-          <h1 className="titulo-pagina" style={{ margin: '0.2rem 0 0.25rem 0' }}>Movimientos de caja</h1>
-          <p className="subtitulo" style={{ margin: 0 }}>Registrá y consultá las entradas y salidas manuales de dinero de tu turno actual.</p>
+          <h1 className="titulo-pagina" style={{ margin: '0.2rem 0 0.25rem 0' }}>Movimientos y saldos</h1>
+          <p className="subtitulo" style={{ margin: 0 }}>Consultá las operaciones reales de tu turno o registrá entradas y salidas manuales.</p>
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -253,17 +267,63 @@ export default function MovimientosCaja() {
           </div>
 
           <div className="tabla-contenedor" style={{ backgroundColor: '#ffffff', borderRadius: '0.75rem', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#111827', margin: 0 }}>Historial del turno</h2>
+            
+            {/* Cabecera de la tabla con el título y los filtros a la par */}
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#111827', margin: 0 }}>Historial del turno</h2>
+
+              {/* Filtros alineados a la par del título */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+                <div>
+                  <select 
+                    value={filtroCaja} 
+                    onChange={e => setFiltroCaja(e.target.value)}
+                    style={{ padding: '0.4rem 0.6rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.8rem', backgroundColor: '#fff' }}
+                  >
+                    <option value="Todas">Todas las cajas</option>
+                    {turnos.map(t => (
+                      <option key={t.caja_id || t.id} value={t.caja_id || t.id}>{t.caja || `Caja #${t.caja_id}`}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: '600' }}>Desde:</span>
+                  <input 
+                    type="date" 
+                    value={fechaDesde} 
+                    onChange={e => setFechaDesde(e.target.value)}
+                    style={{ padding: '0.35rem 0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.8rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: '600' }}>Hasta:</span>
+                  <input 
+                    type="date" 
+                    value={fechaHasta} 
+                    onChange={e => setFechaHasta(e.target.value)}
+                    style={{ padding: '0.35rem 0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.8rem' }}
+                  />
+                </div>
+
+                {(filtroCaja !== 'Todas' || fechaDesde || fechaHasta) && (
+                  <button
+                    type="button"
+                    onClick={() => { setFiltroCaja('Todas'); setFechaDesde(''); setFechaHasta(''); }}
+                    style={{ background: 'none', border: 'none', color: '#b91c1c', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', padding: '0.2rem' }}
+                  >
+                    Limpiar
+                  </button>
+                )}
               </div>
             </div>
 
             {!movimientos.length ? (
               <div style={{ padding: '3rem', textAlign: 'center', color: '#9ca3af' }}>
                 <ReceiptText size={32} color="#d1d5db" style={{ margin: '0 auto 0.5rem' }} />
-                <p style={{ fontSize: '0.9rem', fontWeight: '600', color: '#4b5563', margin: '0 0 0.2rem' }}>Sin movimientos manuales</p>
-                <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: 0 }}>Los ingresos y egresos registrados aparecerán reflejados en este listado.</p>
+                <p style={{ fontSize: '0.9rem', fontWeight: '600', color: '#4b5563', margin: '0 0 0.2rem' }}>Sin movimientos registrados</p>
+                <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: 0 }}>Los ingresos, ventas y egresos correspondientes aparecerán reflejados en este listado.</p>
               </div>
             ) : (
               <div style={{ overflowX: 'auto' }}>
