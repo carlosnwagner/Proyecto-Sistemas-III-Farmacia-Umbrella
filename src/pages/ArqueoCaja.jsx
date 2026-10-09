@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import useCajaTurnos from '../hooks/useCajaTurnos.js';
 import { monedaCaja, fechaCaja } from '../lib/cajaFormato.js';
 import { registrarArqueoReal } from '../services/cajaTurnos.js';
@@ -11,23 +11,18 @@ export default function ArqueoCaja() {
   const [contado, setContado] = useState('');
   const [mostrarModalArqueo, setMostrarModalArqueo] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [pendiente, setPendiente] = useState(null);
   const ocupado = useRef(false);
 
-  useEffect(() => {
-    if (caja.turnos && caja.turnos.length > 0 && !caja.turnoId) {
-      caja.setTurnoId(String(caja.turnos[0].id));
-    }
-  }, [caja.turnos, caja.turnoId]);
-
   const turnoActual = caja.turno || (caja.turnos || []).find(t => String(t.id) === String(caja.turnoId));
-  const efectivoEsperado = caja.detalle?.totales?.efectivo_esperado ?? turnoActual?.saldo_inicial ?? 0;
+  const efectivoEsperado = caja.detalle?.totales?.efectivo_esperado ?? null;
   
   const contadoNum = contado !== '' ? Number(contado) : null;
-  const diferencia = contadoNum !== null ? contadoNum - Number(efectivoEsperado) : null;
+  const diferencia = contadoNum !== null && efectivoEsperado !== null ? contadoNum - Number(efectivoEsperado) : null;
 
   async function guardar(e) {
     e.preventDefault();
-    if (ocupado.current || !turnoActual) return;
+    if (ocupado.current || (!pendiente && (!caja.detalle || caja.cargando || turnoActual?.estado !== 'Abierto'))) return;
     
     if (!Number.isFinite(contadoNum) || contadoNum < 0 || !/^\d+(\.\d{1,2})?$/.test(contado)) { 
       Swal.fire({ title: 'Atención', text: 'Ingresá un importe no negativo de hasta dos decimales.', icon: 'warning', customClass: { container: 'swal-top-zindex' } });
@@ -37,16 +32,18 @@ export default function ArqueoCaja() {
     ocupado.current = true;
     setGuardando(true);
     
-    const versionMovimientos = caja.detalle?.turno?.version_movimientos || 1;
-    const p = { turno: turnoActual.id, contado: contadoNum, version: versionMovimientos, clave: crypto.randomUUID() };
+    const p = pendiente || { turno: turnoActual.id, contado: contadoNum, version: caja.detalle.turno.version_movimientos, clave: crypto.randomUUID() };
+    setPendiente(p);
 
     try {
       await registrarArqueoReal(p);
+      setPendiente(null);
       setContado(''); 
       setMostrarModalArqueo(false);
       caja.actualizar();
       await Swal.fire({ title: 'Registrado', text: 'El arqueo se registró correctamente sin alterar el saldo.', icon: 'success', customClass: { container: 'swal-top-zindex' } });
     } catch (err) {
+      if (/^[0-9A-Z]{5}$/.test(err.code || '')) setPendiente(null);
       Swal.fire({ title: 'Error', text: err.message || 'No se pudo completar el arqueo.', icon: 'error', customClass: { container: 'swal-top-zindex' } });
     } finally { 
       ocupado.current = false; 
@@ -55,10 +52,11 @@ export default function ArqueoCaja() {
   }
 
   const arqueos = caja.detalle?.arqueos || [];
-  const nombreCajero = caja.detalle?.turno?.cajero_nombre || 'Carlos';
+  const nombreCajero = caja.detalle?.turno?.cajero_nombre || `Cajero #${caja.detalle?.turno?.cajero_id ?? '—'}`;
 
   return (
     <div style={{ width: '100%', margin: '0', padding: '1.5rem 2rem', boxSizing: 'border-box' }}>
+      {caja.error && <p role="alert" className="caja-error">{caja.error}</p>}
       
       {/* Encabezado Principal */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem', width: '100%' }}>
@@ -72,7 +70,7 @@ export default function ArqueoCaja() {
           <button
             type="button"
             onClick={() => setMostrarModalArqueo(true)}
-            disabled={!turnoActual || turnoActual.estado !== 'Abierto'}
+            disabled={guardando || caja.cargando || !caja.detalle || turnoActual?.estado !== 'Abierto'}
             className="boton-principal"
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap', opacity: (!turnoActual || turnoActual.estado !== 'Abierto') ? 0.5 : 1, cursor: 'pointer' }}
           >
@@ -81,7 +79,7 @@ export default function ArqueoCaja() {
 
           <button 
             type="button"
-            disabled={caja.cargando} 
+            disabled={caja.cargando || guardando || !!pendiente}
             onClick={caja.actualizar}
             style={{ background: '#ffffff', border: '1px solid #d1d5db', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: '600', color: '#374151' }}
           >
@@ -131,7 +129,7 @@ export default function ArqueoCaja() {
           <select 
             className="select-campo"
             value={caja.turnoId} 
-            disabled={caja.cargando} 
+            disabled={caja.cargando || guardando || !!pendiente}
             onChange={e => caja.setTurnoId(e.target.value)}
             style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', background: '#f9fafb', fontWeight: '600' }}
           >
@@ -210,7 +208,7 @@ export default function ArqueoCaja() {
               <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Calculator size={22} /> Registrar Arqueo de Caja
               </h3>
-              <button type="button" onClick={() => setMostrarModalArqueo(false)} style={{ background: 'none', border: 0, color: '#fff', cursor: 'pointer' }}><X size={24} /></button>
+              <button type="button" disabled={guardando || !!pendiente} onClick={() => setMostrarModalArqueo(false)} style={{ background: 'none', border: 0, color: '#fff', cursor: 'pointer' }}><X size={24} /></button>
             </div>
             
             <div style={{ padding: '2rem' }}>
@@ -220,7 +218,8 @@ export default function ArqueoCaja() {
               </div>
 
               <form onSubmit={guardar}>
-                <fieldset disabled={guardando} style={{ border: 0, padding: 0, margin: 0 }}>
+                {pendiente && !guardando && <p role="status">La respuesta quedó pendiente. Reintentá la confirmación para verificarla sin duplicar el arqueo.</p>}
+                <fieldset disabled={guardando || !!pendiente} style={{ border: 0, padding: 0, margin: 0 }}>
                   <div style={{ marginBottom: '1.5rem' }}>
                     <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', marginBottom: '0.4rem' }}>
                       Efectivo contado ($)
@@ -257,6 +256,7 @@ export default function ArqueoCaja() {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: '1.25rem', borderTop: '1px solid #e5e7eb', gap: '0.75rem' }}>
                   <button
                     type="button"
+                    disabled={guardando || !!pendiente}
                     onClick={() => setMostrarModalArqueo(false)}
                     style={{ padding: '0.7rem 1.25rem', border: '1px solid #d1d5db', backgroundColor: '#fff', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem' }}
                   >
@@ -268,7 +268,7 @@ export default function ArqueoCaja() {
                     disabled={guardando}
                     style={{ padding: '0.7rem 1.75rem', fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer' }}
                   >
-                    {guardando ? 'Registrando…' : 'Confirmar Arqueo'}
+                    {guardando ? 'Registrando…' : pendiente ? 'Reintentar confirmación' : 'Confirmar Arqueo'}
                   </button>
                 </div>
               </form>

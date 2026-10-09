@@ -81,7 +81,7 @@ export default function CierreCaja() {
     }
   }
 
-  const nombreCajero = 'Carlos';
+  const nombreCajero = caja.detalle?.turno?.cajero_nombre || `Cajero #${caja.detalle?.turno?.cajero_id ?? '—'}`;
 
   return (
     <div style={{ width: '100%', margin: '0', padding: '1.5rem 2rem', boxSizing: 'border-box' }}>

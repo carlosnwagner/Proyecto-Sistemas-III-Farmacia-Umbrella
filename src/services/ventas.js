@@ -313,7 +313,7 @@ export async function confirmarVenta(ventaPayload) {
   }));
 
   const { data, error } = await supabase
-    .rpc('confirmar_venta_desde_borrador', {
+    .rpc('confirmar_venta_caja', {
       p_id_borrador: Number(ventaPayload.id_borrador),
       p_idempotency_key: ventaPayload.idempotency_key,
       p_id_sucursal: Number(ventaPayload.id_sucursal),

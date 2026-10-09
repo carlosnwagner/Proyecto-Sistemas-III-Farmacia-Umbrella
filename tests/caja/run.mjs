@@ -40,6 +40,9 @@ try {
   started=true;
   for(const file of ['tests/caja/fixtures.sql','supabase/migrations/202610010001_hu50_movimientos_caja.sql','supabase/migrations/202610010003_hu50_retirar_modo_prueba.sql','supabase/migrations/202610070001_hu51_hu52_hu53_caja_real.sql','tests/caja/acceptance.sql']) run('psql',[...args,'-f',file]);
   console.log('PASS: permisos, saldos, arqueos, invalidación, cierre, motivo, reintentos y reapertura');
+  run('psql', [...args, '-f', 'supabase/migrations/202610090002_caja_resumen_sin_ambiguedad.sql']);
+  assert.equal(sql(identity + " select caja_resumen_turno(2)->'totales'->>'efectivo_esperado';").split('\n').at(-1).trim(), '1000');
+  console.log('PASS: consulta de resumen por RPC sin sobrecargas');
   const close=(turn,arqueo,key)=>`select caja_cerrar_turno(${turn},${arqueo},0,'','${key}');`;
   const movement=turn=>`select hu50_registrar_movimiento(${turn},'Ingreso','Concurrente',1,1,gen_random_uuid());`;
   // Movimiento confirma primero: cierre con versión vieja debe fallar.
@@ -57,6 +60,8 @@ try {
   for(const r of await Promise.all([concurrent(duplicate),concurrent(duplicate)]))assert.equal(r.code,0,r.output);
   assert.equal(sql("select count(*) from turno_caja where id=4 and estado='Cerrado'"),'1');
   console.log('PASS: cierres simultáneos con la misma clave son idempotentes');
+  for (const file of ['tests/caja/ventas-fixtures.sql', 'supabase/migrations/202609200003_hu39_confirmacion_venta_transaccional.sql', 'supabase/migrations/202610090001_hu69_confirmacion_venta_caja.sql', 'tests/caja/ventas-acceptance.sql']) run('psql', [...args, '-f', file]);
+  console.log('PASS: venta con vuelto, stock, detalle, turno correcto, reintentos, rollback de cobro y turno cerrado');
 } finally {
   if(started) run('pg_ctl',['-D',data,'-m','fast','-w','stop']);
   // Solo elimina el directorio exacto generado para este cluster temporal.

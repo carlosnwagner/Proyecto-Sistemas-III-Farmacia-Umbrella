@@ -1,0 +1,22 @@
+-- Solo para el cluster temporal del ejecutor.
+alter table sucursal add column estado boolean default true;
+alter table sucursal add column punto_venta integer default 1;
+alter table medio_pago add column codigo text;
+update medio_pago set codigo=upper(nombre);
+create table deposito(id_deposito integer primary key,id_sucursal integer,estado boolean);
+create table cliente(id_cliente integer primary key,condicion_fiscal text,aplica_percepcion_iva boolean,aplica_percepcion_iibb boolean,estado boolean);
+create table lista_precio(id_lista integer primary key,estado boolean,fecha_inicio date,fecha_fin date);
+create table articulo(id_articulo integer primary key,alicuota_iva numeric);
+create table articulo_deposito(id_articulo_deposito integer primary key,id_articulo integer,id_deposito integer,estado boolean,stock_actual numeric);
+create table detalle_lista_precio(id_lista integer,id_articulo integer,precio_final numeric);
+create table venta(id_venta integer generated always as identity primary key,id_sucursal integer,id_deposito integer,id_cliente integer,tipo_comprobante text,punto_venta integer,numero_comprobante integer,fecha timestamptz,medio_pago text,neto_21 numeric,iva_21 numeric,neto_105 numeric,iva_105 numeric,exento numeric,percepcion_iva numeric,percepcion_iibb numeric,percepciones numeric,importe_total numeric,estado text,id_lista integer,idempotency_key uuid);
+create table detalle_venta(id_venta integer,id_articulo integer,cantidad integer,precio_unitario numeric,subtotal numeric,alicuota_iva numeric);
+create table movimiento_stock(id_articulo_deposito integer,id_deposito integer,tipo_movimiento text,cantidad integer);
+create table pago_venta(id_venta integer,id_medio_pago integer,importe numeric,referencia text);
+create table venta_borrador(id_borrador bigint primary key,id_sucursal integer,id_deposito integer,idempotency_key uuid,estado text);
+insert into deposito values(1,1,true);
+insert into lista_precio values(1,true,current_date,null);
+insert into articulo values(1,21);
+insert into articulo_deposito values(1,1,1,true,10);
+insert into detalle_lista_precio values(1,1,3800);
+insert into venta_borrador values(1,1,1,'40000000-0000-0000-0000-000000000001','Borrador'),(2,1,1,'40000000-0000-0000-0000-000000000002','Borrador'),(3,1,1,'40000000-0000-0000-0000-000000000003','Borrador');

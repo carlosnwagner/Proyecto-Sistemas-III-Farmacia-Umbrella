@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Swal from 'sweetalert2';
-import { supabase } from '../lib/supabase.js';
 import { getMediosPago } from '../services/catalogos.js';
 import { getContextoCaja, getMovimientosCaja, registrarMovimientoCaja } from '../services/caja.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -47,6 +46,7 @@ export default function MovimientosCaja() {
         getContextoCaja(profile.id_usuario), 
         getMediosPago()
       ]);
+      if (contexto.error) throw new Error(contexto.error);
       if (catalogo.error) throw catalogo.error;
       
       setTurnos(contexto.turnos || []);
@@ -61,7 +61,9 @@ export default function MovimientosCaja() {
   }, [profile]);
 
   useEffect(() => {
-    cargarDatos();
+    let activo = true;
+    Promise.resolve().then(() => { if (activo) cargarDatos(); });
+    return () => { activo = false; };
   }, [cargarDatos, recarga]);
 
   const turnoActivo = turnos[0] || null;
@@ -91,12 +93,12 @@ export default function MovimientosCaja() {
 
   const totales = ['Efectivo', 'Tarjeta', 'Transferencia'].map(medio => ({
     medio,
-    neto: movimientos
+    neto: movimientosCrudos
       .filter(m => (m.medio_pago_nombre || m.medio || '').toLowerCase().includes(medio.toLowerCase()))
       .reduce((s, m) => s + (m.tipo === 'Ingreso' ? Number(m.importe) : -Number(m.importe)), 0),
   }));
 
-  const efectivoMovimientos = movimientos
+  const efectivoMovimientos = movimientosCrudos
     .filter(m => /efectivo/i.test(m.medio_pago_nombre || m.medio || ''))
     .reduce((s, m) => s + (m.tipo === 'Ingreso' ? Number(m.importe) : -Number(m.importe)), 0);
 

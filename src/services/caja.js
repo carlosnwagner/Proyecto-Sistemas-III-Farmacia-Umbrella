@@ -3,6 +3,9 @@
 // ==============================================================================
 
 import { supabase } from '../lib/supabase.js';
+import { crearConfirmacionMovimiento } from '../lib/confirmacionMovimiento.js';
+
+const confirmaciones = new Map();
 
 export async function getSucursalesAutorizadas(usuario) {
   try {
@@ -148,11 +151,20 @@ export async function getMovimientosCaja(turnoId) {
     }));
   } catch (err) {
     console.error('Error en getMovimientosCaja:', err);
-    return [];
+    throw err;
   }
 }
 
 export async function registrarMovimientoCaja(payload) {
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  if (!session) throw new Error('Iniciá sesión para registrar movimientos.');
+  const usuario = session.user.id;
+  if (!confirmaciones.has(usuario)) confirmaciones.set(usuario, crearConfirmacionMovimiento());
+  return confirmaciones.get(usuario)(payload, ejecutarMovimientoCaja);
+}
+
+async function ejecutarMovimientoCaja(payload) {
   try {
     const valorImporte = Number(payload.importe ?? 0);
     const medioPagoIdNum = payload.medioPagoId && !isNaN(Number(payload.medioPagoId)) ? Number(payload.medioPagoId) : null;
