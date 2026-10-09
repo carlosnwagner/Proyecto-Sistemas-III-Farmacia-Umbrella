@@ -1,16 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import { supabase } from '../lib/supabase.js';
 import { getMediosPago } from '../services/catalogos.js';
 import { getContextoCaja, getMovimientosCaja, registrarMovimientoCaja } from '../services/caja.js';
-import { Wallet, ArrowDownLeft, ArrowUpRight, RefreshCw, RotateCcw, CreditCard, Landmark, ReceiptText } from 'lucide-react';
+import { useAuth } from '../context/AuthContext.jsx';
+import { Wallet, ArrowDownLeft, ArrowUpRight, RefreshCw, RotateCcw, CreditCard, Landmark, ReceiptText, PlusCircle, X } from 'lucide-react';
+import '../App.css';
 
 const pesos = (value) => Number(value).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
 const inicial = { tipo: 'Ingreso', concepto: '', importe: '', medioPagoId: '' };
 
+const capitalizarTexto = (str) => {
+  if (!str) return '';
+  const limpio = str.trimStart();
+  if (limpio.length === 0) return '';
+  return limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase();
+};
+
 export default function MovimientosCaja() {
+  const { profile } = useAuth();
   const [turnos, setTurnos] = useState([]);
-  const [turnoId, setTurnoId] = useState('');
   const [medios, setMedios] = useState([]);
   const [detalle, setDetalle] = useState({ turnoId: '', movimientos: [] });
   const [form, setForm] = useState(inicial);
@@ -18,402 +27,416 @@ export default function MovimientosCaja() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [recarga, setRecarga] = useState(0);
-  const [pendiente, setPendiente] = useState(null);
+  const [mostrarModalNuevo, setMostrarModalNuevo] = useState(false);
   const ocupado = useRef(false);
 
-  useEffect(() => {
-    let activo = true;
-    async function cargar() {
-      setCargando(true);
-      try {
-        const [contexto, catalogo] = await Promise.all([getContextoCaja(), getMediosPago()]);
-        if (catalogo.error) throw catalogo.error;
-        if (!activo) return;
-        
-        setTurnos(contexto.turnos || []);
-        setMedios((catalogo.data || []).filter(m => /efectivo|tarjeta|transferencia/i.test(m.nombre)));
-        setTurnoId(actual => contexto.turnos?.some(t => String(t.id) === actual)
-          ? actual : String(contexto.turnos?.[0]?.id || ''));
-        setError('');
-      } catch (e) {
-        if (activo) { 
-          setError(e.message); 
-          setTurnos([]); 
-          setTurnoId(''); 
-        }
-      } finally { 
-        if (activo) setCargando(false); 
-      }
+  const cargarDatos = useCallback(async () => {
+    if (!profile?.id_usuario) {
+      setCargando(false);
+      return;
     }
-    cargar();
-    return () => { activo = false; };
-  }, [recarga]);
+    setCargando(true);
+    try {
+      const [contexto, catalogo] = await Promise.all([
+        getContextoCaja(profile.id_usuario), 
+        getMediosPago()
+      ]);
+      if (catalogo.error) throw catalogo.error;
+      
+      setTurnos(contexto.turnos || []);
+      setMedios((catalogo.data || []).filter(m => /efectivo|tarjeta|transferencia/i.test(m.nombre)));
+      setError('');
+    } catch (e) {
+      setError(e.message); 
+      setTurnos([]); 
+    } finally { 
+      setCargando(false); 
+    }
+  }, [profile]);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      setRecarga(n => n + 1);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+    cargarDatos();
+  }, [cargarDatos, recarga]);
+
+  const turnoActivo = turnos[0] || null;
 
   useEffect(() => {
     let activo = true;
-    if (turnoId) {
-      getMovimientosCaja(turnoId).then(data => {
-        if (activo) setDetalle({ turnoId, movimientos: data });
+    if (turnoActivo?.id) {
+      getMovimientosCaja(turnoActivo.id).then(res => {
+        if (activo) setDetalle({ turnoId: turnoActivo.id, movimientos: res || [] });
       }).catch(e => { 
         if (activo) setError(e.message); 
       });
     }
     return () => { activo = false; };
-  }, [turnoId, recarga]);
+  }, [turnoActivo?.id, recarga]);
 
-  const turno = turnos.find(t => String(t.id) === turnoId);
-  const movimientos = detalle.turnoId === turnoId ? detalle.movimientos : [];
+  const movimientos = detalle.turnoId === turnoActivo?.id ? detalle.movimientos : [];
   
   const totales = ['Efectivo', 'Tarjeta', 'Transferencia'].map(medio => ({
     medio,
-    neto: movimientos.filter(m => m.medio === medio).reduce((s, m) => s + (m.tipo === 'Ingreso' ? Number(m.importe) : -Number(m.importe)), 0),
+    neto: movimientos
+      .filter(m => (m.medio_pago_nombre || m.medio || '').toLowerCase().includes(medio.toLowerCase()))
+      .reduce((s, m) => s + (m.tipo === 'Ingreso' ? Number(m.importe) : -Number(m.importe)), 0),
   }));
 
-  async function confirmar(payload, mensaje) {
-    if (ocupado.current) return;
-    ocupado.current = true;
-    setGuardando(true);
-    try {
-      const decision = await Swal.fire({ 
-        title: 'Confirmar movimiento', 
-        text: mensaje, 
-        icon: 'question', 
-        showCancelButton: true, 
-        confirmButtonText: 'Confirmar', 
-        cancelButtonText: 'Cancelar' 
-      });
-      if (!decision.isConfirmed) {
-        ocupado.current = false;
-        setGuardando(false);
-        return;
-      }
+  // Cálculo dinámico del efectivo disponible considerando base inicial + movimientos en efectivo
+  const efectivoMovimientos = movimientos
+    .filter(m => /efectivo/i.test(m.medio_pago_nombre || m.medio || ''))
+    .reduce((s, m) => s + (m.tipo === 'Ingreso' ? Number(m.importe) : -Number(m.importe)), 0);
 
-      const operacion = pendiente || { ...payload, clave: crypto.randomUUID() };
-      setPendiente(operacion);
-      
-      await registrarMovimientoCaja(operacion);
-      
-      setPendiente(null);
-      setForm(inicial);
-      setRecarga(n => n + 1);
-      await Swal.fire('Registrado', 'El movimiento quedó registrado correctamente.', 'success');
-    } catch (e) {
-      const rechazo = /^[0-9A-Z]{5}$/.test(e.code || '');
-      if (rechazo) setPendiente(null);
-      await Swal.fire('No se pudo confirmar', `${e.message}${rechazo ? '' : '. Podés reintentar la misma confirmación.'}`, 'error');
-    } finally { 
-      ocupado.current = false; 
-      setGuardando(false); 
-    }
-  }
+  const efectivoDisponible = Number(turnoActivo?.saldo_inicial || 0) + efectivoMovimientos;
 
-  function enviar(e) {
+  async function enviar(e) {
     e.preventDefault();
-    if (!turno || guardando) return;
+    if (!turnoActivo || guardando || ocupado.current) return;
     
     const importe = Number(form.importe);
-    if (!Number.isFinite(importe) || importe <= 0 || !/^\d+(\.\d{1,2})?$/.test(form.importe) || !form.concepto.trim()) {
-      setError('Ingresá un concepto y un importe positivo con hasta dos decimales.'); 
+    const conceptoLimpio = capitalizarTexto(form.concepto);
+
+    if (!Number.isFinite(importe) || importe <= 0 || !conceptoLimpio || !form.medioPagoId) {
+      Swal.fire({ title: 'Atención', text: 'Completá todos los campos obligatorios correctamente.', icon: 'warning', customClass: { container: 'swal-top-zindex' } });
       return;
     }
 
-    const medioSeleccionado = medios.find(m => String(m.id_medio_pago) === form.medioPagoId);
+    const medioSeleccionado = medios.find(m => String(m.id_medio_pago) === String(form.medioPagoId));
     if (form.tipo === 'Egreso' && medioSeleccionado && /efectivo/i.test(medioSeleccionado.nombre)) {
-      const efectivoDisponible = Number(turno.efectivo_esperado || 0);
       if (importe > efectivoDisponible) {
-        setError(`No se puede realizar el egreso: el importe excede el efectivo disponible en caja (${pesos(efectivoDisponible)}).`);
+        Swal.fire({ title: 'Fondos insuficientes', text: `No se puede realizar el egreso: excede el efectivo disponible (${pesos(efectivoDisponible)}).`, icon: 'error', customClass: { container: 'swal-top-zindex' } });
         return;
       }
     }
 
+    ocupado.current = true;
+    setGuardando(true);
     setError('');
-    confirmar({ 
-      turnoId: turno.id, 
-      tipo: form.tipo,
-      concepto: form.concepto.trim(), 
-      importe, 
-      medioPagoId: form.medioPagoId 
-    }, `${form.tipo} de ${pesos(importe)} · ${medioSeleccionado?.nombre} · ${turno.caja} · Sucursal ${turno.sucursal_id} · ${form.concepto.trim()}`);
+
+    try {
+      await registrarMovimientoCaja({
+        turnoId: turnoActivo.id,
+        tipo: form.tipo,
+        concepto: conceptoLimpio,
+        importe,
+        medioPagoId: form.medioPagoId
+      });
+
+      setForm(inicial);
+      setMostrarModalNuevo(false);
+      setRecarga(n => n + 1);
+      await Swal.fire({ title: 'Registrado', text: 'El movimiento quedó registrado correctamente.', icon: 'success', customClass: { container: 'swal-top-zindex' } });
+    } catch (err) {
+      Swal.fire({ title: 'Error', text: err.message || 'Ocurrió un error al registrar el movimiento.', icon: 'error', customClass: { container: 'swal-top-zindex' } });
+    } finally {
+      ocupado.current = false;
+      setGuardando(false);
+    }
   }
 
   async function revertir(movimiento) {
-    if (ocupado.current || pendiente) return;
-    const { value: motivo, isConfirmed } = await Swal.fire({ 
+    if (ocupado.current) return;
+    const { value: motivoRaw, isConfirmed } = await Swal.fire({ 
       title: `Revertir movimiento #${movimiento.id}`, 
       input: 'text', 
       inputLabel: 'Motivo obligatorio', 
       showCancelButton: true, 
       confirmButtonText: 'Continuar', 
       cancelButtonText: 'Cancelar', 
-      inputValidator: value => !value?.trim() ? 'Ingresá el motivo.' : undefined 
+      inputValidator: value => !value?.trim() ? 'Ingresá el motivo.' : undefined,
+      customClass: { container: 'swal-top-zindex' }
     });
     
-    if (isConfirmed) {
-      confirmar({ 
-        turnoId: movimiento.turno_id, 
-        originalId: movimiento.id, 
-        concepto: motivo.trim(),
-        tipo: movimiento.tipo === 'Ingreso' ? 'Egreso' : 'Ingreso',
-        importe: movimiento.importe,
-        medioPagoId: movimiento.medio_pago_id
-      }, `Reversión completa del ${movimiento.tipo.toLowerCase()} de ${pesos(movimiento.importe)}. Motivo: ${motivo.trim()}`);
+    if (isConfirmed && motivoRaw) {
+      const motivo = capitalizarTexto(motivoRaw);
+      ocupado.current = true;
+      setGuardando(true);
+      try {
+        await registrarMovimientoCaja({
+          turnoId: movimiento.turno_id,
+          originalId: movimiento.id,
+          concepto: motivo,
+          tipo: movimiento.tipo === 'Ingreso' ? 'Egreso' : 'Ingreso',
+          importe: movimiento.importe,
+          medioPagoId: movimiento.medio_pago_id
+        });
+        setRecarga(n => n + 1);
+        await Swal.fire({ title: 'Revertido', text: 'La reversión se completó con éxito.', icon: 'success', customClass: { container: 'swal-top-zindex' } });
+      } catch (err) {
+        Swal.fire({ title: 'Error', text: err.message || 'Error al procesar la reversión.', icon: 'error', customClass: { container: 'swal-top-zindex' } });
+      } finally {
+        ocupado.current = false;
+        setGuardando(false);
+      }
     }
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6 text-slate-800">
-      <div className="flex justify-between items-center mb-6">
+    <div style={{ width: '100%', margin: '0', padding: '1.5rem 2rem', boxSizing: 'border-box' }}>
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem', width: '100%' }}>
         <div>
-          <span className="text-xs font-bold tracking-wider text-emerald-700 uppercase">Gestión de Caja</span>
-          <h1 className="text-2xl font-bold text-slate-900">Movimientos de caja</h1>
-          <p className="text-sm text-slate-500">Registrá las entradas y salidas de dinero de tu turno actual.</p>
+          <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Gestión de Caja</span>
+          <h1 className="titulo-pagina" style={{ margin: '0.2rem 0 0.25rem 0' }}>Movimientos de caja</h1>
+          <p className="subtitulo" style={{ margin: 0 }}>Registrá y consultá las entradas y salidas manuales de dinero de tu turno actual.</p>
         </div>
-        <button 
-          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition flex items-center gap-2 cursor-pointer disabled:opacity-50" 
-          disabled={guardando || cargando} 
-          onClick={() => setRecarga(n => n + 1)}
-        >
-          <RefreshCw size={16} /> Actualizar
-        </button>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button
+            type="button"
+            onClick={() => setMostrarModalNuevo(true)}
+            disabled={!turnoActivo}
+            className="boton-principal"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem', whiteSpace: 'nowrap', opacity: !turnoActivo ? 0.5 : 1 }}
+          >
+            <PlusCircle size={16} /> + Nuevo Movimiento
+          </button>
+
+          <button 
+            type="button"
+            onClick={() => setRecarga(n => n + 1)}
+            disabled={guardando || cargando}
+            style={{ background: '#ffffff', border: '1px solid #d1d5db', padding: '0.5rem 1rem', borderRadius: '0.375rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: '600', color: '#374151' }}
+          >
+            <RefreshCw size={16} /> Actualizar
+          </button>
+        </div>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6 text-sm" role="alert">{error}</div>}
+      {error && <div style={{ backgroundColor: '#fee2e2', border: '1px solid #f87171', color: '#b91c1c', padding: '0.75rem 1rem', borderRadius: '0.5rem', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{error}</div>}
 
       {cargando ? (
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center text-slate-500" role="status">Cargando cajas y turnos autorizados…</div>
-      ) : !turnos.length ? (
-        <div className="bg-white p-12 rounded-xl shadow-sm border border-slate-200 text-center">
-          <Wallet className="mx-auto text-slate-400 mb-3" size={36} />
-          <h2 className="text-lg font-semibold text-slate-800 mb-1">No hay un turno abierto</h2>
-          <p className="text-sm text-slate-500">Necesitás iniciar sesión con permisos de caja y tener un turno abierto para registrar movimientos manuales.</p>
+        <div style={{ padding: '3rem', textAlign: 'center', color: '#6b7280' }}>Cargando cajas y turnos autorizados…</div>
+      ) : !turnoActivo ? (
+        <div style={{ backgroundColor: '#fff', padding: '3rem', textAlign: 'center', borderRadius: '0.75rem', border: '1px solid #e5e7eb' }}>
+          <Wallet size={36} color="#65482b" style={{ margin: '0 auto 1rem' }} />
+          <h2 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#111827', margin: '0 0 0.25rem' }}>No hay un turno abierto</h2>
+          <p style={{ fontSize: '0.85rem', color: '#6b7280', margin: 0 }}>Necesitás iniciar sesión con permisos de cajero y tener un turno abierto para registrar movimientos manuales.</p>
         </div>
       ) : (
         <>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div style={{ backgroundColor: '#ffffff', padding: '1.25rem 1.5rem', borderRadius: '0.75rem', border: '1px solid #e5e7eb', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 mb-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Turno abierto
+              <span style={{ backgroundColor: '#f0fdf4', color: '#166534', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.3rem' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#166534' }}></span> Turno abierto
               </span>
-              <p className="text-xs text-slate-500">Los movimientos manuales se registrarán en esta sesión activa.</p>
+              <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: 0 }}>Los movimientos manuales se registrarán en esta sesión activa.</p>
             </div>
-            <label className="text-sm font-medium text-slate-700 flex flex-col gap-1 w-full md:w-auto">
-              Seleccioná tu turno
-              <select 
-                className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                value={turnoId} 
-                disabled={guardando || !!pendiente} 
-                onChange={e => setTurnoId(e.target.value)}
-              >
-                {turnos.map(t => (
-                  <option key={t.id} value={t.id}>{t.caja} · Sucursal {t.sucursal_id} · Turno #{t.id}</option>
-                ))}
-              </select>
-            </label>
+            <div style={{ backgroundColor: '#f9fafb', padding: '0.5rem 1rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
+              <span style={{ fontSize: '0.7rem', color: '#6b7280', display: 'block', fontWeight: '700', textTransform: 'uppercase' }}>Turno Asignado</span>
+              <strong style={{ fontSize: '0.9rem', color: '#111827' }}>{turnoActivo.caja} · Sucursal {turnoActivo.sucursal_id} · Turno #{turnoActivo.id}</strong>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-emerald-900 text-white p-5 rounded-xl shadow-sm flex flex-col justify-between">
-              <div className="flex justify-between items-start mb-4">
-                <span className="text-xs font-medium text-emerald-200 uppercase tracking-wider">Efectivo disponible</span>
-                <Wallet size={20} className="text-emerald-300" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ backgroundColor: '#166534', color: '#ffffff', padding: '1.25rem', borderRadius: '0.75rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: '#dcfce7' }}>Efectivo disponible</span>
+                <Wallet size={22} color="#dcfce7" />
               </div>
               <div>
-                <strong className="text-2xl font-bold tracking-tight">{pesos(turno?.efectivo_esperado || 0)}</strong>
-                <p className="text-xs text-emerald-300 mt-1">Base inicial: {pesos(turno?.saldo_inicial || 0)}</p>
+                <strong style={{ fontSize: '1.6rem', fontWeight: '800' }}>{pesos(efectivoDisponible)}</strong>
+                <p style={{ fontSize: '0.75rem', color: '#dcfce7', margin: '0.25rem 0 0' }}>Base inicial: {pesos(turnoActivo?.saldo_inicial || 0)}</p>
               </div>
             </div>
             {totales.filter(t => t.medio !== 'Efectivo').map(t => (
-              <div key={t.medio} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
-                <div className="flex justify-between items-start mb-4">
-                  <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">{t.medio}</span>
-                  {t.medio === 'Tarjeta' ? <CreditCard size={20} className="text-slate-400" /> : <Landmark size={20} className="text-slate-400" />}
+              <div key={t.medio} style={{ backgroundColor: '#ffffff', padding: '1.25rem', borderRadius: '0.75rem', border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', color: '#6b7280' }}>{t.medio}</span>
+                  {t.medio === 'Tarjeta' ? <CreditCard size={22} color="#9ca3af" /> : <Landmark size={22} color="#9ca3af" />}
                 </div>
                 <div>
-                  <strong className="text-2xl font-bold text-slate-900 tracking-tight">{pesos(t.neto)}</strong>
-                  <p className="text-xs text-slate-400 mt-1">Neto de movimientos del turno</p>
+                  <strong style={{ fontSize: '1.6rem', fontWeight: '800', color: '#111827' }}>{pesos(t.neto)}</strong>
+                  <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: '0.25rem 0 0' }}>Neto de movimientos del turno</p>
                 </div>
               </div>
             ))}
           </div>
 
-          <form onSubmit={enviar} className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
-            <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
+          <div className="tabla-contenedor" style={{ backgroundColor: '#ffffff', borderRadius: '0.75rem', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Nuevo movimiento</h2>
-                <p className="text-xs text-slate-500">Completá los datos requeridos para la trazabilidad.</p>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: '700', color: '#111827', margin: 0 }}>Historial del turno</h2>
               </div>
-              <ReceiptText size={22} className="text-slate-400" />
             </div>
 
-            <fieldset disabled={guardando || !!pendiente} className="space-y-6">
-              <div className="grid grid-cols-2 gap-3 max-w-md">
-                {['Ingreso', 'Egreso'].map(tipo => (
-                  <button 
-                    type="button" 
-                    key={tipo} 
-                    className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border text-sm font-semibold transition cursor-pointer ${
-                      form.tipo === tipo 
-                        ? tipo === 'Ingreso' ? 'bg-emerald-50 border-emerald-600 text-emerald-800' : 'bg-red-50 border-red-600 text-red-800' 
-                        : 'border-slate-200 hover:bg-slate-50 text-slate-600'
-                    }`}
-                    onClick={() => setForm({ ...form, tipo })}
-                  >
-                    {tipo === 'Ingreso' ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
-                    {tipo}
-                  </button>
-                ))}
+            {!movimientos.length ? (
+              <div style={{ padding: '3rem', textAlign: 'center', color: '#9ca3af' }}>
+                <ReceiptText size={32} color="#d1d5db" style={{ margin: '0 auto 0.5rem' }} />
+                <p style={{ fontSize: '0.9rem', fontWeight: '600', color: '#4b5563', margin: '0 0 0.2rem' }}>Sin movimientos manuales</p>
+                <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: 0 }}>Los ingresos y egresos registrados aparecerán reflejados en este listado.</p>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-1">
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Concepto obligatorio</label>
-                  <input 
-                    required 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="Ej.: Pago de servicios" 
-                    value={form.concepto} 
-                    onChange={e => setForm({ ...form, concepto: e.target.value })} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Importe en pesos ($)</label>
-                  <input 
-                    required 
-                    type="number" 
-                    min="0.01" 
-                    max="999999999999.99" 
-                    step="0.01" 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="0,00" 
-                    value={form.importe} 
-                    onChange={e => setForm({ ...form, importe: e.target.value })} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Medio de pago</label>
-                  <select 
-                    required 
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    value={form.medioPagoId} 
-                    onChange={e => setForm({ ...form, medioPagoId: e.target.value })}
-                  >
-                    <option value="">Seleccioná un medio</option>
-                    {medios.map(m => <option key={m.id_medio_pago} value={m.id_medio_pago}>{m.nombre}</option>)}
-                  </select>
-                </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="tabla-facturas" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                      <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase' }}>Movimiento</th>
+                      <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase' }}>Concepto</th>
+                      <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase' }}>Importe</th>
+                      <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase' }}>Medio</th>
+                      <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase' }}>Estado</th>
+                      <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase', textAlign: 'right' }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movimientos.map(m => {
+                      const revertido = movimientos.some(r => r.movimiento_original_id === m.id);
+                      return (
+                        <tr key={m.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                          <td style={{ padding: '0.85rem 1rem' }}>
+                            <span style={{ display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700', backgroundColor: m.tipo === 'Ingreso' ? '#dcfce7' : '#fee2e2', color: m.tipo === 'Ingreso' ? '#166534' : '#b91c1c' }}>
+                              {m.tipo}
+                            </span>
+                            <span style={{ display: 'block', fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.2rem' }}>#{m.id} · {new Date(m.fecha_hora).toLocaleString('es-AR')}</span>
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', color: '#374151', fontWeight: '600', fontSize: '0.85rem' }}>
+                            {m.concepto}
+                            {m.movimiento_original_id && <span style={{ display: 'block', fontSize: '0.7rem', color: '#9ca3af' }}>Reversión del movimiento #{m.movimiento_original_id}</span>}
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', fontWeight: '800', fontSize: '0.9rem', color: m.tipo === 'Ingreso' ? '#166534' : '#b91c1c' }}>
+                            {m.tipo === 'Ingreso' ? '+' : '−'} {pesos(m.importe)}
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', color: '#4b5563', fontSize: '0.85rem' }}>{m.medio_pago_nombre || m.medio || '-'}</td>
+                          <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem', fontWeight: '600', color: '#4b5563' }}>
+                            {revertido ? 'Revertido' : m.origen === 'Reversion' ? 'Reversión' : 'Confirmado'}
+                          </td>
+                          <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                            {m.origen === 'Manual' && !revertido && (
+                              <button 
+                                type="button"
+                                disabled={guardando} 
+                                onClick={() => revertir(m)}
+                                style={{ padding: '0.35rem 0.75rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: '0.375rem', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                              >
+                                <RotateCcw size={12} /> Revertir
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            </fieldset>
-
-            <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-              <span className="text-xs text-slate-400">La fecha, caja, sucursal y usuario quedan vinculados automáticamente.</span>
-              {!pendiente && (
-                <button 
-                  className="px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-medium rounded-xl text-sm transition shadow-sm cursor-pointer disabled:opacity-50"
-                  disabled={guardando || !turno}
-                >
-                  {guardando ? 'Registrando…' : 'Registrar ' + form.tipo.toLowerCase()}
-                </button>
-              )}
-            </div>
-          </form>
+            )}
+          </div>
         </>
       )}
 
-      {pendiente && (
-        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 flex justify-between items-center" role="status">
-          <p className="text-sm text-amber-800">Hay una confirmación pendiente. Reintentá para verificar el estado en la base de datos sin duplicar.</p>
-          <button 
-            className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-sm font-medium transition cursor-pointer" 
-            disabled={guardando} 
-            onClick={() => confirmar(pendiente, 'Reintentar la misma operación')}
-          >
-            Reintentar confirmación
-          </button>
-        </div>
-      )}
-
-      {turno && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Historial del turno</h2>
-              <p className="text-xs text-slate-500">Movimientos confirmados e inmutables (corrección mediante reversión).</p>
+      {mostrarModalNuevo && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050, padding: '1rem' }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '0.85rem', maxWidth: '640px', width: '100%', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+            
+            <div style={{ backgroundColor: '#65482b', color: '#ffffff', padding: '1.5rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700' }}>Registrar entrada o salida manual</h3>
+              <button type="button" onClick={() => setMostrarModalNuevo(false)} style={{ background: 'none', border: 0, color: '#fff', cursor: 'pointer' }}><X size={24} /></button>
             </div>
-            <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold">{movimientos.length}</span>
+            
+            <div style={{ padding: '2rem' }}>
+              <form onSubmit={enviar}>
+                <fieldset disabled={guardando} style={{ border: 0, padding: 0, margin: 0 }}>
+                  
+                  <div style={{ display: 'flex', gap: '1rem', maxWidth: '360px', marginBottom: '1.5rem' }}>
+                    {['Ingreso', 'Egreso'].map(tipo => (
+                      <button 
+                        type="button" 
+                        key={tipo} 
+                        style={{
+                          flex: 1, padding: '0.75rem 1rem', borderRadius: '0.5rem', border: form.tipo === tipo ? (tipo === 'Ingreso' ? '2px solid #166534' : '2px solid #dc2626') : '1px solid #d1d5db',
+                          backgroundColor: form.tipo === tipo ? (tipo === 'Ingreso' ? '#f0fdf4' : '#fef2f2') : '#ffffff',
+                          color: form.tipo === tipo ? (tipo === 'Ingreso' ? '#166534' : '#dc2626') : '#4b5563',
+                          fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer'
+                        }}
+                        onClick={() => setForm({ ...form, tipo })}
+                      >
+                        {tipo === 'Ingreso' ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
+                        {tipo}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Concepto obligatorio</label>
+                      <input 
+                        required 
+                        className="campo-entrada"
+                        placeholder="Ej.: Pago de servicios o retiro de cambio" 
+                        value={form.concepto} 
+                        onChange={e => {
+                          const val = e.target.value.startsWith(' ') ? e.target.value.trimStart() : e.target.value;
+                          setForm({ ...form, concepto: val });
+                        }}
+                        onBlur={() => {
+                          setForm(prev => ({ ...prev, concepto: capitalizarTexto(prev.concepto) }));
+                        }}
+                        style={{ width: '100%', padding: '0.75rem', fontSize: '1rem' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Importe en pesos ($)</label>
+                      <input 
+                        required 
+                        type="number" 
+                        min="0.01" 
+                        step="0.01" 
+                        onKeyDown={(e) => {
+                          if (e.key === '-' || e.key === 'e') e.preventDefault();
+                        }}
+                        className="campo-entrada"
+                        placeholder="0.00" 
+                        value={form.importe} 
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '' || Number(val) >= 0) {
+                            setForm({ ...form, importe: val });
+                          }
+                        }}
+                        style={{ width: '100%', padding: '0.75rem', fontSize: '1rem' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Medio de pago</label>
+                      <select 
+                        required 
+                        className="select-campo"
+                        value={form.medioPagoId} 
+                        onChange={e => setForm({ ...form, medioPagoId: e.target.value })}
+                        style={{ width: '100%', padding: '0.75rem', fontSize: '1rem' }}
+                      >
+                        <option value="">Seleccioná un medio</option>
+                        {medios.map(m => <option key={m.id_medio_pago} value={m.id_medio_pago}>{m.nombre}</option>)}
+                      </select>
+                    </div>
+
+                  </div>
+                </fieldset>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: '1.25rem', borderTop: '1px solid #e5e7eb', gap: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setMostrarModalNuevo(false)}
+                    style={{ padding: '0.7rem 1.25rem', border: '1px solid #d1d5db', backgroundColor: '#fff', borderRadius: '0.375rem', fontWeight: '600', cursor: 'pointer', fontSize: '0.9rem' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    className="boton-principal"
+                    disabled={guardando}
+                    style={{ padding: '0.7rem 1.75rem', fontWeight: '700', fontSize: '0.9rem' }}
+                  >
+                    {guardando ? 'Registrando…' : 'Registrar ' + form.tipo.toLowerCase()}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-
-          {!movimientos.length ? (
-            <div className="p-12 text-center text-slate-400">
-              <ReceiptText className="mx-auto mb-2 text-slate-300" size={32} />
-              <p className="text-sm font-medium text-slate-600">Sin movimientos manuales</p>
-              <p className="text-xs text-slate-400">Los ingresos y egresos registrados aparecerán reflejados en este listado.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
-                    <th className="p-4 font-semibold">Movimiento</th>
-                    <th className="p-4 font-semibold">Concepto</th>
-                    <th className="p-4 font-semibold">Importe</th>
-                    <th className="p-4 font-semibold">Medio</th>
-                    <th className="p-4 font-semibold">Usuario</th>
-                    <th className="p-4 font-semibold">Estado</th>
-                    <th className="p-4 font-semibold text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {movimientos.map(m => {
-                    const revertido = movimientos.some(r => r.movimiento_original_id === m.id);
-                    return (
-                      <tr key={m.id} className="hover:bg-slate-50/50">
-                        <td className="p-4">
-                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${m.tipo === 'Ingreso' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                            {m.tipo}
-                          </span>
-                          <span className="block text-xs text-slate-400 mt-0.5">#{m.id} · {new Date(m.fecha_hora).toLocaleString('es-AR')}</span>
-                        </td>
-                        <td className="p-4 text-slate-700 font-medium">
-                          {m.concepto}
-                          {m.movimiento_original_id && <span className="block text-xs text-slate-400">Reversión del movimiento #{m.movimiento_original_id}</span>}
-                        </td>
-                        <td className={`p-4 font-bold ${m.tipo === 'Ingreso' ? 'text-emerald-700' : 'text-red-700'}`}>
-                          {m.tipo === 'Ingreso' ? '+' : '−'} {pesos(m.importe)}
-                        </td>
-                        <td className="p-4 text-slate-600">{m.medio}</td>
-                        <td className="p-4 text-slate-600">Usuario #{m.usuario_id}</td>
-                        <td className="p-4">
-                          <span className="text-xs font-medium text-slate-600">
-                            {revertido ? 'Revertido' : m.origen === 'Reversion' ? 'Reversión' : 'Confirmado'}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right">
-                          {m.origen === 'Manual' && !revertido && (
-                            <button 
-                              className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50" 
-                              disabled={guardando || !!pendiente} 
-                              onClick={() => revertir(m)}
-                            >
-                              <RotateCcw size={12} /> Revertir
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       )}
+
     </div>
   );
 }
