@@ -18,6 +18,7 @@ import MovimientosCaja from "./pages/MovimientosCaja.jsx";
 import ArqueoCaja from "./pages/ArqueoCaja.jsx";
 import CierreCaja from "./pages/CierreCaja.jsx";
 import Login from "./pages/login.jsx";
+import ResumenFinanciero from "./pages/ResumenFinanciero.jsx";
 import { AuthProvider, ProtectedRoute, RoleRoute, HomeRedirect } from "./context/AuthContext.jsx";
 import { ROLES } from "./config/roles.js";
 
@@ -80,7 +81,7 @@ export default function App() {
               <Route path="/inventario-deposito" element={<InventarioDeposito />} />
               <Route path="/listas-precios" element={<ListasPrecios />} />
               <Route path="/clientes" element={<ClientesVentas />} />
-              <Route path="/reportes" element={<PaginaEnConstruccion titulo="Reportes" />} />
+              <Route path="/reportes" element={<ResumenFinanciero />} />
             </Route>
           </Route>
         </Routes>

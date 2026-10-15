@@ -1,0 +1,28 @@
+.finanzas { color: #24201c; max-width: 1400px; margin: 0 auto; }
+.finanzas h1 { font-size: 1.9rem; margin: 0 0 .5rem; }
+.finanzas header > p { color: #6b625b; }
+.finanzas-seccion { text-transform: uppercase; letter-spacing: .1em; font-size: .75rem; font-weight: 700; }
+.finanzas-panel { background: white; border: 1px solid #e5e0db; border-radius: .75rem; padding: 1.25rem; margin: 1rem 0; }
+.finanzas-filtros, .finanzas-conciliar { display: flex; align-items: end; gap: 1rem; flex-wrap: wrap; }
+.finanzas label { display: flex; flex-direction: column; gap: .4rem; font-size: .85rem; font-weight: 600; }
+.finanzas input, .finanzas select { padding: .65rem; border-radius: .4rem; border: 1px solid #bfb7b0; background: white; min-height: 42px; box-sizing: border-box; font: inherit; }
+.finanzas button { background: #65482b; color: white; border: none; border-radius: .4rem; padding: .75rem 1rem; cursor: pointer; font-weight: 600; }
+.finanzas button:disabled { opacity: .5; cursor: wait; }
+.finanzas :focus-visible { outline: 3px solid #739d36; outline-offset: 3px; }
+.finanzas-totales { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; }
+.finanzas h2 { font-size: 1rem; margin-top: 0; }
+.finanzas-totales strong { display: block; font-size: clamp(1.3rem,2.4vw,2rem); overflow-wrap: anywhere; }
+.finanzas .ingreso { border-top: 4px solid #357345; }
+.finanzas .egreso { border-top: 4px solid #b55342; }
+.finanzas .neto { border-top: 4px solid #65482b; }
+.finanzas-error { color: #a52a20; }
+.finanzas-pendientes { border-left: 4px solid #a16b17; }
+.finanzas-pendientes li { padding: 1rem 0; border-bottom: 1px solid #e5e0db; }
+.finanzas-tabla { overflow-x: auto; }
+.finanzas table { border-collapse: collapse; width: 100%; text-align: left; font-size: .875rem; }
+.finanzas caption { text-align: left; color: #6b625b; margin-bottom: .75rem; }
+.finanzas th, .finanzas td { padding: .85rem; border-bottom: 1px solid #eee9e4; }
+.finanzas th { background: #f8f5f1; }
+.finanzas td:last-child { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.finanzas small { display: block; color: #74685e; margin-top: .25rem; }
+@media (max-width: 760px) { .finanzas-totales { grid-template-columns: 1fr; gap: 0; } .finanzas-filtros label { width: 100%; } }

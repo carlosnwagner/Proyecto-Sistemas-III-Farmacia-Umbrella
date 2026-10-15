@@ -4,6 +4,14 @@ import { showAlert } from "../lib/alerts.js";
 import { FileText, Search, Receipt, Eye } from "lucide-react";
 import "../App.css";
 
+async function consultarSucursalesPago() {
+  const { data, error } = await supabase.from("sucursal")
+    .select("id_sucursal, codigo, descripcion")
+    .eq("estado", true).order("codigo");
+  if (error) throw error;
+  return data || [];
+}
+
 function StatCard({ title, value, subtitle, alert }) {
   return (
     <div
@@ -59,6 +67,10 @@ function Badge({ children, variant = "default" }) {
 export default function RegistrarPagoProveedor() {
   const [proveedores, setProveedores] = useState([]);
   const [mediosPago, setMediosPago] = useState([]);
+  const [sucursalesPago, setSucursalesPago] = useState([]);
+  const [idSucursalPago, setIdSucursalPago] = useState("");
+  const [cargandoSucursales, setCargandoSucursales] = useState(true);
+  const [errorSucursales, setErrorSucursales] = useState("");
   const [selectedProveedorId, setSelectedProveedorId] = useState("");
 
   const [tabActiva, setTabActiva] = useState("comprobantes");
@@ -88,6 +100,31 @@ export default function RegistrarPagoProveedor() {
     if (!dia || !mes || !anio) return fechaStr;
     return `${dia}/${mes}/${anio}`;
   };
+
+  const cargarSucursalesPago = useCallback(async () => {
+    setCargandoSucursales(true);
+    setErrorSucursales("");
+    try {
+      setSucursalesPago(await consultarSucursalesPago());
+    } catch {
+      setSucursalesPago([]);
+      setErrorSucursales("No se pudieron cargar las sucursales del pago.");
+    } finally {
+      setCargandoSucursales(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let vigente = true;
+    consultarSucursalesPago().then(data => {
+      if (vigente) setSucursalesPago(data);
+    }).catch(() => {
+      if (vigente) setErrorSucursales("No se pudieron cargar las sucursales del pago.");
+    }).finally(() => {
+      if (vigente) setCargandoSucursales(false);
+    });
+    return () => { vigente = false; };
+  }, []);
 
   const tipoCancelacion = useMemo(() => {
     const facturasSeleccionadas = facturas.filter(
@@ -214,6 +251,8 @@ export default function RegistrarPagoProveedor() {
       .from("pago_proveedor")
       .select(`
         id_pago,
+        id_sucursal,
+        sucursal ( codigo, descripcion ),
         fecha_pago,
         importe_total,
         tipo_cancelacion,
@@ -359,6 +398,10 @@ export default function RegistrarPagoProveedor() {
   }, [aplicaciones]);
 
   const handleRegistrarPago = async () => {
+    if (!idSucursalPago || !sucursalesPago.some(s => String(s.id_sucursal) === idSucursalPago)) {
+      showAlert.errorSave("Seleccione una sucursal disponible para el pago.");
+      return;
+    }
     if (!selectedProveedorId) {
       showAlert.errorSave("Debe seleccionar un proveedor.");
       return;
@@ -387,6 +430,7 @@ export default function RegistrarPagoProveedor() {
         .insert([
           {
             id_proveedor: Number(selectedProveedorId),
+            id_sucursal: Number(idSucursalPago),
             fecha_pago: fechaPago,
             importe_total: totalPagoCalculado,
             id_medio_pago: Number(idMedioPago),
@@ -959,6 +1003,12 @@ export default function RegistrarPagoProveedor() {
                 <b style={{ color: "#111827" }}>{formatearFecha(pagoDetalleModal.fecha_pago)}</b>
               </div>
               <div>
+                <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Sucursal del pago</span>
+                <b style={{ color: "#111827" }}>{pagoDetalleModal.sucursal
+                  ? `${pagoDetalleModal.sucursal.codigo} — ${pagoDetalleModal.sucursal.descripcion || ""}`
+                  : "Sin sucursal (pendiente de conciliación)"}</b>
+              </div>
+              <div>
                 <span style={{ color: "#6b7280", display: "block", fontSize: "0.75rem" }}>Medio de Pago</span>
                 <b style={{ color: "#111827" }}>{pagoDetalleModal.medio_pago?.nombre || "No especificado"}</b>
               </div>
@@ -1150,6 +1200,23 @@ export default function RegistrarPagoProveedor() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1.5rem" }}>
+              <div>
+                <label htmlFor="sucursal-pago" style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.35rem" }}>
+                  Sucursal del pago *
+                </label>
+                <select id="sucursal-pago" value={idSucursalPago}
+                  onChange={e => setIdSucursalPago(e.target.value)}
+                  disabled={submitting || cargandoSucursales || Boolean(errorSucursales)}
+                  required style={inputStyle}>
+                  <option value="">{cargandoSucursales ? "Cargando sucursales..." : "Seleccione una sucursal..."}</option>
+                  {sucursalesPago.map(s => <option key={s.id_sucursal} value={s.id_sucursal}>{s.codigo} — {s.descripcion}</option>)}
+                </select>
+                {errorSucursales && <div role="alert" style={{ color: "#b91c1c", marginTop: "0.5rem" }}>
+                  {errorSucursales} <button type="button" onClick={cargarSucursalesPago}>Reintentar</button>
+                </div>}
+                {!cargandoSucursales && !errorSucursales && sucursalesPago.length === 0 &&
+                  <p role="status">No hay sucursales disponibles para registrar el pago.</p>}
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.35rem" }}>
@@ -1207,7 +1274,7 @@ export default function RegistrarPagoProveedor() {
               </button>
               <button
                 type="button"
-                disabled={submitting}
+                disabled={submitting || cargandoSucursales || Boolean(errorSucursales) || !idSucursalPago}
                 onClick={handleRegistrarPago}
                 style={{ backgroundColor: "#65482b", color: "#fff", border: 0, borderRadius: "0.5rem", padding: "0.55rem 1.5rem", fontWeight: "700", cursor: "pointer" }}
               >

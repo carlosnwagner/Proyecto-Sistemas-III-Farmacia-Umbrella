@@ -169,7 +169,7 @@ async function ejecutarMovimientoCaja(payload) {
     const valorImporte = Number(payload.importe ?? 0);
     const medioPagoIdNum = payload.medioPagoId && !isNaN(Number(payload.medioPagoId)) ? Number(payload.medioPagoId) : null;
 
-    const { data, error } = await supabase.rpc('hu50_registrar_movimiento', {
+    const { data, error } = await supabase.rpc('hu61_registrar_movimiento_caja', {
       p_turno_id: Number(payload.turnoId),
       p_tipo: payload.tipo || 'Ingreso',
       p_concepto: payload.concepto,
@@ -177,6 +177,8 @@ async function ejecutarMovimientoCaja(payload) {
       p_medio_pago_id: medioPagoIdNum,
       p_idempotency_key: payload.clave || null,
       p_movimiento_original_id: payload.originalId ? Number(payload.originalId) : null,
+      p_clase: payload.clase || 'Operativo',
+      p_pago: payload.pagoId ? Number(payload.pagoId) : null,
     });
 
     if (error) throw error;

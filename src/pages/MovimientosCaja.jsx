@@ -7,7 +7,7 @@ import { Wallet, ArrowDownLeft, ArrowUpRight, RefreshCw, RotateCcw, CreditCard, 
 import '../App.css';
 
 const pesos = (value) => Number(value).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
-const inicial = { tipo: 'Ingreso', concepto: '', importe: '', medioPagoId: '' };
+const inicial = { tipo: 'Ingreso', concepto: '', importe: '', medioPagoId: '', clase: 'Operativo', pagoId: '' };
 
 const capitalizarTexto = (str) => {
   if (!str) return '';
@@ -134,7 +134,9 @@ export default function MovimientosCaja() {
         tipo: form.tipo,
         concepto: conceptoLimpio,
         importe,
-        medioPagoId: form.medioPagoId
+        medioPagoId: form.medioPagoId,
+        clase: form.clase,
+        pagoId: form.clase === 'PagoProveedor' ? form.pagoId : null,
       });
 
       setForm(inicial);
@@ -409,7 +411,7 @@ export default function MovimientosCaja() {
                           color: form.tipo === tipo ? (tipo === 'Ingreso' ? '#166534' : '#dc2626') : '#4b5563',
                           fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer'
                         }}
-                        onClick={() => setForm({ ...form, tipo })}
+                        onClick={() => setForm({ ...form, tipo, clase: form.clase === 'PagoProveedor' && tipo === 'Ingreso' ? 'Operativo' : form.clase })}
                       >
                         {tipo === 'Ingreso' ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
                         {tipo}
@@ -418,6 +420,18 @@ export default function MovimientosCaja() {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2rem' }}>
+                    <label>Clasificación del movimiento
+                      <select value={form.clase} onChange={e => setForm({ ...form, clase: e.target.value })} className="select-campo">
+                        <option value="Operativo">Ingreso o egreso operativo</option>
+                        <option value="TransferenciaInterna">Transferencia interna</option>
+                        {form.tipo === 'Egreso' && <option value="PagoProveedor">Pago a proveedor ya registrado</option>}
+                      </select>
+                    </label>
+                    {form.clase === 'PagoProveedor' && <label>Número del pago a proveedor
+                      <input type="number" min="1" step="1" required value={form.pagoId}
+                        onChange={e => setForm({ ...form, pagoId: e.target.value })} className="campo-entrada" />
+                      <small>Vinculá el pago registrado para contarlo una sola vez en el resumen.</small>
+                    </label>}
                     <div>
                       <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Concepto obligatorio</label>
                       <input 
