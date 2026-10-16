@@ -14,7 +14,7 @@ import {
   downloadComprobanteVentaPdf 
 } from '../services/ventas';
 import { showAlert } from '../lib/alerts.js';
-import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle, Lock } from 'lucide-react';
+import { User, Trash2, CheckCircle2, ChevronLeft, ChevronRight, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle, Lock } from 'lucide-react';
 import '../App.css';
 import './RegistrarVenta.css';
 import { supabase } from '../lib/supabase.js';
@@ -52,6 +52,7 @@ export default function RegistrarVenta() {
   const [filtroSucursal, setFiltroSucursal] = useState('TODAS');
   const [filtroFechaDesde, setFiltroFechaDesde] = useState('');
   const [filtroFechaHasta, setFiltroFechaHasta] = useState('');
+  const [paginaVentas, setPaginaVentas] = useState(1);
   const [ventaDetalle, setVentaDetalle] = useState(null);
 
   // Cliente (HU37)
@@ -519,7 +520,7 @@ export default function RegistrarVenta() {
   const ventasFiltradas = useMemo(() => {
     return historialVentas.filter(v => {
       const matchTipo = filtroTipoFactura === 'TODAS' || v.tipo_comprobante === filtroTipoFactura;
-      const matchNumero = !filtroNumero || String(v.numero_comprobante).includes(filtroNumero.trim());
+      const matchNumero = !filtroNumero || String(v.id_pedido_online || v.numero_comprobante || '').includes(filtroNumero.trim());
       const matchCliente = !filtroCliente ||
         (v.cliente?.nombre || 'Consumidor Final').toLowerCase().includes(filtroCliente.trim().toLowerCase());
       const matchSucursal = filtroSucursal === 'TODAS' || String(v.id_sucursal) === filtroSucursal;
@@ -529,6 +530,13 @@ export default function RegistrarVenta() {
       return matchTipo && matchNumero && matchCliente && matchSucursal && matchDesde && matchHasta;
     });
   }, [historialVentas, filtroTipoFactura, filtroNumero, filtroCliente, filtroSucursal, filtroFechaDesde, filtroFechaHasta]);
+
+  const ventasPorPagina = 10;
+  const totalPaginasVentas = Math.max(1, Math.ceil(ventasFiltradas.length / ventasPorPagina));
+  const ventasPagina = ventasFiltradas.slice((paginaVentas - 1) * ventasPorPagina, paginaVentas * ventasPorPagina);
+
+  useEffect(() => { setPaginaVentas(1); }, [filtroTipoFactura, filtroNumero, filtroCliente, filtroSucursal, filtroFechaDesde, filtroFechaHasta]);
+  useEffect(() => { if (paginaVentas > totalPaginasVentas) setPaginaVentas(totalPaginasVentas); }, [paginaVentas, totalPaginasVentas]);
 
   const estadisticasSemanales = useMemo(() => {
     const ahora = new Date();
@@ -691,10 +699,10 @@ export default function RegistrarVenta() {
                       <td colSpan="7" style={{ textAlign: 'center', padding: '2.5rem', color: '#6b7280' }}>No se encontraron registros de ventas.</td>
                     </tr>
                   ) : (
-                    ventasFiltradas.map(v => (
+                    ventasPagina.map(v => (
                       <tr key={v.id_venta} style={{ borderBottom: '1px solid #e5e7eb' }}>
                         <td style={{ padding: '0.85rem 1rem', fontWeight: '600', color: '#111827' }}>
-                          Factura {v.tipo_comprobante} {String(v.punto_venta).padStart(4, '0')}-{String(v.numero_comprobante).padStart(8, '0')}
+                          {v.id_pedido_online ? `Venta online #${v.id_pedido_online}` : `Factura ${v.tipo_comprobante} ${String(v.punto_venta).padStart(4, '0')}-${String(v.numero_comprobante).padStart(8, '0')}`}
                         </td>
                         <td style={{ padding: '0.85rem 1rem', color: '#4b5563' }}>
                           {new Date(v.fecha).toLocaleString()}
@@ -735,6 +743,14 @@ export default function RegistrarVenta() {
                 </tbody>
               </table>
             </div>
+            {ventasFiltradas.length > 0 && <nav className="rv-paginacion" aria-label="Paginación del historial de ventas">
+              <span>Mostrando {(paginaVentas - 1) * ventasPorPagina + 1}–{Math.min(paginaVentas * ventasPorPagina, ventasFiltradas.length)} de {ventasFiltradas.length} ventas</span>
+              <div>
+                <button type="button" onClick={() => setPaginaVentas((actual) => Math.max(1, actual - 1))} disabled={paginaVentas === 1}><ChevronLeft size={16} />Anterior</button>
+                <span>Página {paginaVentas} de {totalPaginasVentas}</span>
+                <button type="button" onClick={() => setPaginaVentas((actual) => Math.min(totalPaginasVentas, actual + 1))} disabled={paginaVentas === totalPaginasVentas}>Siguiente<ChevronRight size={16} /></button>
+              </div>
+            </nav>}
           </div>
         </div>
       )}
@@ -1160,36 +1176,42 @@ export default function RegistrarVenta() {
       )}
 
       {ventaDetalle && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: '#fff', width: 'min(850px, 92vw)', maxHeight: '88vh', overflowY: 'auto', borderRadius: '0.6rem', padding: '1.5rem', boxShadow: '0 20px 30px rgba(0,0,0,0.2)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Detalle de Factura {ventaDetalle.tipo_comprobante}</h2>
-                <span style={{ color: '#6b7280', fontSize: '0.85rem' }}>{String(ventaDetalle.punto_venta).padStart(4, '0')}-{String(ventaDetalle.numero_comprobante).padStart(8, '0')}</span>
+        <div className="rv-modal-fondo" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setVentaDetalle(null); }}>
+          <section className="rv-modal-venta" role="dialog" aria-modal="true" aria-labelledby="rv-modal-titulo">
+            <header className="rv-modal-encabezado">
+              <div className="rv-modal-icono"><FileText size={21} /></div>
+              <div className="rv-modal-titulos">
+                <span className="rv-modal-eyebrow">COMPROBANTE DE VENTA</span>
+                <h2 id="rv-modal-titulo">{ventaDetalle.id_pedido_online ? `Venta online #${ventaDetalle.id_pedido_online}` : `Factura ${ventaDetalle.tipo_comprobante}`}</h2>
+                {!ventaDetalle.id_pedido_online && <span className="rv-modal-subtitulo">{String(ventaDetalle.punto_venta).padStart(4, '0')}-{String(ventaDetalle.numero_comprobante).padStart(8, '0')}</span>}
               </div>
-              <button type="button" onClick={() => setVentaDetalle(null)} style={{ border: 0, background: 'transparent', cursor: 'pointer', color: '#6b7280' }}><X size={22} /></button>
+              <button type="button" className="rv-modal-cerrar" onClick={() => setVentaDetalle(null)} aria-label="Cerrar detalle"><X size={20} /></button>
+            </header>
+
+            <div className="rv-modal-resumen">
+              <div><span>Fecha</span><strong>{new Date(ventaDetalle.fecha).toLocaleString('es-AR')}</strong></div>
+              <div><span>Cliente</span><strong>{ventaDetalle.cliente?.nombre || 'Consumidor Final'}</strong></div>
+              <div><span>Sucursal</span><strong>{sucursales.find((s) => String(s.id_sucursal) === String(ventaDetalle.id_sucursal))?.descripcion || 'Sin identificar'}</strong></div>
+              <div><span>Medio de pago</span><strong>{ventaDetalle.pago_venta?.[0]?.medio_pago?.nombre || ventaDetalle.medio_pago || 'No informado'}</strong></div>
+              <div><span>Estado</span><strong className="rv-modal-estado">{ventaDetalle.estado || 'Confirmada'}</strong></div>
+              <div className="rv-modal-total"><span>Total</span><strong>${Number(ventaDetalle.importe_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong></div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.4rem', fontSize: '0.85rem', marginBottom: '1rem' }}>
-              <div><span style={{ color: '#6b7280' }}>Fecha</span><br /><b>{new Date(ventaDetalle.fecha).toLocaleString()}</b></div>
-              <div><span style={{ color: '#6b7280' }}>Cliente</span><br /><b>{ventaDetalle.cliente?.nombre || 'Consumidor Final'}</b></div>
-              <div><span style={{ color: '#6b7280' }}>Sucursal</span><br /><b>{sucursales.find((s) => String(s.id_sucursal) === String(ventaDetalle.id_sucursal))?.descripcion || 'Sin identificar'}</b></div>
-              <div><span style={{ color: '#6b7280' }}>Medio de pago</span><br /><b>{ventaDetalle.pago_venta?.[0]?.medio_pago?.nombre || ventaDetalle.medio_pago}</b></div>
-              <div><span style={{ color: '#6b7280' }}>Estado</span><br /><b>{ventaDetalle.estado}</b></div>
-              <div><span style={{ color: '#6b7280' }}>Total</span><br /><b style={{ color: '#166534' }}>${Number(ventaDetalle.importe_total).toFixed(2)}</b></div>
-            </div>
-
-            <div style={{ overflowX: 'auto', marginBottom: '1rem' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                <thead style={{ backgroundColor: '#2d241e', color: '#fff' }}><tr><th style={{ padding: '0.65rem', textAlign: 'left' }}>Producto</th><th>Cantidad</th><th>Precio unitario</th><th>Subtotal</th></tr></thead>
-                <tbody>{(ventaDetalle.detalle_venta || []).map((item) => <tr key={item.id_detalle_venta} style={{ borderBottom: '1px solid #e5e7eb' }}><td style={{ padding: '0.65rem' }}>{item.articulo?.nombre || item.articulo?.descripcion || 'Artículo'}</td><td style={{ textAlign: 'center' }}>{item.cantidad}</td><td style={{ textAlign: 'right' }}>${Number(item.precio_unitario).toFixed(2)}</td><td style={{ textAlign: 'right', fontWeight: 600 }}>${Number(item.subtotal).toFixed(2)}</td></tr>)}</tbody>
+            <div className="rv-modal-tabla-contenedor">
+              <table className="rv-modal-tabla">
+                <thead><tr><th>Producto</th><th>Cant.</th><th>Precio unitario</th><th>Subtotal</th></tr></thead>
+                <tbody>{(ventaDetalle.detalle_venta || []).map((item) => <tr key={item.id_detalle_venta}><td>{item.articulo?.nombre || item.articulo?.descripcion || 'Artículo'}</td><td>{item.cantidad}</td><td>${Number(item.precio_unitario).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td><td>${Number(item.subtotal).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td></tr>)}</tbody>
               </table>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button type="button" onClick={() => downloadComprobanteVentaPdf(ventaDetalle, ventaDetalle.detalle_venta || [], ventaDetalle.cliente, sucursales.find((s) => String(s.id_sucursal) === String(ventaDetalle.id_sucursal)))} style={{ border: 0, background: '#65482b', color: '#fff', padding: '0.55rem 0.8rem', borderRadius: '0.35rem', cursor: 'pointer', fontWeight: 600 }}><Download size={15} style={{ verticalAlign: 'middle', marginRight: 5 }} />Descargar</button>
-            </div>
-          </div>
+            <footer className="rv-modal-pie">
+              <span>{ventaDetalle.id_pedido_online ? 'Pago confirmado por Mercado Pago' : 'Comprobante registrado en el sistema'}</span>
+              <div>
+                <button type="button" className="rv-modal-boton-secundario" onClick={() => setVentaDetalle(null)}>Cerrar</button>
+                <button type="button" className="rv-modal-boton-principal" onClick={() => downloadComprobanteVentaPdf(ventaDetalle, ventaDetalle.detalle_venta || [], ventaDetalle.cliente, sucursales.find((s) => String(s.id_sucursal) === String(ventaDetalle.id_sucursal)))}><Download size={16} />Descargar PDF</button>
+              </div>
+            </footer>
+          </section>
         </div>
       )}
 

@@ -10,12 +10,65 @@ export const contextoFinanzas = () => rpc('finanzas_contexto');
 export function consultarFinanzas(filtros) {
   const error = validarPeriodo(filtros.desde, filtros.hasta);
   if (error) throw new Error(error);
-  return rpc('finanzas_resumen', {
-    p_desde: filtros.desde, p_hasta: filtros.hasta,
-    p_sucursal: filtros.sucursal ? Number(filtros.sucursal) : null,
-    p_anio_grafico: filtros.anioGrafico ? Number(filtros.anioGrafico) : null,
+  const desde = filtros.desde;
+  const hasta = filtros.hasta;
+  const sucursal = filtros.sucursal ? Number(filtros.sucursal) : null;
+  const anio = Number(filtros.anioGrafico || desde.slice(0, 4));
+  return Promise.all([rpc('finanzas_resumen', {
+    p_desde: desde, p_hasta: hasta, p_sucursal: sucursal,
+    p_anio_grafico: filtros.anioGrafico ? anio : null,
+  }), rpc('hu66_mp_movimientos_reporte', {
+    p_desde: desde, p_hasta: hasta, p_sucursal: sucursal, p_anio: anio,
+  })]).then(([resumen, online]) => {
+    const movimientosOnline = online?.movimientos || [];
+    const movimientos = [...(resumen.movimientos || []), ...movimientosOnline]
+      .sort((a, b) => new Date(b.fecha_efectiva) - new Date(a.fecha_efectiva));
+    const sumar = (a, b) => (Number(a || 0) + Number(b || 0)).toFixed(2);
+    let totales = resumen.totales;
+    if (totales) {
+      for (const movimiento of movimientosOnline) {
+        if (movimiento.tipo === 'Ingreso') totales.ingresos = sumar(totales.ingresos, movimiento.importe);
+        else totales.egresos = sumar(totales.egresos, movimiento.importe);
+      }
+      totales.flujo_neto = (Number(totales.ingresos) - Number(totales.egresos)).toFixed(2);
+    }
+    const mensualOnline = new Map((online?.mensual || []).map(item => [item.mes, item]));
+    const mensual = (resumen.mensual || []).map(item => {
+      const extra = mensualOnline.get(item.mes);
+      if (!extra) return item;
+      const ingresos = sumar(item.ingresos, extra.ingresos);
+      const egresos = sumar(item.egresos, extra.egresos);
+      return { ...item, ingresos, egresos, flujo_neto: (Number(ingresos) - Number(egresos)).toFixed(2) };
+    });
+    return { ...resumen, movimientos, totales, mensual };
   });
 }
+
+export async function consultarMediosPagoFinanzas(filtros) {
+  const diaSiguiente = new Date(`${filtros.hasta}T00:00:00Z`);
+  diaSiguiente.setUTCDate(diaSiguiente.getUTCDate() + 1);
+  const desde = `${filtros.desde}T00:00:00-03:00`;
+  const hasta = `${diaSiguiente.toISOString().slice(0, 10)}T00:00:00-03:00`;
+  const filas = [];
+  const tamanoPagina = 1000;
+  for (let inicio = 0; ; inicio += tamanoPagina) {
+    let consulta = supabase.from('venta')
+      .select('medio_pago, importe_total, fecha, id_sucursal')
+      .eq('estado', 'Confirmada')
+      .gte('fecha', desde)
+      .lt('fecha', hasta)
+      .order('fecha', { ascending: true })
+      .order('id_venta', { ascending: true })
+      .range(inicio, inicio + tamanoPagina - 1);
+    if (filtros.sucursal) consulta = consulta.eq('id_sucursal', Number(filtros.sucursal));
+    const { data, error } = await consulta;
+    if (error) throw error;
+    filas.push(...(data || []));
+    if (!data || data.length < tamanoPagina) break;
+  }
+  return filas;
+}
+
 export const clasificarMovimientoFinanciero = (id, clase, pago) => rpc('hu61_clasificar_movimiento', {
   p_movimiento: id, p_clase: clase, p_pago: pago ? Number(pago) : null,
 });

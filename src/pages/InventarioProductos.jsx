@@ -106,7 +106,9 @@ export default function InventarioProductos() {
         { key: "precio_costo", label: "Costo ($)", type: "number" },
         { key: "precio_venta", label: "Precio al público con IVA ($)", type: "number" },
         { key: "alicuota_iva", label: "Tratamiento de IVA *", type: "select", required: true, options: [{ value: 21, label: "IVA 21 %" }, { value: 10.5, label: "IVA 10,5 %" }, { value: 0, label: "Exento en reventa (0 %)" }] },
-        { key: "estado", label: "Estado", type: "select", options: [{ value: true, label: "Activo" }, { value: false, label: "Inactivo" }] }
+        { key: "estado", label: "Estado", type: "select", options: [{ value: true, label: "Activo" }, { value: false, label: "Inactivo" }] },
+        { key: "publicado_online", label: "Visible en catálogo público", type: "select", options: [{ value: true, label: "Publicado" }, { value: false, label: "Oculto" }] },
+        { key: "imagen_url", label: "URL de imagen (opcional)" }
       ];
     }
 
@@ -126,7 +128,9 @@ export default function InventarioProductos() {
       { key: "id_unidad", label: "Unidad", type: "select", options: unidades.map(u => ({ value: u.id_unidad, label: u.nombre })) },
       { key: "precio_costo", label: "Costo ($)", type: "number" },
       { key: "precio_venta", label: "Precio al público con IVA ($)", type: "number" },
-      { key: "alicuota_iva", label: "Tratamiento de IVA *", type: "select", required: true, options: [{ value: 21, label: "IVA 21 %" }, { value: 10.5, label: "IVA 10,5 %" }, { value: 0, label: "Exento en reventa (0 %)" }] }
+      { key: "alicuota_iva", label: "Tratamiento de IVA *", type: "select", required: true, options: [{ value: 21, label: "IVA 21 %" }, { value: 10.5, label: "IVA 10,5 %" }, { value: 0, label: "Exento en reventa (0 %)" }] },
+      { key: "publicado_online", label: "Visible en catálogo público", type: "select", options: [{ value: true, label: "Publicado" }, { value: false, label: "Oculto" }] },
+      { key: "imagen_url", label: "URL de imagen (opcional)" }
     ];
   }, [rubros, unidades, selectedProduct]);
 
@@ -143,7 +147,9 @@ export default function InventarioProductos() {
       id_unidad: unidades[0]?.id_unidad || 1,
       precio_costo: 0,
       precio_venta: 0,
-      alicuota_iva: 10.5
+      alicuota_iva: 10.5,
+      publicado_online: false,
+      imagen_url: ""
     });
     setIsModalOpen(true);
   };
@@ -185,6 +191,8 @@ export default function InventarioProductos() {
       precio_costo: Number(formData.precio_costo) || 0,
       precio_venta: Number(formData.precio_venta) || 0,
       alicuota_iva: alicuotaIva,
+      publicado_online: String(formData.publicado_online) === "true",
+      imagen_url: formData.imagen_url?.trim() || null,
       estado: selectedProduct ? (String(formData.estado) === "true") : true
     };
 
@@ -228,6 +236,7 @@ export default function InventarioProductos() {
     { header: "COSTO", render: (p) => `$${p.precio_costo}` },
     { header: "PRECIO PÚBLICO", render: (p) => <b style={{ color: "#166534" }}>${p.precio_venta}</b> },
     { header: "IVA INCLUIDO", render: (p) => p.alicuota_iva === null ? <Badge variant="danger">SIN DEFINIR</Badge> : <Badge>{Number(p.alicuota_iva) === 0 ? "EXENTO" : `${Number(p.alicuota_iva)} %`}</Badge> },
+    { header: "CATÁLOGO ONLINE", render: (p) => <Badge variant={p.publicado_online ? "success" : "default"}>{p.publicado_online ? "PUBLICADO" : "OCULTO"}</Badge> },
     { header: "ESTADO", render: (p) => <Badge variant={p.estado ? "success" : "danger"}>{p.estado ? "ACTIVO" : "INACTIVO"}</Badge> },
   ];
 

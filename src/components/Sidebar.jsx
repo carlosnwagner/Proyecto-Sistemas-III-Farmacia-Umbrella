@@ -16,6 +16,7 @@ import {
   FileText,
   Tags,
   ShoppingCart,
+  ClipboardCheck,
   Users,
   DollarSign,
   Wallet,
@@ -34,7 +35,7 @@ export default function Sidebar() {
   const [hoveredButton, setHoveredButton] = useState(null);
   const [comprasOpen, setComprasOpen] = useState(false);
   const [ventasOpen, setVentasOpen] = useState(() =>
-    ["/ventas", "/listas-precios", "/clientes"].includes(window.location.pathname)
+    ["/ventas", "/listas-precios", "/clientes", "/pedidos-online"].includes(window.location.pathname)
   );
   const [cajaOpen, setCajaOpen] = useState(() =>
     window.location.pathname.startsWith('/caja') ||
@@ -72,6 +73,7 @@ export default function Sidebar() {
     { key: "RegistroVentas", label: "Registro de ventas", path: "/ventas", icon: ShoppingCart },
     { key: "ClientesVentas", label: "Clientes", path: "/clientes", icon: Users },
     { key: "ListasPrecios", label: "Listas de precios", path: "/listas-precios", icon: Tags },
+    { key: "PedidosOnline", label: "Pedidos online", path: "/pedidos-online", icon: ClipboardCheck },
   ];
 
   const cajaSubItems = [

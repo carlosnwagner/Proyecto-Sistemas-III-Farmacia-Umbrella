@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { contextoFinanzas, consultarFinanzas, clasificarMovimientoFinanciero, asignarSucursalPago } from '../services/finanzas.js';
+import { contextoFinanzas, consultarFinanzas, consultarMediosPagoFinanzas, clasificarMovimientoFinanciero, asignarSucursalPago } from '../services/finanzas.js';
 import { validarPeriodo, monedaFinanzas, fechaFinanzas } from '../lib/finanzas.js';
 import './ResumenFinanciero.css';
 
@@ -87,8 +87,15 @@ export default function ResumenFinanciero() {
     const actual = ++anualActual.current.id;
     setConsultaAnual({ cargando: true, error: '', data: null });
     try {
-      const data = await consultarFinanzas(valores);
-      if (anualActual.current.id === actual) setConsultaAnual({ cargando: false, error: '', data });
+      const inicioPago = valores.periodoPago === 'mes' ? `${valores.mesPago}-01` : valores.desde;
+      const finPago = valores.periodoPago === 'mes'
+        ? new Date(Date.UTC(Number(valores.mesPago.slice(0, 4)), Number(valores.mesPago.slice(5, 7)), 0)).toISOString().slice(0, 10)
+        : valores.hasta;
+      const [data, pagos] = await Promise.all([
+        consultarFinanzas(valores),
+        consultarMediosPagoFinanzas({ desde: inicioPago, hasta: finPago, sucursal: valores.sucursal }),
+      ]);
+      if (anualActual.current.id === actual) setConsultaAnual({ cargando: false, error: '', data: { ...data, pagos } });
     } catch (err) {
       if (anualActual.current.id === actual) setConsultaAnual({ cargando: false, error: err.message || 'No se pudieron cargar los gráficos.', data: null });
     }
@@ -118,7 +125,9 @@ export default function ResumenFinanciero() {
     const anioSeleccionado = query.get('anio') || String(new Date().getFullYear());
     const sucursalSeleccionada = query.get('sucursal') || '';
     if (contexto && esTendencias) {
-      queueMicrotask(() => cargarAnual({ desde: `${anioSeleccionado}-01-01`, hasta: `${anioSeleccionado}-12-31`, sucursal: sucursalSeleccionada, anioGrafico: Number(anioSeleccionado) }));
+      const periodoSeleccionado = query.get('periodo') || 'mes';
+      const mesSeleccionado = query.get('mes') || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(5, 7);
+      queueMicrotask(() => cargarAnual({ desde: `${anioSeleccionado}-01-01`, hasta: `${anioSeleccionado}-12-31`, sucursal: sucursalSeleccionada, anioGrafico: Number(anioSeleccionado), periodoPago: periodoSeleccionado, mesPago: `${anioSeleccionado}-${String(mesSeleccionado).padStart(2, '0')}` }));
     }
   }, [contexto, esTendencias, location.search, cargarAnual]);
 
@@ -151,6 +160,31 @@ export default function ResumenFinanciero() {
   const totalEgresosPeriodo = mesesVista.reduce((total, mes) => total + Number(mes.egresos), 0);
   const totalFlujoPeriodo = totalIngresosPeriodo + totalEgresosPeriodo;
   const porcentajeIngresos = totalFlujoPeriodo ? totalIngresosPeriodo / totalFlujoPeriodo * 100 : 0;
+  const pagosPorMedio = (datosAnuales?.pagos || []).reduce((acumulado, venta) => {
+    const medio = String(venta.medio_pago || '').trim();
+    const normalizado = medio.toLocaleLowerCase('es');
+    const categoria = /mercado\s*pago/.test(normalizado) ? 'Mercado Pago'
+      : /cr[eé]dito/.test(normalizado) ? 'Tarjeta de crédito'
+        : /d[eé]bito/.test(normalizado) ? 'Tarjeta de débito'
+          : /efectivo/.test(normalizado) ? 'Efectivo'
+            : /cheque/.test(normalizado) ? 'Cheque'
+              : /tarjeta/.test(normalizado) ? 'Tarjeta (sin especificar)'
+                : medio || 'Sin especificar';
+    const actual = acumulado.get(categoria) || { nombre: categoria, importe: 0, cantidad: 0 };
+    actual.importe += Number(venta.importe_total) || 0;
+    actual.cantidad += 1;
+    acumulado.set(categoria, actual);
+    return acumulado;
+  }, new Map());
+  const coloresPagos = ['#087f8c', '#e47c28', '#6a4c93', '#2f855a', '#c2413b', '#557a95', '#a16207'];
+  const resumenPagos = [...pagosPorMedio.values()].sort((a, b) => b.importe - a.importe);
+  const totalPagos = resumenPagos.reduce((total, pago) => total + pago.importe, 0);
+  let avancePago = 0;
+  const segmentosPago = resumenPagos.map((pago, indice) => {
+    const inicio = avancePago;
+    avancePago += totalPagos ? pago.importe / totalPagos * 100 : 0;
+    return `${coloresPagos[indice % coloresPagos.length]} ${inicio}% ${avancePago}%`;
+  }).join(', ');
   const hayMesActual = mesesVista.some(m => estadoMes(m.mes) === 'actual');
   const hayMesFuturo = mesesVista.some(m => estadoMes(m.mes) === 'futuro');
   const mesesConDatos = mesesVista.map((m, i) => ({ ...m, i })).filter(m => estadoMes(m.mes) !== 'futuro');
@@ -233,6 +267,13 @@ export default function ResumenFinanciero() {
               <div className="finanzas-torta" role="img" aria-label={`Ingresos ${porcentajeIngresos.toFixed(1)} por ciento; egresos ${(100 - porcentajeIngresos).toFixed(1)} por ciento`} style={{ '--porcentaje-ingresos': `${porcentajeIngresos}%` }}><span>{periodoTendencia === 'mes' ? nombreMes(codigoMesSeleccionado) : 'ANUAL'}<br />{anio}</span></div>
               <div className="finanzas-torta-leyenda"><p><i className="barra-ingreso" /><span>INGRESOS</span><strong>{monedaFinanzas(totalIngresosPeriodo)}</strong></p><p><i className="barra-egreso" /><span>EGRESOS</span><strong>{monedaFinanzas(totalEgresosPeriodo)}</strong></p></div>
             </div> : <p>No hay movimientos conciliados para este período y sucursal.</p>}
+          </div>
+          <div className="finanzas-grafico finanzas-grafico-torta finanzas-grafico-medios">
+            <h3>Pagos por medio</h3>
+            {totalPagos > 0 ? <div className="finanzas-torta-contenido">
+              <div className="finanzas-torta finanzas-torta-medios" role="img" aria-label={`Distribución de ${resumenPagos.length} medios de pago, total ${monedaFinanzas(totalPagos)}`} style={{ '--segmentos-pago': segmentosPago }}><span>Pagos<br />{monedaFinanzas(totalPagos)}</span></div>
+              <div className="finanzas-torta-leyenda">{resumenPagos.map((pago, indice) => <p key={pago.nombre}><i style={{ backgroundColor: coloresPagos[indice % coloresPagos.length] }} /><span>{pago.nombre} · {pago.cantidad} {pago.cantidad === 1 ? 'pago' : 'pagos'}</span><strong>{monedaFinanzas(pago.importe)}</strong></p>)}</div>
+            </div> : <p>No hay ventas cobradas para este período y sucursal.</p>}
           </div>
         </div>
         <div className="finanzas-grafico finanzas-tabla-bloque">

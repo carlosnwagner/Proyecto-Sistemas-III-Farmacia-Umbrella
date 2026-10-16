@@ -19,6 +19,10 @@ import ArqueoCaja from "./pages/ArqueoCaja.jsx";
 import CierreCaja from "./pages/CierreCaja.jsx";
 import Login from "./pages/login.jsx";
 import ResumenFinanciero from "./pages/ResumenFinanciero.jsx";
+import CatalogoPublico from "./pages/CatalogoPublico.jsx";
+import PedidosOnline from "./pages/PedidosOnline.jsx";
+import ConsultarPedidoOnline from "./pages/ConsultarPedidoOnline.jsx";
+import ResultadoPagoOnline from "./pages/ResultadoPagoOnline.jsx";
 import { AuthProvider, ProtectedRoute, RoleRoute, HomeRedirect } from "./context/AuthContext.jsx";
 import { ROLES } from "./config/roles.js";
 
@@ -40,6 +44,10 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/" element={<CatalogoPublico />} />
+          <Route path="/catalogo" element={<CatalogoPublico />} />
+          <Route path="/pedido" element={<ConsultarPedidoOnline />} />
+          <Route path="/pago-resultado" element={<ResultadoPagoOnline />} />
           <Route path="/login" element={<Login />} />
 
           <Route
@@ -49,7 +57,7 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route path="/" element={<HomeRedirect />} />
+            <Route path="/app" element={<HomeRedirect />} />
 
             <Route path="/inicio" element={<PaginaEnConstruccion titulo="Inicio" />} />
 
@@ -81,6 +89,7 @@ export default function App() {
               <Route path="/inventario-deposito" element={<InventarioDeposito />} />
               <Route path="/listas-precios" element={<ListasPrecios />} />
               <Route path="/clientes" element={<ClientesVentas />} />
+              <Route path="/pedidos-online" element={<PedidosOnline />} />
               <Route path="/reportes" element={<ResumenFinanciero />} />
               <Route path="/reportes/tendencias" element={<ResumenFinanciero />} />
             </Route>

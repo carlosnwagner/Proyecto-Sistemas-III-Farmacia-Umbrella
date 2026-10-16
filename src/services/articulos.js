@@ -15,6 +15,8 @@ export const getArticulos = async () => {
       precio_venta,
       alicuota_iva,
       estado,
+      publicado_online,
+      imagen_url,
       rubro:id_rubro (nombre),
       unidad_medida:id_unidad (nombre)
     `)

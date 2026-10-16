@@ -360,19 +360,22 @@ export async function getHistorialVentas() {
 }
 
 export async function downloadComprobanteVentaPdf(venta, items, cliente, sucursal) {
+  const esVentaOnline = Boolean(venta.id_pedido_online);
   const tipo = venta.tipo_comprobante || 'B';
   const puntoVenta = String(venta.punto_venta || 1).padStart(4, '0');
   const numero = String(venta.numero_comprobante || 0).padStart(8, '0');
   const moneda = (valor) => `$${Number(valor || 0).toFixed(2)}`;
 
   const infoData = [
-    { label: 'Comprobante', value: `${tipo} ${puntoVenta}-${numero}` },
+    { label: esVentaOnline ? 'Pedido online' : 'Comprobante', value: esVentaOnline ? `#${venta.id_pedido_online}` : `${tipo} ${puntoVenta}-${numero}` },
     { label: 'Fecha', value: new Date(venta.fecha || Date.now()).toLocaleString('es-AR') },
     { label: 'Sucursal', value: sucursal?.descripcion || sucursal?.nombre || 'Principal' },
     { label: 'Cliente', value: cliente?.nombre || 'Consumidor Final' },
-    { label: 'Condición fiscal', value: cliente?.condicion_fiscal || 'Consumidor Final' },
-    { label: 'CUIT / DNI', value: cliente?.cuit || cliente?.dni || 'No informado' },
-    { label: 'Medio de pago', value: venta.medio_pago || 'No informado' },
+    ...(!esVentaOnline ? [
+      { label: 'Condición fiscal', value: cliente?.condicion_fiscal || 'Consumidor Final' },
+      { label: 'CUIT / DNI', value: cliente?.cuit || cliente?.dni || 'No informado' },
+    ] : []),
+    { label: 'Medio de pago', value: venta.pago_venta?.[0]?.medio_pago?.nombre || venta.medio_pago || 'No informado' },
   ];
 
   const rows = (items || []).map((item) => [
@@ -405,13 +408,13 @@ export async function downloadComprobanteVentaPdf(venta, items, cliente, sucursa
   summaryData.push({ label: 'TOTAL', value: moneda(venta.importe_total), emphasis: true });
 
   return generateStandardPDF({
-    title: `FACTURA ${tipo}`,
-    subtitle: `${puntoVenta}-${numero}`,
+    title: esVentaOnline ? 'COMPROBANTE ONLINE' : `FACTURA ${tipo}`,
+    subtitle: esVentaOnline ? `Pedido #${venta.id_pedido_online}` : `${puntoVenta}-${numero}`,
     infoData,
     columns: ['ARTÍCULO', 'CANTIDAD', 'PRECIO UNITARIO', 'SUBTOTAL'],
     rows,
     summaryData,
     footerNote: 'Comprobante generado por el Sistema de Gestión de Farmacia Umbrella',
-    fileName: `factura_${tipo}_${numero}.pdf`,
+    fileName: esVentaOnline ? `venta_online_${venta.id_pedido_online}.pdf` : `factura_${tipo}_${numero}.pdf`,
   });
 }

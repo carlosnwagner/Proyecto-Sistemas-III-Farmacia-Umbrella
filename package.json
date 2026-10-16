@@ -19,7 +19,8 @@
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.18.2",
     "sweetalert2": "^11.26.25",
-    "sweetalert2-react-content": "^5.1.2"
+    "sweetalert2-react-content": "^5.1.2",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
