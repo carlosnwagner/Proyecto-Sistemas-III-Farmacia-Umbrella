@@ -21,6 +21,9 @@ select test_reject($q$select hu61_clasificar_movimiento(100,'Operativo')$q$,'man
 select test_reject($q$select hu61_clasificar_movimiento(108,'Operativo')$q$,'manual original');
 select test_assert(finanzas_resumen('2026-10-01','2026-10-31',1)->'totales'=jsonb_build_object('ingresos','1100.00','egresos','650.00','flujo_neto','450.00'),'caja+proveedores sin duplicar e internas excluidas');
 select test_assert(jsonb_array_length(finanzas_resumen('2026-10-01','2026-10-31',1)->'movimientos')=5,'detalle coincide con operaciones');
+select test_assert(jsonb_array_length(finanzas_resumen('2026-10-01','2026-10-31',1,2026)->'mensual')=12,'serie anual incluye los doce meses');
+select test_assert((select (m->>'ingresos')::numeric=1100 and (m->>'egresos')::numeric=650 from jsonb_array_elements(finanzas_resumen('2026-10-01','2026-10-31',1,2026)->'mensual') m where m->>'mes'='2026-10'),'serie mensual usa movimientos deduplicados y filtrados');
+select test_assert((select (m->>'ingresos')::numeric=0 and (m->>'egresos')::numeric=0 from jsonb_array_elements(finanzas_resumen('2026-10-01','2026-10-31',1,2026)->'mensual') m where m->>'mes'='2026-01'),'meses sin operaciones son cero');
 select test_assert((finanzas_resumen('2026-10-01','2026-10-31')->'totales'->>'ingresos')::numeric=1500,'todas incluye turno cerrado y sucursal inactiva');
 select test_assert((finanzas_resumen('2026-10-01','2026-10-01',1)->'totales'->>'ingresos')::numeric=1000,'fecha desde inclusiva');
 select test_assert((finanzas_resumen('2026-10-31','2026-10-31',1)->'totales'->>'ingresos')::numeric=100,'fecha hasta inclusiva en zona de negocio');

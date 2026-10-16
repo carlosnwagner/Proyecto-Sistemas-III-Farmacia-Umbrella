@@ -13,6 +13,7 @@ export function consultarFinanzas(filtros) {
   return rpc('finanzas_resumen', {
     p_desde: filtros.desde, p_hasta: filtros.hasta,
     p_sucursal: filtros.sucursal ? Number(filtros.sucursal) : null,
+    p_anio_grafico: filtros.anioGrafico ? Number(filtros.anioGrafico) : null,
   });
 }
 export const clasificarMovimientoFinanciero = (id, clase, pago) => rpc('hu61_clasificar_movimiento', {

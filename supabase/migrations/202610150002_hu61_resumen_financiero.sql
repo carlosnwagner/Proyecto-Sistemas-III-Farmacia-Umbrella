@@ -2,7 +2,7 @@
 begin;
 
 -- Metadatos separados: no se modifican movimientos de caja inmutables.
-create table public.clasificacion_flujo_caja (
+create table if not exists public.clasificacion_flujo_caja (
   movimiento_id bigint primary key references public.movimiento_caja(id),
   clase text not null check (clase in ('Operativo','TransferenciaInterna','PagoProveedor')),
   pago_id bigint unique references public.pago_proveedor(id_pago),
@@ -12,9 +12,9 @@ create table public.clasificacion_flujo_caja (
 );
 alter table public.clasificacion_flujo_caja enable row level security;
 revoke all on public.clasificacion_flujo_caja from public, anon, authenticated;
-create index movimiento_caja_fecha_finanzas_idx on public.movimiento_caja(fecha_hora,id);
+create index if not exists movimiento_caja_fecha_finanzas_idx on public.movimiento_caja(fecha_hora,id);
 
-create function public.hu61_admin()
+create or replace function public.hu61_admin()
 returns integer language plpgsql stable security definer set search_path = public as $$
 declare v_usuario integer;
 begin
@@ -25,7 +25,7 @@ begin
 end; $$;
 
 -- Interna: solo las RPC que ya verificaron permisos pueden invocarla.
-create function public.hu61_guardar_clasificacion(p_movimiento bigint,p_clase text,p_pago bigint)
+create or replace function public.hu61_guardar_clasificacion(p_movimiento bigint,p_clase text,p_pago bigint)
 returns void language plpgsql security definer set search_path = public as $$
 declare m public.movimiento_caja%rowtype; p public.pago_proveedor%rowtype;
   c public.clasificacion_flujo_caja%rowtype; v_sucursal bigint;
@@ -56,7 +56,7 @@ begin
     values(p_movimiento,p_clase,p_pago,auth.uid());
 end; $$;
 
-create function public.hu61_clasificar_movimiento(p_movimiento bigint,p_clase text,p_pago bigint default null)
+create or replace function public.hu61_clasificar_movimiento(p_movimiento bigint,p_clase text,p_pago bigint default null)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   perform public.hu61_admin();
@@ -64,7 +64,7 @@ begin
 end; $$;
 
 -- Preserva todas las validaciones, bloqueo e idempotencia de HU50.
-create function public.hu61_registrar_movimiento_caja(
+create or replace function public.hu61_registrar_movimiento_caja(
   p_turno_id bigint,p_tipo text,p_concepto text,p_importe numeric,p_medio_pago_id integer,
   p_idempotency_key uuid,p_movimiento_original_id bigint default null,
   p_clase text default 'Operativo',p_pago bigint default null
@@ -79,7 +79,7 @@ begin
   return m;
 end; $$;
 
-create function public.finanzas_contexto()
+create or replace function public.finanzas_contexto()
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare v_hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date; v_sucursales jsonb;
 begin
@@ -94,9 +94,9 @@ begin
     'hasta',(date_trunc('month',v_hoy)+interval '1 month - 1 day')::date);
 end; $$;
 
-create function public.finanzas_resumen(p_desde date,p_hasta date,p_sucursal bigint default null)
+create or replace function public.finanzas_resumen(p_desde date,p_hasta date,p_sucursal bigint,p_anio_grafico integer)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
-declare v_resultado jsonb; v_inicio timestamptz; v_fin timestamptz;
+declare v_resultado jsonb; v_inicio timestamptz; v_fin timestamptz; v_anio integer;
 begin
   perform public.hu61_admin();
   if p_desde is null or p_hasta is null or not isfinite(p_desde) or not isfinite(p_hasta)
@@ -104,6 +104,8 @@ begin
   if p_sucursal is not null and not exists(select 1 from public.sucursal where id_sucursal=p_sucursal) then
     raise exception 'La sucursal no está autorizada o no existe'; end if;
   if not exists(select 1 from public.sucursal) then raise exception 'No hay sucursales autorizadas'; end if;
+  v_anio := coalesce(p_anio_grafico,extract(year from p_desde)::integer);
+  if v_anio < 1 or v_anio > 9998 then raise exception 'Seleccioná un año válido para los gráficos'; end if;
   v_inicio := p_desde::timestamp at time zone 'America/Argentina/Buenos_Aires';
   v_fin := (p_hasta+1)::timestamp at time zone 'America/Argentina/Buenos_Aires';
   -- Una sola sentencia: detalle, diagnósticos y totales comparten snapshot.
@@ -119,6 +121,8 @@ begin
     select p.*,coalesce((select sum(d.importe_aplicado) from public.detalle_pago d where d.id_pago=p.id_pago),0) as aplicado
     from public.pago_proveedor p
     where p.fecha_pago::date between p_desde and p_hasta
+      -- Los pagos históricos sin sucursal no se pueden descartar al filtrar:
+      -- deben seguir apareciendo como pendientes de conciliación.
       and (p_sucursal is null or p.id_sucursal=p_sucursal or p.id_sucursal is null)
   ), incidencias as (
     select 'pago:'||id_pago as id,'PagoProveedor'::text as origen,id_pago as referencia,
@@ -140,19 +144,59 @@ begin
     join public.turno_caja t on t.id=m.turno_id
     join public.pago_proveedor p on p.id_pago=c.pago_id
     where ((m.fecha_hora>=v_inicio and m.fecha_hora<v_fin) or p.fecha_pago::date between p_desde and p_hasta)
-      and (p_sucursal is null or t.sucursal_id=p_sucursal or p.id_sucursal=p_sucursal)
+      and (p_sucursal is null or t.sucursal_id=p_sucursal or p.id_sucursal=p_sucursal
+        or p.id_sucursal is null)
       and (p.importe_total is distinct from m.importe or p.id_sucursal is distinct from t.sucursal_id
         or p.fecha_pago::date is distinct from (m.fecha_hora at time zone 'America/Argentina/Buenos_Aires')::date)
   ), movimientos as (
     select 'caja:'||id as id,fecha_hora as fecha_efectiva,sucursal_id,concepto,
       case when origen='Reversion' then 'Reversión' else origen end as origen,tipo,importe
-    from caja where original_origen='Venta' or (clase is not null and clase<>'TransferenciaInterna'
-      and (clase<>'PagoProveedor' or origen='Reversion'))
+    from caja where (original_origen='Venta' and origen<>'Reversion')
+      or (original_origen<>'Venta' and clase is not null and clase<>'TransferenciaInterna'
+        and (clase<>'PagoProveedor' or origen='Reversion'))
     union all
     select 'pago:'||id_pago,fecha_pago::date::timestamp at time zone 'America/Argentina/Buenos_Aires',
       id_sucursal,'Pago a proveedor #'||id_proveedor||' · Pago #'||id_pago,'Proveedor','Egreso',importe_total
-    from pagos where id_sucursal is not null and importe_total>0
+    from pagos where (p_sucursal is null or id_sucursal=p_sucursal)
+      and id_sucursal is not null and importe_total>0
       and importe_total::text not in ('NaN','Infinity','-Infinity') and aplicado=importe_total
+  ), movimientos_anuales as (
+    -- La serie mensual tiene su propio rango anual y no depende del rango manual HU61.
+    select 'caja:'||c.id as id,c.fecha_hora as fecha_efectiva,t.sucursal_id,c.concepto,
+      case when c.origen='Reversion' then 'Reversión' else c.origen end as origen,c.tipo,c.importe
+    from public.movimiento_caja c
+    join public.turno_caja t on t.id=c.turno_id
+    join public.movimiento_caja o on o.id=coalesce(c.movimiento_original_id,c.id)
+    left join public.clasificacion_flujo_caja f on f.movimiento_id=coalesce(c.movimiento_original_id,c.id)
+    where c.fecha_hora >= make_date(v_anio,1,1)::timestamp at time zone 'America/Argentina/Buenos_Aires'
+      and c.fecha_hora < (make_date(v_anio,1,1)+interval '1 year')::timestamp at time zone 'America/Argentina/Buenos_Aires'
+      and (p_sucursal is null or t.sucursal_id=p_sucursal)
+      and ((o.origen='Venta' and c.origen<>'Reversion')
+        or (o.origen<>'Venta' and f.clase is not null and f.clase<>'TransferenciaInterna'
+          and (f.clase<>'PagoProveedor' or c.origen='Reversion')))
+    union all
+    select 'pago:'||p.id_pago,p.fecha_pago::date::timestamp at time zone 'America/Argentina/Buenos_Aires',
+      p.id_sucursal,'Pago a proveedor #'||p.id_proveedor||' · Pago #'||p.id_pago,'Proveedor','Egreso',p.importe_total
+    from public.pago_proveedor p
+    where p.fecha_pago >= make_date(v_anio,1,1)
+      and p.fecha_pago < (make_date(v_anio,1,1)+interval '1 year')
+      and p.id_sucursal is not null and (p_sucursal is null or p.id_sucursal=p_sucursal)
+      and p.importe_total>0 and p.importe_total::text not in ('NaN','Infinity','-Infinity')
+      and coalesce((select sum(d.importe_aplicado) from public.detalle_pago d where d.id_pago=p.id_pago),0)=p.importe_total
+  ), incidencias_anuales as (
+    select 1 from public.pago_proveedor p
+    where p.fecha_pago >= make_date(v_anio,1,1) and p.fecha_pago < (make_date(v_anio,1,1)+interval '1 year')
+      and (p.id_sucursal is null or p.importe_total is null or p.importe_total<=0
+        or p.importe_total::text in ('NaN','Infinity','-Infinity')
+        or coalesce((select sum(d.importe_aplicado) from public.detalle_pago d where d.id_pago=p.id_pago),0)<>p.importe_total)
+      and (p_sucursal is null or p.id_sucursal=p_sucursal or p.id_sucursal is null)
+    union all
+    select 1 from public.movimiento_caja m join public.turno_caja t on t.id=m.turno_id
+    left join public.clasificacion_flujo_caja c on c.movimiento_id=coalesce(m.movimiento_original_id,m.id)
+    where m.fecha_hora >= make_date(v_anio,1,1)::timestamp at time zone 'America/Argentina/Buenos_Aires'
+      and m.fecha_hora < (make_date(v_anio,1,1)+interval '1 year')::timestamp at time zone 'America/Argentina/Buenos_Aires'
+      and (p_sucursal is null or t.sucursal_id=p_sucursal)
+      and m.origen='Manual' and c.clase is null
   )
   select jsonb_build_object('periodo',jsonb_build_object('desde',p_desde,'hasta',p_hasta),
     'sucursal_id',p_sucursal,'completo',not exists(select 1 from incidencias),
@@ -163,18 +207,38 @@ begin
         'flujo_neto',coalesce(sum(case when tipo='Ingreso' then importe else -importe end),0)::text) from movimientos) end,
     'movimientos',case when exists(select 1 from incidencias) then '[]'::jsonb else
       coalesce((select jsonb_agg(to_jsonb(m)||jsonb_build_object('importe',m.importe::text)
-        order by fecha_efectiva desc,id desc) from movimientos m),'[]'::jsonb) end)
+        order by fecha_efectiva desc,id desc) from movimientos m),'[]'::jsonb) end,
+    'mensual_completo',not exists(select 1 from incidencias_anuales),
+    'mensual',
+      coalesce((select jsonb_agg(jsonb_build_object('mes',to_char(mes,'YYYY-MM'),
+        'ingresos',ingresos::text,'egresos',egresos::text,
+        'flujo_neto',(ingresos-egresos)::text) order by mes)
+        from (select meses.mes,
+          coalesce(sum(m.importe) filter(where m.tipo='Ingreso'),0) as ingresos,
+          coalesce(sum(m.importe) filter(where m.tipo='Egreso'),0) as egresos
+          from generate_series(make_date(v_anio,1,1)::timestamp,
+            make_date(v_anio,12,1)::timestamp,interval '1 month') as meses(mes)
+          left join movimientos_anuales m on m.fecha_efectiva >= meses.mes::timestamp at time zone 'America/Argentina/Buenos_Aires'
+            and m.fecha_efectiva < (meses.mes+interval '1 month')::timestamp at time zone 'America/Argentina/Buenos_Aires'
+          group by meses.mes) mensual),'[]'::jsonb))
     into v_resultado;
   return v_resultado;
 end; $$;
 
+-- Conserva la firma HU61 original para clientes antiguos de la aplicación.
+create or replace function public.finanzas_resumen(p_desde date,p_hasta date,p_sucursal bigint default null)
+returns jsonb language sql security definer set search_path = public as $$
+  select public.finanzas_resumen(p_desde,p_hasta,p_sucursal,null::integer);
+$$;
+
 revoke all on function public.hu61_admin(),public.hu61_guardar_clasificacion(bigint,text,bigint),
   public.hu61_clasificar_movimiento(bigint,text,bigint),public.finanzas_contexto(),
-  public.finanzas_resumen(date,date,bigint),
+  public.finanzas_resumen(date,date,bigint),public.finanzas_resumen(date,date,bigint,integer),
   public.hu61_registrar_movimiento_caja(bigint,text,text,numeric,integer,uuid,bigint,text,bigint)
   from public,anon,authenticated;
 grant execute on function public.hu61_clasificar_movimiento(bigint,text,bigint),
   public.finanzas_contexto(),public.finanzas_resumen(date,date,bigint),
+  public.finanzas_resumen(date,date,bigint,integer),
   public.hu61_registrar_movimiento_caja(bigint,text,text,numeric,integer,uuid,bigint,text,bigint)
   to authenticated;
 commit;

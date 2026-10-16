@@ -49,11 +49,13 @@ export default function AperturaCaja() {
         return;
       }
 
-      // Si es cajero, verificar turno activo
-      if (profile.rol === 'cajero') {
+      // Cajeros y administradores consultan su propio turno autenticado.
+      let sucursalDelTurno = null;
+      if (profile.rol === 'cajero' || profile.rol === 'administrador') {
         const resTurno = await getTurnoActivoCajero(profile.id_usuario);
         if (resTurno.tieneTurno) {
           setTurnoActivo(resTurno.turno);
+          sucursalDelTurno = resTurno.turno.sucursal_id;
         } else {
           setTurnoActivo(null);
         }
@@ -67,7 +69,9 @@ export default function AperturaCaja() {
       setSucursales(listaSuc);
 
       if (listaSuc.length > 0) {
-        const preferida = listaSuc.find(s => s.id_sucursal === profile?.sucursal_id) || listaSuc[0];
+        const preferida = listaSuc.find(s => Number(s.id_sucursal) === Number(sucursalDelTurno))
+          || listaSuc.find(s => s.id_sucursal === profile?.sucursal_id)
+          || listaSuc[0];
         setSucursalSeleccionada(String(preferida.id_sucursal));
       } else {
         setSucursalSeleccionada('');
@@ -80,7 +84,8 @@ export default function AperturaCaja() {
   }, [profile]);
 
   useEffect(() => {
-    cargarContextoInicial();
+    const timer = window.setTimeout(() => cargarContextoInicial(), 0);
+    return () => window.clearTimeout(timer);
   }, [cargarContextoInicial]);
 
   // Cargar cajas de la sucursal seleccionada
@@ -104,7 +109,8 @@ export default function AperturaCaja() {
 
   useEffect(() => {
     if (sucursalSeleccionada) {
-      cargarCajas(sucursalSeleccionada);
+      const timer = window.setTimeout(() => cargarCajas(sucursalSeleccionada), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [sucursalSeleccionada, cargarCajas]);
 
@@ -164,6 +170,7 @@ export default function AperturaCaja() {
       
       setCajaElegida(null);
       await cargarContextoInicial();
+      await cargarCajas(sucursalSeleccionada);
     } catch (err) {
       console.error('Error durante la apertura:', err);
       Swal.fire('Error', 'Ocurrió un error inesperado al procesar la apertura.', 'error');
@@ -281,7 +288,7 @@ export default function AperturaCaja() {
       )}
 
       {/* VISTA CAJERO: TURNO ACTIVO */}
-      {profile?.rol === 'cajero' && turnoActivo && (
+      {(profile?.rol === 'cajero' || profile?.rol === 'administrador') && turnoActivo && (
         <div style={{ width: '100%' }}>
           <div style={{ marginBottom: '1.5rem' }}>
             <h1 className="titulo-pagina" style={{ margin: '0 0 0.25rem 0' }}>Gestión de Caja</h1>
@@ -331,7 +338,7 @@ export default function AperturaCaja() {
       )}
 
       {/* VISTA CAJERO: SIN TURNO ACTIVO (APERTURA) */}
-      {profile?.rol === 'cajero' && !turnoActivo && (
+      {(profile?.rol === 'cajero' || profile?.rol === 'administrador') && !turnoActivo && (
         <div style={{ width: '100%' }}>
           <div style={{ marginBottom: '1.5rem' }}>
             <h1 className="titulo-pagina" style={{ margin: '0 0 0.25rem 0' }}>Apertura de Caja</h1>

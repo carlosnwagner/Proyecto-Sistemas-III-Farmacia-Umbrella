@@ -72,9 +72,25 @@ export async function getCajasSucursalConDisponibilidad(sucursalId) {
 export async function getTurnoActivoCajero(cajeroId) {
   try {
     if (!cajeroId) return { tieneTurno: false, turno: null, error: null };
-    const { data, error } = await supabase.from('turno_caja').select('id, caja_id, sucursal_id, cajero_id, saldo_inicial, estado, fecha_hora_apertura, caja:caja_id(id, nombre), sucursal:sucursal_id(id_sucursal, codigo, descripcion)').eq('cajero_id', Number(cajeroId)).eq('estado', 'Abierto').limit(1);
+    const { data: contexto, error: errorContexto } = await supabase.rpc('hu50_contexto_caja');
+    const turnoAutorizado = !errorContexto && (contexto?.turnos || []).find(
+      (turno) => Number(turno.cajero_id) === Number(cajeroId)
+    );
+    if (turnoAutorizado) return { tieneTurno: true, turno: {
+      ...turnoAutorizado,
+      caja: { nombre: turnoAutorizado.caja },
+      sucursal: { descripcion: `Sucursal ${turnoAutorizado.sucursal_id}` }
+    }, error: null };
+
+    // Compatibilidad con bases donde PostgREST todavía no actualizó su esquema.
+    const { data, error } = await supabase.from('turno_caja')
+      .select('id, caja_id, sucursal_id, cajero_id, saldo_inicial, estado, fecha_hora_apertura, caja:caja_id(id, nombre), sucursal:sucursal_id(id_sucursal, codigo, descripcion)')
+      .eq('cajero_id', Number(cajeroId))
+      .eq('estado', 'Abierto')
+      .order('fecha_hora_apertura', { ascending: false })
+      .limit(1);
     if (error) throw error;
-    if (data && data.length > 0) return { tieneTurno: true, turno: data[0], error: null };
+    if (data?.length) return { tieneTurno: true, turno: data[0], error: null };
     return { tieneTurno: false, turno: null, error: null };
   } catch (err) {
     return { tieneTurno: false, turno: null, error: err.message };

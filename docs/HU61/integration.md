@@ -4,7 +4,9 @@
 
 La primera migración `202610150001_hu61_sucursal_pago_proveedor.sql` fue ejecutada por el usuario. No volver a ejecutarla.
 
-Siguiente paso: aplicar `supabase/migrations/202610150002_hu61_resumen_financiero.sql` antes de desplegar los cambios de reporte y caja. Crea metadatos de clasificación y RPC; no cambia importes ni saldos existentes. Se ejecuta dentro de una transacción.
+Siguiente paso: aplicar la versión actual de `supabase/migrations/202610150002_hu61_resumen_financiero.sql` antes de desplegar los cambios de reporte y caja. Crea metadatos de clasificación y RPC; no cambia importes ni saldos existentes. Se ejecuta dentro de una transacción y puede reejecutarse si los objetos ya existen. No elimina clasificaciones ni pagos.
+
+Si Supabase informa que `pago_proveedor.id_sucursal` o `clasificacion_flujo_caja` ya existen, no borres esas columnas o tablas. Usa el archivo actualizado del repositorio y ejecuta completa la segunda migración; las declaraciones idempotentes completan/reemplazan los objetos conservando los datos existentes. La función mantiene también la firma de tres parámetros para compatibilidad con clientes HU61 anteriores.
 
 La segunda migración requiere las migraciones existentes de caja HU50/HU51–53/HU69, además de `pago_proveedor`, `detalle_pago` y la primera migración. Usa `pago_proveedor.id_pago`, `id_proveedor`, `fecha_pago`, `importe_total`, `id_sucursal`, y `detalle_pago.id_pago`, `importe_aplicado`.
 
@@ -35,9 +37,11 @@ Los nuevos pagos requieren una sucursal activa. Un pago conserva su referencia h
 
 `node tests/finanzas/run.mjs` crea un cluster PostgreSQL temporal local y lo elimina al finalizar; no carga `.env` ni usa Supabase. Verifica históricos sin asignación automática, conciliación explícita, pagos nuevos, campos faltantes, sucursal inexistente/inactiva, FK y rechazo de cajero, administrador inactivo y anónimo. Ejecutado con resultado satisfactorio.
 
-`npm.cmd run build`: satisfactorio, con advertencia de tamaño de bundle. La página conserva un hallazgo previo de ESLint por actualización de estado dentro del efecto que carga facturas/historial; la carga de sucursales nueva no introduce ese patrón.
+`npm run build`: satisfactorio, con advertencia de tamaño de bundle. ESLint enfocado en los JS/JSX financieros modificados no informa errores. `npm run lint` completo informa errores en módulos ajenos. Las pruebas de fechas pasan; la suite SQL no pudo ejecutarse porque falta PostgreSQL 17 (`initdb.exe`).
 
 ## Comprobación en Supabase
+
+Usar también la guía paso a paso `prueba-manual.md`, que recorre pagos, caja, ventas, reportes y permisos contra los criterios de aceptación.
 
 1. Ingresar como administrador activo y abrir Reportes.
 2. Verificar mes actual y selector de sucursales; consultar un solo día y un período vacío.

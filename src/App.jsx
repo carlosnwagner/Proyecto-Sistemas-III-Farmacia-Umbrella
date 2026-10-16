@@ -82,6 +82,7 @@ export default function App() {
               <Route path="/listas-precios" element={<ListasPrecios />} />
               <Route path="/clientes" element={<ClientesVentas />} />
               <Route path="/reportes" element={<ResumenFinanciero />} />
+              <Route path="/reportes/tendencias" element={<ResumenFinanciero />} />
             </Route>
           </Route>
         </Routes>

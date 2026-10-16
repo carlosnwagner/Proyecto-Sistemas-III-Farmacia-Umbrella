@@ -13,16 +13,16 @@ import {
   cancelarVentaBorrador,
   downloadComprobanteVentaPdf 
 } from '../services/ventas';
-import { getTurnoActivoCajero } from '../services/caja.js';
-import { getUsuarioActual } from '../lib/auth.js';
 import { showAlert } from '../lib/alerts.js';
-import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle, Lock, AlertTriangle } from 'lucide-react';
+import { User, Trash2, CheckCircle2, Download, ArrowLeft, Search, DollarSign, FileText, Eye, X, PlayCircle, PauseCircle, Lock } from 'lucide-react';
 import '../App.css';
 import './RegistrarVenta.css';
 import { supabase } from '../lib/supabase.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 export default function RegistrarVenta() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [cargando, setCargando] = useState(false);
   const [paso, setPaso] = useState(1); // 1: Panel Principal / Historial, 2: Selector de Depósito, 3: POS / Carrito, 4: Éxito
   const [mostrarModalCajaRequerida, setMostrarModalCajaRequerida] = useState(false);
@@ -192,21 +192,35 @@ export default function RegistrarVenta() {
   };
 
   const validarCajaAbierta = async () => {
-    // Validación robusta consultando directamente si hay turnos abiertos en la base de datos
+    // El RPC devuelve el turno propio; la lectura directa queda como fallback.
+    // La confirmación del servidor vuelve a validar sucursal y titularidad.
     try {
-      const { data: turnosAbiertos, error } = await supabase
-        .from('turno_caja')
-        .select('id, sucursal_id, estado')
-        .ilike('estado', 'Abierto')
-        .limit(1);
-
-      if (error || !turnosAbiertos || turnosAbiertos.length === 0) {
+      if (!profile?.id_usuario) {
         setMostrarModalCajaRequerida(true);
         return false;
       }
 
-      if (turnosAbiertos[0]?.sucursal_id) {
-        setSucursalSeleccionada(String(turnosAbiertos[0].sucursal_id));
+      const { data: contexto, error: errorContexto } = await supabase.rpc('hu50_contexto_caja');
+      let turnoPropio = !errorContexto && (contexto?.turnos || []).find(
+        (turno) => Number(turno.cajero_id) === Number(profile.id_usuario)
+      );
+      if (!turnoPropio) {
+        const { data, error } = await supabase.from('turno_caja')
+          .select('id, sucursal_id, cajero_id')
+          .eq('cajero_id', Number(profile.id_usuario))
+          .eq('estado', 'Abierto')
+          .order('fecha_hora_apertura', { ascending: false })
+          .limit(1);
+        if (error) throw error;
+        turnoPropio = data?.[0];
+      }
+      if (!turnoPropio) {
+        setMostrarModalCajaRequerida(true);
+        return false;
+      }
+
+      if (turnoPropio.sucursal_id) {
+        setSucursalSeleccionada(String(turnoPropio.sucursal_id));
       }
       return true;
     } catch (e) {
@@ -1254,7 +1268,7 @@ export default function RegistrarVenta() {
                     <input
                       type="checkbox"
                       checked={tempCliente.aplica_percepcion_iibb}
-                      onChange={(e) => setTempCliente({ ...tempCodeCliente, aplica_percepcion_iibb: e.target.checked })}
+                      onChange={(e) => setTempCliente({ ...tempCliente, aplica_percepcion_iibb: e.target.checked })}
                     />
                     Percepción de IIBB (3,6% sobre el neto)
                   </label>
@@ -1326,7 +1340,7 @@ export default function RegistrarVenta() {
             </h3>
 
             <p style={{ color: '#4b5563', fontSize: '0.9rem', lineHeight: '1.5', margin: '0 0 1.5rem' }}>
-              Para iniciar una venta es obligatorio contar con un turno de caja abierto en el sistema. Actualmente no tienes ninguna caja abierta asignada a tu usuario.
+              Tu sesión sigue siendo de Administrador; no hace falta ingresar como cajero. Para iniciar una venta, abrí un turno de caja asociado a tu usuario administrador.
             </p>
 
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>

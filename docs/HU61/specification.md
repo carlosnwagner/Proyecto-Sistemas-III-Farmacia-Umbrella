@@ -1,6 +1,6 @@
 # HU61 — Consultar resumen de ingresos y egresos (S5)
 
-Estado: resumen implementado y probado localmente; segunda migración y validación integrada pendientes.
+Estado: implementación en el repositorio; segunda migración y validación integrada pendientes.
 Puntos de historia: 8.
 Método: Spec Driven Development (SDD). La implementación y sus pruebas deberán derivarse de los criterios y escenarios de este directorio.
 

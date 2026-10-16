@@ -13,7 +13,7 @@ async function rpc(nombre, parametros) {
 }
 export async function consultarTurnos() {
   const session = await sesion();
-  if (session) return { autenticado: true, turnos: await rpc('caja_listar_turnos') };
+  if (session) return { autenticado: true, turnos: await rpc('hu61_listar_turnos_caja') };
   // Lectura ya habilitada en la base actual: no simula una identidad ni un saldo.
   const { data, error } = await supabase.from('turno_caja')
     .select('id,caja_id,sucursal_id,cajero_id,estado,fecha_hora_apertura,saldo_inicial')

@@ -16,7 +16,7 @@
 - [x] Totales y detalle consistentes, decimal exacto y fecha efectiva local.
 - [x] Diagnóstico de históricos, pagos incompletos y vínculos modificados.
 - [x] RPC de caja con movimiento y clasificación atómicos e idempotentes.
-- [x] Pruebas SQL de fechas, pagos por varias facturas, deduplicación, reversión, volumen, centavos, permisos y rollback.
+- [ ] Ejecutar pruebas SQL de fechas, pagos por varias facturas, deduplicación, reversión, volumen, centavos, permisos y rollback en PostgreSQL local.
 
 ## Interfaz
 
@@ -29,12 +29,14 @@
 
 ## Validación y puesta en marcha
 
-- [x] Build y lint de nuevos archivos y archivos de caja modificados.
-- [x] Pruebas locales financieras y de fechas; regresión existente de caja y ventas.
-- [x] Actualizar diseño, trazabilidad y guía de instalación.
+- [x] Build de producción y ESLint enfocado en los archivos JS/JSX financieros modificados.
+- [x] Pruebas unitarias locales de fechas; sin PostgreSQL local no se pudo ejecutar la suite SQL financiera ni la regresión de caja/ventas.
+- [x] Actualizar diseño y agregar guía funcional por módulo.
 - [ ] Ejecutar segunda migración en Supabase.
 - [ ] Conciliar históricos reales cuando el reporte los identifique.
 - [ ] Verificar visualmente filtros, reintento y conciliación en la aplicación conectada.
 - [ ] Verificar datos reales y permisos del entorno desplegado.
 
 No se marca la HU cerrada hasta completar la validación integrada. La atomicidad del registrador anterior de pagos es una mejora separada; el reporte detecta cabeceras y aplicaciones incompletas.
+
+La ejecución actual de `node tests/finanzas/run.mjs` y `node tests/caja/run.mjs` queda pendiente porque no está instalado PostgreSQL 17 (`initdb.exe` no encontrado). `npm run lint` de todo el repositorio informa errores en módulos ajenos a finanzas; ESLint enfocado en los archivos financieros JS/JSX no informó errores.

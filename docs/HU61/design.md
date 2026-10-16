@@ -30,7 +30,7 @@ Un único CTE genera diagnósticos, movimientos y totales sobre el mismo snapsho
 
 `finanzas_contexto()` devuelve `sucursales: [{id,nombre}]`, `desde` y `hasta` del mes actual.
 
-`finanzas_resumen(p_desde date,p_hasta date,p_sucursal bigint default null)`:
+`finanzas_resumen(p_desde date,p_hasta date,p_sucursal bigint default null,p_anio_grafico integer default null)` devuelve el resumen HU61 y una serie mensual para el año solicitado por HU62. La serie anual tiene su propio diagnóstico `mensual_completo`; las incidencias anuales no convierten el resumen del rango manual HU61 en un resultado parcial ni viceversa.
 
 ```json
 {
