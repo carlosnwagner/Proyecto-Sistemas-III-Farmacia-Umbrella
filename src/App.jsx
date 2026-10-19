@@ -23,6 +23,13 @@ import CatalogoPublico from "./pages/CatalogoPublico.jsx";
 import PedidosOnline from "./pages/PedidosOnline.jsx";
 import ConsultarPedidoOnline from "./pages/ConsultarPedidoOnline.jsx";
 import ResultadoPagoOnline from "./pages/ResultadoPagoOnline.jsx";
+
+// ==========================================
+// Layouts y Componentes de la Tienda
+// ==========================================
+import TiendaLayout from "./components/TiendaLayout.jsx";
+import TiendaCatalogo from "./components/TiendaCatalogo.jsx"; 
+
 import { AuthProvider, ProtectedRoute, RoleRoute, HomeRedirect } from "./context/AuthContext.jsx";
 import { ROLES } from "./config/roles.js";
 
@@ -44,8 +51,15 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          <Route path="/" element={<CatalogoPublico />} />
-          <Route path="/catalogo" element={<CatalogoPublico />} />
+          {/* 🌟 RUTA PRINCIPAL (HOME DE LA TIENDA) */}
+          <Route path="/" element={<TiendaLayout />} />
+          
+          {/* 🌟 RUTA PARA EL CATÁLOGO ESTILO OGANI */}
+          <Route path="/catalogo" element={<TiendaCatalogo />} />
+
+          {/* Ruta opcional por si quieres mantener el catálogo viejo en otra URL */}
+          <Route path="/catalogo-viejo" element={<CatalogoPublico />} />
+
           <Route path="/pedido" element={<ConsultarPedidoOnline />} />
           <Route path="/pago-resultado" element={<ResultadoPagoOnline />} />
           <Route path="/login" element={<Login />} />
