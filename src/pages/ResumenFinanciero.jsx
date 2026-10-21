@@ -412,7 +412,7 @@ export default function ResumenFinanciero() {
               <div className="finanzas-tabla"><table><colgroup><col className="col-fecha" /><col className="col-concepto" /><col className="col-origen" /><col className="col-sucursal" /><col className="col-tipo" /><col className="col-importe" /></colgroup><thead><tr>
                 {['Fecha efectiva', 'Concepto', 'Origen', 'Sucursal', 'Tipo', 'Importe'].map(t => <th key={t} scope="col">{t}</th>)}
               </tr></thead><tbody>{movimientosPagina.map(m => <tr key={m.id}>
-                <td>{fechaFinanzas(m.fecha_efectiva)}</td><td>{m.concepto}<small>{m.id}</small></td><td>{m.origen}</td>
+                <td>{fechaFinanzas(m.fecha_efectiva)}</td><td>{m.origen === 'Demo' ? m.concepto.replace(/^\[FICTICIO\]\s*/, '') : m.concepto}{m.origen !== 'Demo' && <small>{m.id}</small>}</td><td>{m.origen === 'Demo' ? 'Resumen mensual' : m.origen}</td>
                 <td>{nombreSucursal(m.sucursal_id)}</td><td>{m.tipo}</td><td>{monedaFinanzas(m.importe)}</td>
               </tr>)}</tbody></table></div>}
             {movimientos.length > filasPorPagina && <nav className="finanzas-paginacion" aria-label="Paginación de movimientos">
