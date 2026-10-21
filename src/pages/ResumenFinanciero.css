@@ -53,6 +53,11 @@
 .finanzas-dashboard-filtros { display: grid; align-items: end; gap: .8rem; margin: 1.2rem 0 1.35rem; padding-bottom: 1.2rem; border-bottom: 1px solid #eeeae5; }
 .finanzas-dashboard-filtros.finanzas-filtros-mes { grid-template-columns: minmax(110px, .65fr) minmax(110px, .65fr) minmax(140px, .8fr) minmax(220px, 1.5fr) auto; }
 .finanzas-dashboard-filtros.finanzas-filtros-anio { grid-template-columns: minmax(130px, .7fr) minmax(130px, .7fr) minmax(220px, 1.5fr) auto; }
+
+.grilla-graficos { display: flex; flex-direction: column; gap: 1.5rem; margin-bottom: 2rem; }
+.fila-graficos-superiores { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 450px), 1fr)); gap: 1.5rem; }
+.fila-graficos-inferiores { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 1.5rem; }
+
 .finanzas-graficos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
 .finanzas-grafico { display: flex; min-width: 0; flex-direction: column; padding: 1.2rem; border: 1px solid #eee9e4; border-radius: .7rem; background: #fff; }
 .finanzas-dashboard-titulo h2, .finanzas-grafico h3 { color: #174c59; font-family: 'Arial Narrow', 'Franklin Gothic Medium', 'Trebuchet MS', sans-serif; font-weight: 900; letter-spacing: .075em; text-transform: uppercase; }
@@ -74,11 +79,26 @@
 .finanzas-aviso-conciliacion { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .8rem; margin: -.25rem 0 1rem; padding: .8rem 1rem; border: 1px solid #f0d5a6; border-left: 4px solid #c68a2f; border-radius: .5rem; background: #fffaf0; color: #57452d; font-size: .84rem; }
 .finanzas-aviso-conciliacion strong { color: #704900; }
 .finanzas-aviso-conciliacion a { color: #65482b; font-weight: 750; text-decoration: underline; }
+
+.torta-container-vertical { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; width: 100%; }
+
 .finanzas-torta-contenido { display: flex; min-height: 290px; flex: 1; align-items: center; justify-content: center; gap: clamp(1.5rem, 6vw, 5rem); }
-.finanzas-torta { position: relative; display: grid; width: 200px; aspect-ratio: 1; flex: 0 0 auto; place-items: center; border-radius: 50%; background: conic-gradient(#087f8c 0 var(--porcentaje-ingresos), #e47c28 var(--porcentaje-ingresos) 100%); box-shadow: 0 5px 18px rgb(23 76 89 / 16%); }
+/*.finanzas-torta { position: relative; display: grid; width: 200px; aspect-ratio: 1; flex: 0 0 auto; place-items: center; border-radius: 50%; background: conic-gradient(#087f8c 0 var(--porcentaje-ingresos), #e47c28 var(--porcentaje-ingresos) 100%); box-shadow: 0 5px 18px rgb(23 76 89 / 16%); }
 .finanzas-torta-medios { background: conic-gradient(var(--segmentos-pago)); }
 .finanzas-torta::before { position: absolute; width: 128px; aspect-ratio: 1; border-radius: 50%; background: white; content: ''; }
+.finanzas-torta span { z-index: 1; color: #324f5f; font-family: 'Trebuchet MS', Arial, sans-serif; font-size: .82rem; font-weight: 800; line-height: 1.5; text-align: center; }*/
+.finanzas-torta { position: relative; display: grid; width: 180px; height: 180px; aspect-ratio: 1; flex: 0 0 auto; place-items: center; border-radius: 50%; background: conic-gradient(#087f8c 0 var(--porcentaje-ingresos), #e47c28 var(--porcentaje-ingresos) 100%); box-shadow: 0 5px 18px rgb(23 76 89 / 16%); margin: 0 auto; }
+.finanzas-torta-medios { background: conic-gradient(var(--segmentos-pago)); }
+.finanzas-torta::before { position: absolute; width: 115px; aspect-ratio: 1; border-radius: 50%; background: white; content: ''; }
 .finanzas-torta span { z-index: 1; color: #324f5f; font-family: 'Trebuchet MS', Arial, sans-serif; font-size: .82rem; font-weight: 800; line-height: 1.5; text-align: center; }
+
+.finanzas-torta-leyenda-vertical { width: 100%; display: flex; flex-direction: column; gap: 0.5rem; }
+.finanzas-torta-leyenda-vertical p { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; margin: 0; padding: 0.4rem 0; border-bottom: 1px solid #f3f4f6; color: #324f5f; font-family: 'Trebuchet MS', Arial, sans-serif; letter-spacing: .04em; }
+.finanzas-torta-leyenda-vertical p:last-child { border-bottom: none; }
+.finanzas-torta-leyenda-vertical p span { flex: 1; margin-left: 0.5rem; }
+.finanzas-torta-leyenda-vertical p strong { color: #292722; font-family: Arial, sans-serif; font-size: .95rem; font-weight: 700; letter-spacing: 0; }
+.finanzas-torta-leyenda-vertical i { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
 .finanzas-torta-leyenda { min-width: 190px; }
 .finanzas-torta-leyenda p { display: grid; grid-template-columns: 12px 1fr; align-items: center; gap: .25rem .6rem; margin: .8rem 0; color: #324f5f; font-family: 'Trebuchet MS', Arial, sans-serif; font-size: .75rem; letter-spacing: .04em; }
 .finanzas-torta-leyenda i { width: 10px; height: 10px; grid-row: span 2; border-radius: 3px; }

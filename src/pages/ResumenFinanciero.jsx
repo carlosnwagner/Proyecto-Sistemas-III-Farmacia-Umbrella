@@ -91,11 +91,13 @@ export default function ResumenFinanciero() {
       const finPago = valores.periodoPago === 'mes'
         ? new Date(Date.UTC(Number(valores.mesPago.slice(0, 4)), Number(valores.mesPago.slice(5, 7)), 0)).toISOString().slice(0, 10)
         : valores.hasta;
-      const [data, pagos] = await Promise.all([
+      const [data, mediosData] = await Promise.all([
         consultarFinanzas(valores),
         consultarMediosPagoFinanzas({ desde: inicioPago, hasta: finPago, sucursal: valores.sucursal }),
       ]);
-      if (anualActual.current.id === actual) setConsultaAnual({ cargando: false, error: '', data: { ...data, pagos } });
+      if (anualActual.current.id === actual) {
+        setConsultaAnual({ cargando: false, error: '', data: { ...data, pagos: mediosData.pagos, pagosEmitidos: mediosData.pagosEmitidos } });
+      } 
     } catch (err) {
       if (anualActual.current.id === actual) setConsultaAnual({ cargando: false, error: err.message || 'No se pudieron cargar los gráficos.', data: null });
     }
@@ -160,7 +162,9 @@ export default function ResumenFinanciero() {
   const totalEgresosPeriodo = mesesVista.reduce((total, mes) => total + Number(mes.egresos), 0);
   const totalFlujoPeriodo = totalIngresosPeriodo + totalEgresosPeriodo;
   const porcentajeIngresos = totalFlujoPeriodo ? totalIngresosPeriodo / totalFlujoPeriodo * 100 : 0;
-  const pagosPorMedio = (datosAnuales?.pagos || []).reduce((acumulado, venta) => {
+
+  // -------- Calculos de cobros (INGRESOS) --------
+  const cobrosPorMedio = (datosAnuales?.pagos || []).reduce((acumulado, venta) => {
     const medio = String(venta.medio_pago || '').trim();
     const normalizado = medio.toLocaleLowerCase('es');
     const categoria = /mercado\s*pago/.test(normalizado) ? 'Mercado Pago'
@@ -176,15 +180,55 @@ export default function ResumenFinanciero() {
     acumulado.set(categoria, actual);
     return acumulado;
   }, new Map());
-  const coloresPagos = ['#087f8c', '#e47c28', '#6a4c93', '#2f855a', '#c2413b', '#557a95', '#a16207'];
-  const resumenPagos = [...pagosPorMedio.values()].sort((a, b) => b.importe - a.importe);
-  const totalPagos = resumenPagos.reduce((total, pago) => total + pago.importe, 0);
-  let avancePago = 0;
-  const segmentosPago = resumenPagos.map((pago, indice) => {
-    const inicio = avancePago;
-    avancePago += totalPagos ? pago.importe / totalPagos * 100 : 0;
-    return `${coloresPagos[indice % coloresPagos.length]} ${inicio}% ${avancePago}%`;
+
+  const coloresCobros = ['#087f8c', '#e47c28', '#6a4c93', '#2f855a', '#c2413b', '#557a95', '#a16207'];
+  const resumenCobros = [...cobrosPorMedio.values()].sort((a, b) => b.importe - a.importe);
+  const totalCobros = resumenCobros.reduce((total, pago) => total + pago.importe, 0);
+  let avanceCobro = 0;
+  const segmentosCobro = resumenCobros.map((pago, indice) => {
+    const inicio = avanceCobro;
+    avanceCobro += totalCobros ? pago.importe / totalCobros * 100 : 0;
+    return `${coloresCobros[indice % coloresCobros.length]} ${inicio}% ${avanceCobro}%`;
   }).join(', ');
+
+  // -------- Fin de Calculos de cobros (INGRESOS) --------
+
+  // --- CÁLCULO DE PAGOS EMITIDOS A PROVEEDORES ---
+  const egresosPorMedio = (datosAnuales?.pagosEmitidos || []).reduce((acumulado, pago) => {
+    // Tomamos el nombre del medio de pago que viene del JOIN con la tabla medio_pago
+    const medio = String(pago.medio_pago?.nombre || 'Efectivo').trim();
+    const normalizado = medio.toLocaleLowerCase('es');
+    
+    const categoria = /mercado\s*pago/.test(normalizado) ? 'Mercado Pago'
+      : /cr[eé]dito/.test(normalizado) ? 'Tarjeta de crédito'
+      : /d[eé]bito/.test(normalizado) ? 'Tarjeta de débito'
+      : /efectivo/.test(normalizado) ? 'Efectivo'
+      : /cheque/.test(normalizado) ? 'Cheque'
+      : /transferencia/.test(normalizado) ? 'Transferencia bancaria'
+      : /tarjeta/.test(normalizado) ? 'Tarjeta (sin especificar)'
+      : medio || 'Sin especificar';
+      
+    const actual = acumulado.get(categoria) || { nombre: categoria, importe: 0, cantidad: 0 };
+    // Sumamos directamente el importe_total del pago al proveedor
+    actual.importe += Math.abs(Number(pago.importe_total)) || 0;
+    actual.cantidad += 1;
+    
+    acumulado.set(categoria, actual);
+    return acumulado;
+  }, new Map());
+
+  const resumenEgresos = [...egresosPorMedio.values()].sort((a, b) => b.importe - a.importe);
+  const totalEgresosMedios = resumenEgresos.reduce((total, p) => total + p.importe, 0);
+  
+  let avanceEgreso = 0;
+  const segmentosEgreso = resumenEgresos.map((pago, indice) => {
+    const inicio = avanceEgreso;
+    avanceEgreso += totalEgresosMedios ? (pago.importe / totalEgresosMedios) * 100 : 0;
+    return `${coloresCobros[(indice + 3) % coloresCobros.length]} ${inicio}% ${avanceEgreso}%`;
+  }).join(', ');
+
+  // --- FIN CÁLCULO DE PAGOS EMITIDOS (EGRESOS) ---
+
   const hayMesActual = mesesVista.some(m => estadoMes(m.mes) === 'actual');
   const hayMesFuturo = mesesVista.some(m => estadoMes(m.mes) === 'futuro');
   const mesesConDatos = mesesVista.map((m, i) => ({ ...m, i })).filter(m => estadoMes(m.mes) !== 'futuro');
@@ -201,12 +245,15 @@ export default function ResumenFinanciero() {
   }
 
   return <section className="finanzas">
+
     <header className="finanzas-encabezado">
       <div><p className="finanzas-seccion">Reportes</p><h1>{esTendencias ? 'Tendencias mensuales' : 'Resumen de ingresos y egresos'}</h1>
         {esTendencias && <p>Explorá ingresos y egresos por año y sucursal.</p>}</div>
     </header>
+
     {esTendencias ? <>
       <Link className="finanzas-volver" to="/reportes">← Volver al resumen</Link>
+      
       <section className="finanzas-panel finanzas-dashboard" aria-labelledby="finanzas-graficos-titulo">
         <div className="finanzas-dashboard-cabecera"><div className="finanzas-dashboard-titulo"><p className="finanzas-seccion">Tendencias</p><h2 id="finanzas-graficos-titulo">{periodoTendencia === 'mes' ? `Movimientos de ${nombreMes(codigoMesSeleccionado)} ${anio}` : `Ingresos y egresos de ${anio}`}</h2>
               <p>{periodoTendencia === 'mes' ? 'Consultá los importes del mes seleccionado.' : 'Compará los movimientos de los doce meses del año.'}</p></div></div>
@@ -233,49 +280,79 @@ export default function ResumenFinanciero() {
         </div>}
         {!consultaAnual.cargando && !consultaAnual.error && sinMovimientosPeriodo && <p role="status" className="finanzas-sin-datos">No hay movimientos conciliados para {periodoTendencia === 'mes' ? `${nombreMes(codigoMesSeleccionado)} de ${anio}` : `el año ${anio}`}{sucursalTendencia ? ' en la sucursal seleccionada' : ''}.</p>}
         {!consultaAnual.cargando && !consultaAnual.error && <>
-        <div className="finanzas-graficos">
-          <div className="finanzas-grafico" aria-label={`Ingresos y egresos de ${periodoTendencia === 'mes' ? nombreMes(codigoMesSeleccionado) : anio}`}>
-            <h3>{periodoTendencia === 'mes' ? `Ingresos y egresos · ${nombreMes(codigoMesSeleccionado)}` : 'Ingresos y egresos por mes'}</h3>
-            <div className="finanzas-leyenda"><span><i className="barra-ingreso" />Ingresos</span><span><i className="barra-egreso" />Egresos</span>{hayMesActual && <span><i className="marca-mes-actual" />Mes en curso</span>}{hayMesFuturo && <span className="finanzas-leyenda-futuro">— Mes futuro (sin datos)</span>}</div>
-            <div className={`finanzas-barras ${periodoTendencia === 'mes' ? 'finanzas-barras-unico-mes' : ''}`}>{mesesVista.map(m => {
-              const estado = estadoMes(m.mes);
-              return <div className={`finanzas-mes finanzas-mes-${estado}`} key={m.mes} aria-current={estado === 'actual' ? 'date' : undefined} title={`${nombreMes(m.mes)}${estado === 'actual' ? ' · mes en curso' : estado === 'futuro' ? ' · mes futuro, sin datos' : ''}`}>
-                <div className="finanzas-par-barras">{estado !== 'futuro' && <>
-                  <span className="finanzas-barra barra-ingreso" style={{ height: `${Number(m.ingresos) > 0 ? Math.max(2, Number(m.ingresos) / maxMensual * 100) : 0}%` }} title={`Ingresos: ${monedaFinanzas(m.ingresos)}`} />
-                  <span className="finanzas-barra barra-egreso" style={{ height: `${Number(m.egresos) > 0 ? Math.max(2, Number(m.egresos) / maxMensual * 100) : 0}%` }} title={`Egresos: ${monedaFinanzas(m.egresos)}`} />
-                </>}</div>
-                <small className="finanzas-mes-etiqueta">{etiquetaMes(m.mes)}</small>
-              </div>;
-            })}</div>
-          </div>
-          <div className="finanzas-grafico" aria-label={`Evolución mensual de ingresos en ${anio}`}>
-            <h3>{periodoTendencia === 'mes' ? 'Ingresos del mes' : 'Tendencia anual de ingresos'}</h3>
-            <p className="finanzas-linea-escala">Escala máxima: {monedaFinanzas(maxIngresosReal)}</p>
-            <div className="finanzas-linea">
-              <div className="finanzas-linea-area" role="img" aria-label={`Línea de ingresos mensuales de ${anio}. Los importes de cada mes están en la tabla de detalle mensual.`}>
-                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  {mesesConDatos.length > 1 && <polyline points={mesesConDatos.map(m => `${puntoX(m.i)},${100 - alturaIngreso(m.ingresos)}`).join(' ')} />}
-                </svg>
-                {mesesConDatos.map(m => <span key={m.mes} className={`finanzas-punto finanzas-punto-${estadoMes(m.mes)}`} style={{ left: `${puntoX(m.i)}%`, bottom: `${alturaIngreso(m.ingresos)}%` }} title={`${nombreMes(m.mes)}: ${monedaFinanzas(m.ingresos)}`} />)}
-              </div>
-              <div className={`finanzas-linea-meses ${periodoTendencia === 'mes' ? 'finanzas-linea-meses-unico-mes' : ''}`}>{mesesVista.map(m => <small key={m.mes} className={`finanzas-mes-etiqueta finanzas-mes-${estadoMes(m.mes)}`}>{etiquetaMes(m.mes)}</small>)}</div>
+        
+        <div className="grilla-graficos">
+          {/* PRIMERA FILA: Barras y Líneas */}
+          <div className="fila-graficos-superiores">
+            <div className="finanzas-grafico" aria-label={`Ingresos y egresos de ${periodoTendencia === 'mes' ? nombreMes(codigoMesSeleccionado) : anio}`}>
+              <h3>{periodoTendencia === 'mes' ? `Ingresos y egresos · ${nombreMes(codigoMesSeleccionado)}` : 'Ingresos y egresos por mes'}</h3>
+              <div className="finanzas-leyenda"><span><i className="barra-ingreso" />Ingresos</span><span><i className="barra-egreso" />Egresos</span>{hayMesActual && <span><i className="marca-mes-actual" />Mes en curso</span>}{hayMesFuturo && <span className="finanzas-leyenda-futuro">— Mes futuro (sin datos)</span>}</div>
+              <div className={`finanzas-barras ${periodoTendencia === 'mes' ? 'finanzas-barras-unico-mes' : ''}`}>{mesesVista.map(m => {
+                const estado = estadoMes(m.mes);
+                return <div className={`finanzas-mes finanzas-mes-${estado}`} key={m.mes} aria-current={estado === 'actual' ? 'date' : undefined} title={`${nombreMes(m.mes)}${estado === 'actual' ? ' · mes en curso' : estado === 'futuro' ? ' · mes futuro, sin datos' : ''}`}>
+                  <div className="finanzas-par-barras">{estado !== 'futuro' && <>
+                    <span className="finanzas-barra barra-ingreso" style={{ height: `${Number(m.ingresos) > 0 ? Math.max(2, Number(m.ingresos) / maxMensual * 100) : 0}%` }} title={`Ingresos: ${monedaFinanzas(m.ingresos)}`} />
+                    <span className="finanzas-barra barra-egreso" style={{ height: `${Number(m.egresos) > 0 ? Math.max(2, Number(m.egresos) / maxMensual * 100) : 0}%` }} title={`Egresos: ${monedaFinanzas(m.egresos)}`} />
+                  </>}</div>
+                  <small className="finanzas-mes-etiqueta">{etiquetaMes(m.mes)}</small>
+                </div>;
+              })}</div>
             </div>
-          </div>
-          <div className="finanzas-grafico finanzas-grafico-torta">
-            <h3>{periodoTendencia === 'mes' ? 'Distribución del mes' : 'Distribución anual: ingresos y egresos'}</h3>
-            {totalFlujoPeriodo > 0 ? <div className="finanzas-torta-contenido">
-              <div className="finanzas-torta" role="img" aria-label={`Ingresos ${porcentajeIngresos.toFixed(1)} por ciento; egresos ${(100 - porcentajeIngresos).toFixed(1)} por ciento`} style={{ '--porcentaje-ingresos': `${porcentajeIngresos}%` }}><span>{periodoTendencia === 'mes' ? nombreMes(codigoMesSeleccionado) : 'ANUAL'}<br />{anio}</span></div>
-              <div className="finanzas-torta-leyenda"><p><i className="barra-ingreso" /><span>INGRESOS</span><strong>{monedaFinanzas(totalIngresosPeriodo)}</strong></p><p><i className="barra-egreso" /><span>EGRESOS</span><strong>{monedaFinanzas(totalEgresosPeriodo)}</strong></p></div>
-            </div> : <p>No hay movimientos conciliados para este período y sucursal.</p>}
-          </div>
-          <div className="finanzas-grafico finanzas-grafico-torta finanzas-grafico-medios">
-            <h3>Pagos por medio</h3>
-            {totalPagos > 0 ? <div className="finanzas-torta-contenido">
-              <div className="finanzas-torta finanzas-torta-medios" role="img" aria-label={`Distribución de ${resumenPagos.length} medios de pago, total ${monedaFinanzas(totalPagos)}`} style={{ '--segmentos-pago': segmentosPago }}><span>Pagos<br />{monedaFinanzas(totalPagos)}</span></div>
-              <div className="finanzas-torta-leyenda">{resumenPagos.map((pago, indice) => <p key={pago.nombre}><i style={{ backgroundColor: coloresPagos[indice % coloresPagos.length] }} /><span>{pago.nombre} · {pago.cantidad} {pago.cantidad === 1 ? 'pago' : 'pagos'}</span><strong>{monedaFinanzas(pago.importe)}</strong></p>)}</div>
-            </div> : <p>No hay ventas cobradas para este período y sucursal.</p>}
-          </div>
+
+            <div className="finanzas-grafico" aria-label={`Evolución mensual de ingresos en ${anio}`}>
+              <h3>{periodoTendencia === 'mes' ? 'Ingresos del mes' : 'Tendencia anual de ingresos'}</h3>
+              <p className="finanzas-linea-escala">Escala máxima: {monedaFinanzas(maxIngresosReal)}</p>
+              <div className="finanzas-linea">
+                <div className="finanzas-linea-area" role="img" aria-label={`Línea de ingresos mensuales de ${anio}. Los importes de cada mes están en la tabla de detalle mensual.`}>
+                  <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    {mesesConDatos.length > 1 && <polyline points={mesesConDatos.map(m => `${puntoX(m.i)},${100 - alturaIngreso(m.ingresos)}`).join(' ')} />}
+                  </svg>
+                  {mesesConDatos.map(m => <span key={m.mes} className={`finanzas-punto finanzas-punto-${estadoMes(m.mes)}`} style={{ left: `${puntoX(m.i)}%`, bottom: `${alturaIngreso(m.ingresos)}%` }} title={`${nombreMes(m.mes)}: ${monedaFinanzas(m.ingresos)}`} />)}
+                </div>
+                <div className={`finanzas-linea-meses ${periodoTendencia === 'mes' ? 'finanzas-linea-meses-unico-mes' : ''}`}>{mesesVista.map(m => <small key={m.mes} className={`finanzas-mes-etiqueta finanzas-mes-${estadoMes(m.mes)}`}>{etiquetaMes(m.mes)}</small>)}</div>
+              </div>
+            </div>
+            </div>
+
+            {/* SEGUNDA FILA: Las 3 Tortas apiladas verticalmente por dentro */}
+            <div className='fila-graficos-inferiores'>
+              {/* Torta 1: Ingresos vs Egresos */}
+              <div className="finanzas-grafico finanzas-grafico-torta">
+                <h3>{periodoTendencia === 'mes' ? 'Distribución del mes' : 'Distribución anual: ingresos y egresos'}</h3>
+                {totalFlujoPeriodo > 0 ? <div className="finanzas-torta-container-vertical">
+                  <div className="finanzas-torta" role="img" aria-label={`Ingresos ${porcentajeIngresos.toFixed(1)} por ciento; egresos ${(100 - porcentajeIngresos).toFixed(1)} por ciento`} style={{ '--porcentaje-ingresos': `${porcentajeIngresos}%` }}><span>{periodoTendencia === 'mes' ? nombreMes(codigoMesSeleccionado) : 'ANUAL'}<br />{anio}</span></div>
+                  <div className="finanzas-torta-leyenda-vertical">
+                    <p><i className="barra-ingreso" /><span>INGRESOS</span><strong>{monedaFinanzas(totalIngresosPeriodo)}</strong></p>
+                    <p><i className="barra-egreso" /><span>EGRESOS</span><strong>{monedaFinanzas(totalEgresosPeriodo)}</strong></p></div>
+                </div> : <p>No hay movimientos conciliados para este período y sucursal.</p>}
+              </div>
+              
+              {/* Torta 2: Cobros Recibidos */}
+              <div className="finanzas-grafico finanzas-grafico-torta finanzas-grafico-medios">
+                <h3>Cobros recibidos</h3>
+                {totalCobros > 0 ? <div className="finanzas-torta-container-vertical">
+                  <div className="finanzas-torta finanzas-torta-medios" role="img" aria-label={`Distribución de ${resumenCobros.length} medios de pago, total ${monedaFinanzas(totalCobros)}`} style={{ '--segmentos-pago': segmentosCobro }}><span>Cobros<br />{monedaFinanzas(totalCobros)}</span></div>
+                  <div className="finanzas-torta-leyenda-vertical">
+                    {resumenCobros.map((pago, indice) => <p key={pago.nombre}><i style={{ backgroundColor: coloresCobros[indice % coloresCobros.length] }} /><span>{pago.nombre} · {pago.cantidad} {pago.cantidad === 1 ? 'cobro' : 'cobros'}</span><strong>{monedaFinanzas(pago.importe)}</strong></p>)}</div>
+                </div> : <p>No hay cobros registrados para este período y sucursal.</p>}
+              </div>
+
+              {/* Torta 3: Pagos Emitidos */}
+              <div className="finanzas-grafico finanzas-grafico-torta finanzas-grafico-medios">
+                <h3>Pagos emitidos</h3>
+                {totalEgresosMedios > 0 ? <div className="torta-container-vertical">
+                  <div className="finanzas-torta finanzas-torta-medios" role="img" aria-label={`Distribución de ${resumenEgresos.length} medios de egreso, total ${monedaFinanzas(totalEgresosMedios)}`} style={{ '--segmentos-pago': segmentosEgreso }}><span>Pagos<br />{monedaFinanzas(totalEgresosMedios)}</span></div>
+                  <div className="finanzas-torta-leyenda-vertical">
+                    {resumenEgresos.map((pago, indice) => (
+                      <p key={pago.nombre}><i style={{ width: '12px', height: '12px', borderRadius: '2px', backgroundColor: coloresCobros[(indice + 3) % coloresCobros.length] }} /><span>{pago.nombre} ({pago.cantidad})</span><strong>{monedaFinanzas(pago.importe)}</strong></p>
+                    ))}
+                  </div>
+                </div> : <p>No hay pagos emitidos registrados para este período.</p>}
+              </div>
+            </div>
         </div>
+
+        {/* Tabla Detalle Inferior */}
         <div className="finanzas-grafico finanzas-tabla-bloque">
           <h3>{periodoTendencia === 'mes' ? `Detalle de ${nombreMes(codigoMesSeleccionado)} ${anio}` : `Detalle mensual ${anio}`}</h3>
           <div className="finanzas-tabla"><table className="finanzas-tabla-mensual">

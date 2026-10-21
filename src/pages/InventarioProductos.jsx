@@ -8,6 +8,7 @@ import { showAlert } from "../lib/alerts.js";
 // Servicios backend
 import { createArticulo, getArticulos, updateArticulo } from '../services/articulos.js';
 import { getRubros, getUnidadesMedida } from '../services/catalogos.js';
+import { uploadImage } from "../services/storage.js";
 
 const PREFIJOS_OPCIONES = [
   { value: "MED", label: "MED – Medicamentos" },
@@ -108,7 +109,7 @@ export default function InventarioProductos() {
         { key: "alicuota_iva", label: "Tratamiento de IVA *", type: "select", required: true, options: [{ value: 21, label: "IVA 21 %" }, { value: 10.5, label: "IVA 10,5 %" }, { value: 0, label: "Exento en reventa (0 %)" }] },
         { key: "estado", label: "Estado", type: "select", options: [{ value: true, label: "Activo" }, { value: false, label: "Inactivo" }] },
         { key: "publicado_online", label: "Visible en catálogo público", type: "select", options: [{ value: true, label: "Publicado" }, { value: false, label: "Oculto" }] },
-        { key: "imagen_url", label: "URL de imagen (opcional)" }
+        { key: "imagen_url", label: "Imagen del producto", type: "file", accept: "image/*" }
       ];
     }
 
@@ -130,7 +131,7 @@ export default function InventarioProductos() {
       { key: "precio_venta", label: "Precio al público con IVA ($)", type: "number" },
       { key: "alicuota_iva", label: "Tratamiento de IVA *", type: "select", required: true, options: [{ value: 21, label: "IVA 21 %" }, { value: 10.5, label: "IVA 10,5 %" }, { value: 0, label: "Exento en reventa (0 %)" }] },
       { key: "publicado_online", label: "Visible en catálogo público", type: "select", options: [{ value: true, label: "Publicado" }, { value: false, label: "Oculto" }] },
-      { key: "imagen_url", label: "URL de imagen (opcional)" }
+      { key: "imagen_url", label: "Imagen del Producto (opcional)", type: "file", accept: "image/*" }
     ];
   }, [rubros, unidades, selectedProduct]);
 
@@ -181,6 +182,20 @@ export default function InventarioProductos() {
       return false;
     }
 
+    let imagenFinal = formData.imagen_url;
+
+    // Subida de imagenes a bucket de supabase
+    if (imagenFinal instanceof File) {
+      const {url, error: uploadErr} = await uploadImage(imagenFinal, 'imagenes-productos', 'productos');
+
+      if (uploadErr) {
+        showAlert.errorSave("Error al subir la imagen.");
+        return;
+      }
+
+      imagenFinal = url;
+    }
+
     const payload = {
       id_rubro: Number(formData.id_rubro) || (rubros[0]?.id_rubro ?? 1),
       id_unidad: Number(formData.id_unidad) || (unidades[0]?.id_unidad ?? 1),
@@ -192,12 +207,11 @@ export default function InventarioProductos() {
       precio_venta: Number(formData.precio_venta) || 0,
       alicuota_iva: alicuotaIva,
       publicado_online: String(formData.publicado_online) === "true",
-      imagen_url: formData.imagen_url?.trim() || null,
+      imagen_url: typeof imagenFinal === 'string' ? imagenFinal.trim() : null,
       estado: selectedProduct ? (String(formData.estado) === "true") : true
     };
 
     if (selectedProduct) {
-      // --- MODO EDICIÓN ---
       // --- MODO EDICIÓN ---
       const { error } = await updateArticulo(selectedProduct.id_articulo, payload);
 
@@ -211,7 +225,6 @@ export default function InventarioProductos() {
       }
     } else {
       // --- MODO CREACIÓN ---
-      // --- MODO CREACIÓN ---
       const { error } = await createArticulo(payload);
 
       if (error) {
@@ -223,7 +236,7 @@ export default function InventarioProductos() {
         setIsModalOpen(false); 
       }
     }
-  }; // 👈 Se cierra correctamente la función handleSaveProduct
+  };
 
   const filteredProducts = products.filter(p =>
     (p.nombre + (p.codigo || "") + (p.codigo_barras || "")).toLowerCase().includes(searchTerm.toLowerCase())

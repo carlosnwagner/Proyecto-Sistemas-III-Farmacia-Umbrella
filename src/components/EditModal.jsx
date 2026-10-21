@@ -71,6 +71,20 @@ function EditModalContent({ onClose, onSave, title, fields, initialData }) {
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
+                ) : field.type === "file" ? (
+                  <div>
+                    {/* Muestra la URL actual si ya había una imagen guardada y no subieron una nueva */}
+                    {typeof formData[field.key] === 'string' && formData[field.key] !== "" && (
+                      <img src={formData[field.key]} alt="Vista previa" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '0.375rem', marginBottom: '0.5rem', display: 'block' }} />
+                    )}
+                    <input
+                      type="file"
+                      accept={field.accept || "image/*"}
+                      onChange={(e) => handleChange(field.key, e.target.files[0])}
+                      disabled={field.readOnly}
+                      style={commonInputStyle(field.readOnly)}
+                    />
+                  </div>
                 ) : (
                   <input
                     type={field.type || "text"}

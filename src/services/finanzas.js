@@ -45,13 +45,17 @@ export function consultarFinanzas(filtros) {
 }
 
 export async function consultarMediosPagoFinanzas(filtros) {
+  // Filtros
   const diaSiguiente = new Date(`${filtros.hasta}T00:00:00Z`);
   diaSiguiente.setUTCDate(diaSiguiente.getUTCDate() + 1);
   const desde = `${filtros.desde}T00:00:00-03:00`;
   const hasta = `${diaSiguiente.toISOString().slice(0, 10)}T00:00:00-03:00`;
-  const filas = [];
+
+  const filasVentas = [];
   const tamanoPagina = 1000;
+
   for (let inicio = 0; ; inicio += tamanoPagina) {
+
     let consulta = supabase.from('venta')
       .select('medio_pago, importe_total, fecha, id_sucursal')
       .eq('estado', 'Confirmada')
@@ -60,13 +64,38 @@ export async function consultarMediosPagoFinanzas(filtros) {
       .order('fecha', { ascending: true })
       .order('id_venta', { ascending: true })
       .range(inicio, inicio + tamanoPagina - 1);
+
     if (filtros.sucursal) consulta = consulta.eq('id_sucursal', Number(filtros.sucursal));
+
     const { data, error } = await consulta;
     if (error) throw error;
-    filas.push(...(data || []));
+    filasVentas.push(...(data || []));
     if (!data || data.length < tamanoPagina) break;
   }
-  return filas;
+
+  const filasPagosEmitidos = [];
+
+  for (let inicio = 0; ; inicio += tamanoPagina) {
+    let consultaPagos = supabase.from('pago_proveedor')
+      .select('importe_total, fecha_pago, id_sucursal, medio_pago(nombre)')
+      .gte('fecha_pago', filtros.desde)
+      .lte('fecha_pago', filtros.hasta)
+      .order('fecha_pago', { ascending: true })
+      .order('id_pago', { ascending: true })
+      .range(inicio, inicio + tamanoPagina - 1);
+      
+    if (filtros.sucursal) consultaPagos = consultaPagos.eq('id_sucursal', Number(filtros.sucursal));
+    
+    const { data, error } = await consultaPagos;
+    if (error) throw error;
+    filasPagosEmitidos.push(...(data || []));
+    if (!data || data.length < tamanoPagina) break;
+  }
+
+  return {
+    pagos: filasVentas,
+    pagosEmitidos: filasPagosEmitidos
+  };
 }
 
 export const clasificarMovimientoFinanciero = (id, clase, pago) => rpc('hu61_clasificar_movimiento', {
