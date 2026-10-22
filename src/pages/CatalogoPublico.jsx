@@ -126,14 +126,15 @@ export default function CatalogoPublico() {
   };
 
   const handleAgregarAlCarrito = (producto) => {
-    addToCart({
+    const agregado = addToCart({
       id_articulo: producto.id_articulo,
       codigo: producto.codigo || `ART-${producto.id_articulo}`,
       nombre: producto.nombre,
       precio_venta: Number(producto.precio_final) || 0,
-      stock_disponible: producto.stock_actual ?? 50,
+      stock_disponible: Math.max(0, Math.floor(Number(producto.stock_actual) || 0)),
       imagen_url: producto.imagen_url
     }, 1);
+    if (!agregado) return;
 
     // Mostrar toast flotante estilo Farmacity
     setMensajeToast(producto.nombre);

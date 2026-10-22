@@ -16,7 +16,7 @@ interface CartState {
   sucursalId: number | null;
   
   setSucursalId: (id: number) => void;
-  addToCart: (product: Omit<CartItem, 'cantidad'>, cantidadDeseada?: number) => void;
+  addToCart: (product: Omit<CartItem, 'cantidad'>, cantidadDeseada?: number) => boolean;
   updateQuantity: (id_articulo: number, nuevaCantidad: number) => void;
   removeFromCart: (id_articulo: number) => void;
   clearCart: () => void;
@@ -41,6 +41,7 @@ export const useCart = create<CartState>()(
       },
 
       addToCart: (product, cantidadDeseada = 1) => {
+        let agregado = false;
         set((state) => {
           const existingIndex = state.items.findIndex(
             (item) => item.id_articulo === product.id_articulo
@@ -51,12 +52,13 @@ export const useCart = create<CartState>()(
             const currentItem = updatedItems[existingIndex];
             const nuevaCantidad = currentItem.cantidad + cantidadDeseada;
 
-            if (nuevaCantidad > currentItem.stock_disponible) {
-              alert(`No puedes agregar más unidades. Stock disponible: ${currentItem.stock_disponible}`);
+            if (nuevaCantidad > product.stock_disponible) {
+              alert(`No puedes agregar más unidades. Stock disponible: ${product.stock_disponible}`);
               return state;
             }
 
-            updatedItems[existingIndex] = { ...currentItem, cantidad: nuevaCantidad };
+            agregado = true;
+            updatedItems[existingIndex] = { ...currentItem, ...product, cantidad: nuevaCantidad };
             return { items: updatedItems };
           } else {
             if (cantidadDeseada > product.stock_disponible) {
@@ -64,11 +66,13 @@ export const useCart = create<CartState>()(
               return state;
             }
 
+            agregado = true;
             return {
               items: [...state.items, { ...product, cantidad: cantidadDeseada }],
             };
           }
         });
+        return agregado;
       },
 
       updateQuantity: (id_articulo: number, nuevaCantidad: number) => {
@@ -110,6 +114,8 @@ export const useCart = create<CartState>()(
     }),
     {
       name: 'cart-storage',
+      version: 1,
+      migrate: () => ({ items: [], sucursalId: null }),
     }
   )
 );

@@ -58,13 +58,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, sucursa
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h4 style={{ fontSize: "14px", fontWeight: "600", color: "#1f2937", margin: "0 0 4px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nombre}</h4>
                       <p style={{ fontSize: "13px", color: "#059669", fontWeight: "600", margin: 0 }}>${item.precio_venta} c/u</p>
+                      <p role="status" style={{ fontSize: "12px", color: "#6b7280", margin: "4px 0 0" }}>
+                        Quedan {item.stock_disponible} unidades disponibles en esta sucursal.
+                      </p>
+                      {item.cantidad >= item.stock_disponible && (
+                        <p role="status" style={{ fontSize: "12px", color: "#92400e", margin: "4px 0 0" }}>Alcanzaste el stock disponible.</p>
+                      )}
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
                       <div style={{ display: "flex", alignItems: "center", border: "1px solid #d1d5db", borderRadius: "6px", overflow: "hidden", backgroundColor: "#f9fafb" }}>
                         <button onClick={() => updateQuantity(item.id_articulo, item.cantidad - 1)} style={{ padding: "2px 8px", background: "none", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "bold" }}>-</button>
                         <span style={{ padding: "0 8px", fontSize: "13px", fontWeight: "600" }}>{item.cantidad}</span>
-                        <button onClick={() => updateQuantity(item.id_articulo, item.cantidad + 1)} style={{ padding: "2px 8px", background: "none", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "bold" }}>+</button>
+                        <button aria-label={`Aumentar cantidad de ${item.nombre}`} disabled={item.cantidad >= item.stock_disponible} onClick={() => updateQuantity(item.id_articulo, item.cantidad + 1)} style={{ padding: "2px 8px", background: "none", border: "none", cursor: item.cantidad >= item.stock_disponible ? "not-allowed" : "pointer", opacity: item.cantidad >= item.stock_disponible ? 0.4 : 1, fontSize: "12px", fontWeight: "bold" }}>+</button>
                       </div>
 
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
